@@ -24,11 +24,28 @@ def test_lane_validation(client):
     login(client)
     bad = client.post("/admin/api/lanes", json={"slug": "Bad Slug!", "botToken": "t:1"})
     assert bad.status_code == 422
+    no_token = client.post("/admin/api/lanes", json={"slug": "x"})
+    assert no_token.status_code == 422
     reserved = client.post("/admin/api/lanes", json={"slug": "admin", "botToken": "t:1"})
     assert reserved.status_code == 422
     make_lane(client, slug="dup")
     again = client.post("/admin/api/lanes", json={"slug": "dup", "botToken": "t:1"})
     assert again.status_code == 409
+
+
+def test_auto_slug_from_bot_username(client):
+    login(client)
+    # no slug given → derived from the bot username ("test_bot" → "test")
+    r1 = client.post("/admin/api/lanes", json={"botToken": "a:1"})
+    assert r1.status_code == 201, r1.text
+    assert r1.json()["slug"] == "test"
+    # same bot username again → uniquified
+    r2 = client.post("/admin/api/lanes", json={"botToken": "b:2"})
+    assert r2.status_code == 201
+    assert r2.json()["slug"] == "test-2"
+    # explicit slug still wins
+    r3 = client.post("/admin/api/lanes", json={"slug": "custom", "botToken": "c:3"})
+    assert r3.json()["slug"] == "custom"
 
 
 def test_lane_lifecycle(client):

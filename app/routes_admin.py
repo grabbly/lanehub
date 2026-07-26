@@ -104,12 +104,29 @@ def _lane_view(lane: dict) -> dict:
 
 
 class LaneCreate(BaseModel):
-    slug: str
+    slug: str = ""  # optional — derived from the bot's username when empty
     title: str = ""
     bot_token: str = Field(alias="botToken")
     default_chat_id: str = Field(default="", alias="defaultChatId")
 
     model_config = {"populate_by_name": True}
+
+
+def derive_slug(bot_username: str) -> str:
+    """Auto-slug from a bot username: '@denis_team_bot' → 'denis_team',
+    made unique against existing lanes and reserved names."""
+    base = re.sub(r"[^a-z0-9_-]", "", (bot_username or "").lower())
+    for suffix in ("_bot", "-bot", "bot"):
+        if base.endswith(suffix) and len(base) > len(suffix):
+            base = base[: -len(suffix)]
+            break
+    base = base.strip("_-")[:28] or "lane"
+    if not re.match(r"^[a-z0-9]", base):
+        base = f"x{base}"
+    candidate, i = base, 2
+    while candidate in db.RESERVED_SLUGS or db.get_lane(candidate):
+        candidate, i = f"{base}-{i}", i + 1
+    return candidate
 
 
 class LaneUpdate(BaseModel):
@@ -138,17 +155,20 @@ async def lanes_list(hub_session: str | None = Cookie(default=None)) -> dict:
 async def lanes_create(req: LaneCreate, hub_session: str | None = Cookie(default=None)) -> dict:
     require_admin(hub_session)
     slug = req.slug.strip().lower()
-    if not SLUG_RE.match(slug):
-        raise HTTPException(status_code=422, detail="slug must match [a-z0-9][a-z0-9_-]{0,31}")
-    if slug in db.RESERVED_SLUGS:
-        raise HTTPException(status_code=422, detail=f"slug '{slug}' is reserved")
-    if db.get_lane(slug):
-        raise HTTPException(status_code=409, detail="lane already exists")
+    if slug:
+        if not SLUG_RE.match(slug):
+            raise HTTPException(status_code=422, detail="slug must match [a-z0-9][a-z0-9_-]{0,31}")
+        if slug in db.RESERVED_SLUGS:
+            raise HTTPException(status_code=422, detail=f"slug '{slug}' is reserved")
+        if db.get_lane(slug):
+            raise HTTPException(status_code=409, detail="lane already exists")
     token = req.bot_token.strip()
     try:
         me = await telegram.get_me(token)
     except telegram.TelegramError as exc:
         raise HTTPException(status_code=422, detail=f"bot token rejected by Telegram: {exc}")
+    if not slug:
+        slug = derive_slug(me.get("username", ""))
     lane_dict = db.create_lane(
         slug=slug,
         title=req.title.strip() or me.get("first_name", ""),
