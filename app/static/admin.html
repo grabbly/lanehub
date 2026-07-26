@@ -98,6 +98,9 @@
       <p class="hint">A lane = one Telegram bot identity + its own API key. Agents call
         <code>/&lt;lane&gt;/send</code>, <code>/&lt;lane&gt;/messages</code> and <code>/&lt;lane&gt;/feed</code>
         with header <code>X-Bridge-Token: &lt;lane API key&gt;</code>.</p>
+      <div class="actions" style="margin:0 0 12px;">
+        <button class="small" id="onboarding-btn">✉️ Teammate onboarding messages</button>
+      </div>
       <div id="lanes"></div>
 
       <details id="add-lane">
@@ -247,6 +250,84 @@ function laneCard(l) {
   });
   return div;
 }
+
+// Copy-paste texts the admin sends to teammates: each member brings their own
+// bot (or the admin creates one for them as a fallback). Tokens go via DM only.
+const ONBOARDING = {
+  ru: {
+    dm: `Привет! Подключаем наш командный чат к хабу: у каждого участника будет свой Telegram-бот — через него твой AI-агент читает общий чат и пишет от твоего имени.
+
+Нужно 2 минуты:
+1. Открой @BotFather → /newbot → задай имя (видно в чате, напр. «Имя · Agent») и username (заканчивается на bot).
+2. Там же: /setprivacy → выбери этого бота → Disable (иначе бот не видит сообщения группы).
+3. Пришли мне В ЛИЧКУ (не в общий чат!) токен бота — строка вида 123456789:AA…, BotFather выдаёт её после /newbot.
+
+Если бот у тебя уже есть — шаг 1 пропусти: сделай только /setprivacy → Disable и пришли токен в личку.
+
+Дальше я добавлю бота в чат и пришлю тебе ключ доступа + готовые команды для твоего агента.`,
+    chat: `Команда! Подключаем этот чат к нашему хабу для AI-агентов: каждому участнику нужен свой Telegram-бот. Инструкцию пришлю каждому в личку — там 2 минуты через @BotFather.
+
+⚠️ Токены ботов присылайте мне ТОЛЬКО в личку, не в этот чат.`,
+  },
+  en: {
+    dm: `Hi! We're connecting our team chat to a hub: every member gets their own Telegram bot — your AI agent reads the shared chat and posts as you through it.
+
+Takes 2 minutes:
+1. Open @BotFather → /newbot → pick a display name (visible in the chat, e.g. "Name · Agent") and a username (must end in "bot").
+2. Still in BotFather: /setprivacy → select that bot → Disable (otherwise the bot can't see group messages).
+3. DM me (NOT in the group chat!) the bot token — the 123456789:AA… string BotFather gives you after /newbot.
+
+Already have a bot? Skip step 1 — just do /setprivacy → Disable and DM me the token.
+
+I'll then add the bot to our chat and send you back an access key + ready-made commands for your agent.`,
+    chat: `Team! We're connecting this chat to our AI-agent hub: every member needs their own Telegram bot. I'll DM each of you a short instruction — 2 minutes via @BotFather.
+
+⚠️ Send bot tokens to me via DM ONLY, never into this chat.`,
+  },
+};
+
+function showOnboarding() {
+  const dlg = document.createElement('dialog');
+  let lang = 'ru';
+  dlg.innerHTML = `
+    <div style="padding:18px 20px;">
+      <h2 style="margin-top:0;">Teammate onboarding messages</h2>
+      <p class="hint">Each teammate brings their own bot (you can create one for them as a fallback).
+      Send the first text to a member in DM; the second is an announcement for the group chat.
+      Tokens must travel via DM only.</p>
+      <div class="actions"><button class="small" data-lang="ru">Русский</button>
+        <button class="small" data-lang="en">English</button></div>
+      <label style="margin-top:10px;">DM to a teammate</label>
+      <textarea readonly rows="13" data-tpl="dm"></textarea>
+      <button class="small" data-copy="dm" style="margin-top:4px;">copy</button>
+      <label style="margin-top:12px;">Announcement for the group chat</label>
+      <textarea readonly rows="5" data-tpl="chat"></textarea>
+      <button class="small" data-copy="chat" style="margin-top:4px;">copy</button>
+      <div class="actions" style="justify-content:flex-end;"><button data-close>Close</button></div>
+    </div>`;
+  const render = () => {
+    dlg.querySelectorAll('[data-tpl]').forEach(t => t.value = ONBOARDING[lang][t.dataset.tpl]);
+    dlg.querySelectorAll('[data-lang]').forEach(b => b.classList.toggle('primary', b.dataset.lang === lang));
+  };
+  dlg.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => { lang = b.dataset.lang; render(); });
+  dlg.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(ONBOARDING[lang][b.dataset.copy]);
+      b.textContent = 'copied ✓';
+    } catch (e) {
+      const t = dlg.querySelector(`[data-tpl="${b.dataset.copy}"]`);
+      t.focus(); t.select();  // clipboard API blocked — leave the text selected
+      b.textContent = 'select+copy manually';
+    }
+    setTimeout(() => b.textContent = 'copy', 1500);
+  });
+  dlg.querySelector('[data-close]').onclick = () => dlg.close();
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.appendChild(dlg);
+  render();
+  dlg.showModal();
+}
+$('onboarding-btn').onclick = showOnboarding;
 
 function showRecipes(l) {
   const base = location.origin;

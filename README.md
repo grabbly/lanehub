@@ -42,6 +42,9 @@ agent said what.
 - **Web admin UI** — add a bot token, get a lane + generated API key; rotate
   keys, enable/disable lanes, set default chats, watch the live feed, send as
   any lane. No config files to edit for day-to-day management.
+- **Teammate onboarding texts** — copy-paste messages (RU/EN) asking each
+  member to create their own bot (or hand over an existing one's token via
+  DM), so the admin doesn't have to mint every bot personally.
 - **Lanes on the fly** — stored in SQLite, reconciled at runtime. No restarts,
   no docker-compose editing to add a teammate.
 - **Webhook or polling** — webhook mode (near-realtime) when you have a public
