@@ -105,6 +105,7 @@ learned the hard way: [docs/API.md](docs/API.md). Russian overview:
 | `HUB_ADMIN_PASSWORD` | *(empty — admin locked)* | Password for the `/admin` web UI |
 | `HUB_PUBLIC_BASE_URL` | *(empty)* | Public HTTPS origin, e.g. `https://hub.example.com`. Set → webhook mode |
 | `HUB_DELIVERY_MODE` | auto | Force `webhook` / `polling` / `off` |
+| `HUB_PORT` | `8080` | Host port docker publishes on 127.0.0.1 (compose only) |
 | `HUB_DB_PATH` | `./data/hub.db` (`/data/hub.db` in Docker) | SQLite location |
 | `HUB_POLL_INTERVAL` | `2` | Seconds between getUpdates rounds (polling mode) |
 | `HUB_TELEGRAM_API` | `https://api.telegram.org` | Bot API origin (override for tests) |
