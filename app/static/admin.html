@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LaneHub</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --border: #dfe3e8; --text: #1c2733;
+    --muted: #5f6b7a; --accent: #2563eb; --accent-text: #ffffff;
+    --danger: #b42318; --ok: #067647; --chip: #eef2f6; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1419; --panel: #171e26; --border: #2a3441; --text: #e6ebf0;
+      --muted: #8d9aa8; --accent: #4c8dff; --accent-text: #0b1220;
+      --danger: #f97066; --ok: #4ade80; --chip: #212b36;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 18px; margin: 0; }
+  header .meta { color: var(--muted); font-size: 13px; }
+  header .spacer { flex: 1; }
+  main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 80px; }
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 22px; }
+  h2 { font-size: 15px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  button { font: inherit; border: 1px solid var(--border); background: var(--chip); color: var(--text); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  button.danger { color: var(--danger); }
+  button.small { padding: 3px 9px; font-size: 13px; }
+  input, select, textarea { font: inherit; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; width: 100%; }
+  textarea { font-family: var(--mono); font-size: 13px; min-height: 70px; resize: vertical; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .grid { display: grid; gap: 12px; }
+  .grid.cols-2 { grid-template-columns: 1fr 1fr; }
+  .grid.cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+  @media (max-width: 760px) { .grid.cols-2, .grid.cols-4 { grid-template-columns: 1fr; } }
+  .lane { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+  .lane-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .lane-head .slug { font-family: var(--mono); font-weight: 700; font-size: 16px; }
+  .lane-head .bot { color: var(--muted); }
+  .badge { font-size: 12px; padding: 2px 9px; border-radius: 20px; background: var(--chip); color: var(--muted); }
+  .badge.on { color: var(--ok); }
+  .badge.off { color: var(--danger); }
+  .lane-body { margin-top: 10px; display: grid; gap: 8px; font-size: 14px; }
+  .kv { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .kv .k { color: var(--muted); min-width: 110px; font-size: 13px; }
+  code, .mono { font-family: var(--mono); font-size: 13px; word-break: break-all; }
+  .key-hidden { letter-spacing: 2px; color: var(--muted); }
+  .chats .chip { display: inline-block; margin: 2px 6px 2px 0; padding: 2px 10px; background: var(--chip); border-radius: 16px; font-size: 13px; cursor: pointer; border: 1px solid transparent; }
+  .chats .chip:hover { border-color: var(--accent); }
+  .chats .chip.current { border-color: var(--ok); }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .feed-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .feed-controls select { width: auto; }
+  #feed { display: flex; flex-direction: column; gap: 8px; max-height: 520px; overflow-y: auto; }
+  .msg { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }
+  .msg .top { display: flex; gap: 8px; align-items: baseline; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+  .msg .from { font-weight: 600; color: var(--text); }
+  .msg .lane-tag { font-family: var(--mono); font-size: 11px; padding: 1px 7px; border-radius: 12px; background: var(--chip); }
+  .msg.outgoing { border-left: 3px solid var(--accent); }
+  .msg pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
+  .sendbox { display: grid; gap: 8px; grid-template-columns: 160px 1fr auto; align-items: start; margin-top: 14px; }
+  @media (max-width: 760px) { .sendbox { grid-template-columns: 1fr; } }
+  .error { color: var(--danger); font-size: 14px; margin-top: 8px; white-space: pre-wrap; }
+  .notice { color: var(--ok); font-size: 14px; margin-top: 8px; }
+  #login-view { max-width: 380px; margin: 12vh auto 0; }
+  .hint { color: var(--muted); font-size: 13px; }
+  dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--text); max-width: 560px; width: 92vw; }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛤️ LaneHub</h1>
+  <span class="meta" id="hub-meta"></span>
+  <span class="spacer"></span>
+  <button id="logout-btn" class="small" hidden>Log out</button>
+</header>
+
+<main>
+  <section id="login-view" hidden>
+    <h2>Admin login</h2>
+    <div class="grid">
+      <div><label>Password</label><input type="password" id="login-password" autocomplete="current-password"></div>
+      <button class="primary" id="login-btn">Log in</button>
+      <div class="error" id="login-error"></div>
+      <p class="hint">The password is the <code>HUB_ADMIN_PASSWORD</code> value from the server's <code>.env</code>.</p>
+    </div>
+  </section>
+
+  <div id="app-view" hidden>
+    <section>
+      <h2>Lanes</h2>
+      <p class="hint">A lane = one Telegram bot identity + its own API key. Agents call
+        <code>/&lt;lane&gt;/send</code>, <code>/&lt;lane&gt;/messages</code> and <code>/&lt;lane&gt;/feed</code>
+        with header <code>X-Bridge-Token: &lt;lane API key&gt;</code>.</p>
+      <div id="lanes"></div>
+
+      <details id="add-lane">
+        <summary style="cursor:pointer; font-weight:600; margin:6px 0;">➕ Add lane</summary>
+        <div class="grid cols-4" style="margin-top:10px;">
+          <div><label>Slug (URL path)</label><input id="new-slug" placeholder="backend"></div>
+          <div><label>Title (optional)</label><input id="new-title" placeholder="Backend agent"></div>
+          <div><label>Bot token (from @BotFather)</label><input id="new-token" placeholder="123456:ABC-…"></div>
+          <div><label>Default chat ID (optional)</label><input id="new-chat" placeholder="-100123… (can set later)"></div>
+        </div>
+        <div class="actions">
+          <button class="primary" id="create-lane-btn">Create lane</button>
+        </div>
+        <div class="error" id="create-error"></div>
+        <p class="hint">Before creating: in @BotFather run <code>/newbot</code>, then <code>/setprivacy → Disable</code>
+          (otherwise the bot won't see group messages), then add the bot to your group or channel.
+          The chat will then appear under “seen chats” — click it to set as default.</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>Feed — the whole chat</h2>
+      <div class="feed-controls">
+        <select id="feed-chat"><option value="">all chats</option></select>
+        <label style="margin:0; display:flex; align-items:center; gap:6px;">
+          <input type="checkbox" id="feed-auto" checked style="width:auto;"> auto-refresh
+        </label>
+        <button class="small" id="feed-refresh">Refresh</button>
+      </div>
+      <div id="feed"></div>
+      <div class="sendbox">
+        <select id="send-lane"></select>
+        <textarea id="send-text" placeholder="Message text… (sent as the selected lane's bot)"></textarea>
+        <button class="primary" id="send-btn">Send</button>
+      </div>
+      <div class="error" id="send-error"></div>
+      <div class="notice" id="send-ok"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let lanes = [];
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    ...opts,
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* empty body */ }
+  if (res.status === 401 && path !== '/admin/api/login') { showLogin(); throw new Error('login required'); }
+  if (!res.ok) throw new Error((data && (data.detail?.description || JSON.stringify(data.detail ?? data))) || res.statusText);
+  return data;
+}
+
+function showLogin() { $('login-view').hidden = false; $('app-view').hidden = true; $('logout-btn').hidden = true; }
+function showApp()   { $('login-view').hidden = true;  $('app-view').hidden = false; $('logout-btn').hidden = false; }
+
+function esc(s) { const d = document.createElement('span'); d.textContent = s ?? ''; return d.innerHTML; }
+function fmtDate(ts) { return ts ? new Date(ts * 1000).toLocaleString() : ''; }
+
+// ---------- lanes ----------
+
+function laneCard(l) {
+  const div = document.createElement('div');
+  div.className = 'lane';
+  const base = location.origin;
+  const chats = (l.seenChats || []).map(c =>
+    `<span class="chip ${String(c.chatId) === String(l.defaultChatId) ? 'current' : ''}"
+       data-set-chat="${esc(String(c.chatId))}" title="click to set as default chat">
+       ${esc(c.title || c.chatId)} <code>${esc(String(c.chatId))}</code></span>`).join('') ||
+    '<span class="hint">none yet — add the bot to a chat and post a message there</span>';
+  div.innerHTML = `
+    <div class="lane-head">
+      <span class="slug">/${esc(l.slug)}</span>
+      <span class="bot">${l.botUsername ? '@' + esc(l.botUsername) : ''} ${esc(l.title || '')}</span>
+      <span class="badge ${l.enabled ? 'on' : 'off'}">${l.enabled ? 'enabled' : 'disabled'}</span>
+      <span class="badge">${esc(l.deliveryMode)}${l.deliveryMode === 'polling' ? (l.polling ? ' ✓' : ' ✗') : ''}</span>
+      <span class="badge">${l.storedMessages} msgs</span>
+    </div>
+    <div class="lane-body">
+      <div class="kv"><span class="k">API key</span>
+        <code class="key-hidden" data-key>••••••••••••••••</code>
+        <button class="small" data-act="reveal">show</button>
+        <button class="small" data-act="copy">copy</button>
+        <button class="small" data-act="rotate">rotate</button>
+      </div>
+      <div class="kv"><span class="k">Endpoint</span><code>${esc(base)}/${esc(l.slug)}/…</code></div>
+      <div class="kv"><span class="k">Default chat</span>
+        <input data-chat-input value="${esc(l.defaultChatId || '')}" placeholder="-100… or @channelname" style="max-width:240px;">
+        <button class="small" data-act="save-chat">save</button>
+      </div>
+      <div class="kv"><span class="k">Seen chats</span><span class="chats">${chats}</span></div>
+    </div>
+    <div class="actions">
+      <button class="small" data-act="toggle">${l.enabled ? 'disable' : 'enable'}</button>
+      ${l.deliveryMode === 'webhook' ? '<button class="small" data-act="webhook-info">webhook status</button>' : ''}
+      <button class="small" data-act="recipes">agent recipes</button>
+      <button class="small danger" data-act="delete">delete</button>
+    </div>
+    <div class="error" data-err></div>`;
+
+  const err = div.querySelector('[data-err]');
+  const run = (fn) => async () => { err.textContent = ''; try { await fn(); } catch (e) { err.textContent = e.message; } };
+
+  div.querySelector('[data-act=reveal]').onclick = () => {
+    const el = div.querySelector('[data-key]');
+    const shown = el.dataset.shown === '1';
+    el.textContent = shown ? '••••••••••••••••' : l.apiKey;
+    el.className = shown ? 'key-hidden' : 'mono';
+    el.dataset.shown = shown ? '0' : '1';
+  };
+  div.querySelector('[data-act=copy]').onclick = run(async () => {
+    await navigator.clipboard.writeText(l.apiKey);
+  });
+  div.querySelector('[data-act=rotate]').onclick = run(async () => {
+    if (!confirm(`Rotate the API key for /${l.slug}? The old key stops working immediately.`)) return;
+    await api(`/admin/api/lanes/${l.slug}/rotate-key`, { method: 'POST' });
+    await loadLanes();
+  });
+  div.querySelector('[data-act=save-chat]').onclick = run(async () => {
+    const v = div.querySelector('[data-chat-input]').value.trim();
+    await api(`/admin/api/lanes/${l.slug}`, { method: 'PATCH', body: JSON.stringify({ defaultChatId: v }) });
+    await loadLanes();
+  });
+  div.querySelectorAll('[data-set-chat]').forEach(chip => chip.onclick = run(async () => {
+    await api(`/admin/api/lanes/${l.slug}`, { method: 'PATCH', body: JSON.stringify({ defaultChatId: chip.dataset.setChat }) });
+    await loadLanes();
+  }));
+  div.querySelector('[data-act=toggle]').onclick = run(async () => {
+    await api(`/admin/api/lanes/${l.slug}`, { method: 'PATCH', body: JSON.stringify({ enabled: !l.enabled }) });
+    await loadLanes();
+  });
+  const wh = div.querySelector('[data-act=webhook-info]');
+  if (wh) wh.onclick = run(async () => {
+    const info = await api(`/admin/api/lanes/${l.slug}/webhook-info`);
+    alert(JSON.stringify(info, null, 2));
+  });
+  div.querySelector('[data-act=recipes]').onclick = () => showRecipes(l);
+  div.querySelector('[data-act=delete]').onclick = run(async () => {
+    if (!confirm(`Delete lane /${l.slug}? Its API key stops working. Message history is kept.`)) return;
+    await api(`/admin/api/lanes/${l.slug}`, { method: 'DELETE' });
+    await loadLanes();
+  });
+  return div;
+}
+
+function showRecipes(l) {
+  const base = location.origin;
+  const dlg = document.createElement('dialog');
+  dlg.innerHTML = `
+    <div style="padding:18px 20px;">
+      <h2 style="margin-top:0;">Agent recipes — /${esc(l.slug)}</h2>
+      <p class="hint">Put the API key in an env var (never in a repo). Read the whole chat with <code>/feed</code>;
+      always use <code>order=desc</code> to get the newest messages.</p>
+      <label>Read the whole chat (all bots + humans)</label>
+      <textarea readonly rows="2">curl -sS -H "X-Bridge-Token: $KEY" "${base}/${l.slug}/feed?order=desc&limit=100"</textarea>
+      <label style="margin-top:10px;">Send a message</label>
+      <textarea readonly rows="3">curl -sS -X POST -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \\
+  -d '{"text": "hello from ${l.slug}"}' "${base}/${l.slug}/send"</textarea>
+      <label style="margin-top:10px;">Incremental cursor (own lane)</label>
+      <textarea readonly rows="2">curl -sS -H "X-Bridge-Token: $KEY" "${base}/${l.slug}/messages?since=&lt;updateId&gt;&limit=200"</textarea>
+      <div class="actions" style="justify-content:flex-end;"><button data-close>Close</button></div>
+    </div>`;
+  dlg.querySelector('[data-close]').onclick = () => dlg.close();
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.appendChild(dlg);
+  dlg.showModal();
+}
+
+async function loadLanes() {
+  const data = await api('/admin/api/lanes');
+  lanes = data.lanes;
+  const box = $('lanes');
+  box.innerHTML = '';
+  if (!lanes.length) box.innerHTML = '<p class="hint">No lanes yet — create the first one below.</p>';
+  lanes.forEach(l => box.appendChild(laneCard(l)));
+  const sel = $('send-lane');
+  sel.innerHTML = lanes.filter(l => l.enabled)
+    .map(l => `<option value="${esc(l.slug)}">${esc(l.slug)}${l.botUsername ? ' (@' + esc(l.botUsername) + ')' : ''}</option>`)
+    .join('');
+}
+
+$('create-lane-btn').onclick = async () => {
+  $('create-error').textContent = '';
+  try {
+    const lane = await api('/admin/api/lanes', {
+      method: 'POST',
+      body: JSON.stringify({
+        slug: $('new-slug').value.trim(),
+        title: $('new-title').value.trim(),
+        botToken: $('new-token').value.trim(),
+        defaultChatId: $('new-chat').value.trim(),
+      }),
+    });
+    ['new-slug', 'new-title', 'new-token', 'new-chat'].forEach(id => $(id).value = '');
+    if (lane.warning) $('create-error').textContent = 'Lane created with a warning: ' + lane.warning;
+    await loadLanes();
+  } catch (e) { $('create-error').textContent = e.message; }
+};
+
+// ---------- feed ----------
+
+async function loadFeed() {
+  if ($('app-view').hidden) return;
+  try {
+    const chat = $('feed-chat').value;
+    const data = await api('/admin/api/feed?limit=100&order=desc' + (chat ? `&chatId=${chat}` : ''));
+    const box = $('feed');
+    box.innerHTML = data.messages.map(m => `
+      <div class="msg ${m.outgoing ? 'outgoing' : ''}">
+        <div class="top">
+          <span class="from">${esc(m.from || '?')}</span>
+          <span class="lane-tag">${esc(m.lane)}</span>
+          <span>${esc(m.chatTitle || '')}</span>
+          <span>${fmtDate(m.date)}</span>
+        </div>
+        <pre>${esc(m.text)}</pre>
+      </div>`).join('') || '<p class="hint">No messages yet.</p>';
+    const sel = $('feed-chat');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">all chats</option>' + (data.chats || [])
+      .map(c => `<option value="${esc(String(c.chatId))}">${esc(c.title || c.chatId)}</option>`).join('');
+    sel.value = current;
+  } catch (e) { /* feed refresh errors are non-fatal */ }
+}
+
+$('feed-refresh').onclick = loadFeed;
+$('feed-chat').onchange = loadFeed;
+setInterval(() => { if ($('feed-auto').checked) loadFeed(); }, 10000);
+
+$('send-btn').onclick = async () => {
+  $('send-error').textContent = ''; $('send-ok').textContent = '';
+  const slug = $('send-lane').value, text = $('send-text').value;
+  if (!slug || !text.trim()) return;
+  try {
+    const r = await api(`/admin/api/lanes/${slug}/send`, { method: 'POST', body: JSON.stringify({ text }) });
+    $('send-text').value = '';
+    $('send-ok').textContent = `Sent as /${slug} (message ${r.messageId}${r.parts > 1 ? ', ' + r.parts + ' parts' : ''}).`;
+    await loadFeed();
+  } catch (e) { $('send-error').textContent = e.message; }
+};
+
+// ---------- auth ----------
+
+$('login-btn').onclick = async () => {
+  $('login-error').textContent = '';
+  try {
+    await api('/admin/api/login', { method: 'POST', body: JSON.stringify({ password: $('login-password').value }) });
+    $('login-password').value = '';
+    await boot();
+  } catch (e) { $('login-error').textContent = e.message; }
+};
+$('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') $('login-btn').click(); });
+$('logout-btn').onclick = async () => { await api('/admin/api/logout', { method: 'POST' }); showLogin(); };
+
+async function boot() {
+  const st = await api('/admin/api/status');
+  $('hub-meta').textContent = `v${st.version} · ${st.deliveryMode}${st.publicBaseUrl ? ' · ' + st.publicBaseUrl : ''}`;
+  if (!st.adminPasswordSet) {
+    showLogin();
+    $('login-error').textContent = 'HUB_ADMIN_PASSWORD is not set on the server — set it in .env and restart.';
+    return;
+  }
+  if (!st.authenticated) { showLogin(); return; }
+  showApp();
+  await loadLanes();
+  await loadFeed();
+}
+boot();
+</script>
+</body>
+</html>

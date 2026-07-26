@@ -1,0 +1,322 @@
+"""SQLite storage for LaneHub.
+
+One database holds everything: lanes (bot identities + API keys), the merged
+message history of every lane, per-lane poller state, and the chats each bot
+has seen. Short-lived connections per operation keep things simple and safe
+across asyncio tasks; WAL mode keeps readers and the writer out of each
+other's way.
+"""
+from __future__ import annotations
+
+import secrets
+import sqlite3
+import time
+
+from .config import settings
+
+# Outgoing messages get synthetic update_ids in a high namespace so they never
+# collide with real Telegram update_ids (32-bit ints) and sort after them.
+OUTGOING_BASE = 1_000_000_000_000_000
+
+RESERVED_SLUGS = {"admin", "api", "health", "version", "static", "assets", "docs", "favicon.ico"}
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS lanes (
+    slug TEXT PRIMARY KEY,
+    title TEXT NOT NULL DEFAULT '',
+    bot_token TEXT NOT NULL,
+    bot_username TEXT NOT NULL DEFAULT '',
+    api_key TEXT NOT NULL UNIQUE,
+    webhook_secret TEXT NOT NULL,
+    default_chat_id TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS messages (
+    lane_slug TEXT NOT NULL,
+    update_id INTEGER NOT NULL,
+    message_id INTEGER,
+    chat_id INTEGER,
+    chat_title TEXT,
+    from_user TEXT,
+    text TEXT,
+    date INTEGER NOT NULL DEFAULT 0,
+    is_outgoing INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (lane_slug, update_id)
+);
+CREATE INDEX IF NOT EXISTS idx_messages_date ON messages(date);
+CREATE TABLE IF NOT EXISTS lane_state (
+    lane_slug TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT,
+    PRIMARY KEY (lane_slug, key)
+);
+CREATE TABLE IF NOT EXISTS seen_chats (
+    lane_slug TEXT NOT NULL,
+    chat_id INTEGER NOT NULL,
+    title TEXT,
+    last_date INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (lane_slug, chat_id)
+);
+CREATE TABLE IF NOT EXISTS hub_state (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+"""
+
+
+def connect() -> sqlite3.Connection:
+    settings.db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(settings.db_path, timeout=10)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.executescript(SCHEMA)
+    return conn
+
+
+def new_api_key() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def new_webhook_secret() -> str:
+    return secrets.token_urlsafe(24)
+
+
+# --- hub state -----------------------------------------------------------
+
+
+def get_hub_state(key: str) -> str | None:
+    with connect() as conn:
+        row = conn.execute("SELECT value FROM hub_state WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+
+def set_hub_state(key: str, value: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO hub_state(key, value) VALUES(?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+
+
+def session_secret() -> str:
+    secret = get_hub_state("session_secret")
+    if not secret:
+        secret = secrets.token_urlsafe(32)
+        set_hub_state("session_secret", secret)
+    return secret
+
+
+# --- lanes ---------------------------------------------------------------
+
+
+def lane_to_dict(row: sqlite3.Row, include_secrets: bool = False) -> dict:
+    d = {
+        "slug": row["slug"],
+        "title": row["title"],
+        "botUsername": row["bot_username"],
+        "defaultChatId": row["default_chat_id"],
+        "enabled": bool(row["enabled"]),
+        "createdAt": row["created_at"],
+    }
+    if include_secrets:
+        d["apiKey"] = row["api_key"]
+    return d
+
+
+def create_lane(slug: str, title: str, bot_token: str, bot_username: str, default_chat_id: str) -> dict:
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO lanes(slug, title, bot_token, bot_username, api_key, webhook_secret, "
+            "default_chat_id, enabled, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, 1, ?)",
+            (
+                slug,
+                title,
+                bot_token,
+                bot_username,
+                new_api_key(),
+                new_webhook_secret(),
+                default_chat_id,
+                int(time.time()),
+            ),
+        )
+    return get_lane(slug)  # type: ignore[return-value]
+
+
+def get_lane(slug: str) -> dict | None:
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM lanes WHERE slug = ?", (slug,)).fetchone()
+        return dict(row) if row else None
+
+
+def list_lanes() -> list[dict]:
+    with connect() as conn:
+        return [dict(r) for r in conn.execute("SELECT * FROM lanes ORDER BY created_at")]
+
+
+def update_lane(slug: str, fields: dict) -> dict | None:
+    allowed = {"title", "bot_token", "bot_username", "default_chat_id", "enabled"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if updates:
+        cols = ", ".join(f"{k} = ?" for k in updates)
+        with connect() as conn:
+            conn.execute(f"UPDATE lanes SET {cols} WHERE slug = ?", (*updates.values(), slug))
+    return get_lane(slug)
+
+
+def rotate_lane_key(slug: str) -> str:
+    key = new_api_key()
+    with connect() as conn:
+        conn.execute("UPDATE lanes SET api_key = ? WHERE slug = ?", (key, slug))
+    return key
+
+
+def delete_lane(slug: str) -> None:
+    # Message history is intentionally kept — it is the team's chat archive.
+    with connect() as conn:
+        conn.execute("DELETE FROM lanes WHERE slug = ?", (slug,))
+        conn.execute("DELETE FROM lane_state WHERE lane_slug = ?", (slug,))
+
+
+# --- lane state (poll offsets) -------------------------------------------
+
+
+def get_lane_state(slug: str, key: str) -> str | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT value FROM lane_state WHERE lane_slug = ? AND key = ?", (slug, key)
+        ).fetchone()
+        return row["value"] if row else None
+
+
+def set_lane_state(slug: str, key: str, value: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO lane_state(lane_slug, key, value) VALUES(?, ?, ?) "
+            "ON CONFLICT(lane_slug, key) DO UPDATE SET value = excluded.value",
+            (slug, key, value),
+        )
+
+
+# --- messages ------------------------------------------------------------
+
+
+def store_message(
+    lane_slug: str,
+    update_id: int,
+    message_id: int | None,
+    chat_id: int | None,
+    chat_title: str | None,
+    from_user: str,
+    text: str,
+    date: int,
+    is_outgoing: bool = False,
+) -> None:
+    with connect() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO messages "
+            "(lane_slug, update_id, message_id, chat_id, chat_title, from_user, text, date, is_outgoing) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (lane_slug, update_id, message_id, chat_id, chat_title, from_user, text, date, int(is_outgoing)),
+        )
+        if chat_id is not None:
+            conn.execute(
+                "INSERT INTO seen_chats(lane_slug, chat_id, title, last_date) VALUES(?, ?, ?, ?) "
+                "ON CONFLICT(lane_slug, chat_id) DO UPDATE SET "
+                "title = excluded.title, last_date = MAX(last_date, excluded.last_date)",
+                (lane_slug, chat_id, chat_title or "", date),
+            )
+
+
+def next_outgoing_update_id(lane_slug: str) -> int:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(MAX(update_id), ?) AS m FROM messages WHERE lane_slug = ? AND update_id >= ?",
+            (OUTGOING_BASE - 1, lane_slug, OUTGOING_BASE),
+        ).fetchone()
+        return row["m"] + 1
+
+
+def _msg_to_dict(r: sqlite3.Row) -> dict:
+    return {
+        "lane": r["lane_slug"],
+        "updateId": r["update_id"],
+        "messageId": r["message_id"],
+        "chatId": r["chat_id"],
+        "chatTitle": r["chat_title"],
+        "from": r["from_user"],
+        "text": r["text"],
+        "date": r["date"],
+        "outgoing": bool(r["is_outgoing"]),
+    }
+
+
+def query_messages(lane_slug: str, since: int, limit: int, order: str) -> list[dict]:
+    direction = "DESC" if order == "desc" else "ASC"
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM messages WHERE lane_slug = ? AND update_id > ? "
+            f"ORDER BY update_id {direction} LIMIT ?",
+            (lane_slug, since, limit),
+        ).fetchall()
+        return [_msg_to_dict(r) for r in rows]
+
+
+def query_feed(since_date: int, limit: int, order: str, chat_id: int | None = None) -> list[dict]:
+    """Whole-chat merged feed across every lane.
+
+    Human messages are captured by every bot in the chat (each under its own
+    update_id), so rows are deduped by (chat_id, message_id). Each bot's own
+    outgoing rows exist only in its lane and survive the merge. Sorted by date
+    (update_ids are per-bot and not comparable across lanes).
+    """
+    where = "date > ?"
+    params: list = [since_date]
+    if chat_id is not None:
+        where += " AND chat_id = ?"
+        params.append(chat_id)
+    with connect() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM messages WHERE {where} ORDER BY date, message_id", params
+        ).fetchall()
+    picked: dict[tuple, sqlite3.Row] = {}
+    for r in rows:
+        key = (r["chat_id"], r["message_id"]) if r["message_id"] is not None else (
+            r["lane_slug"], r["update_id"], None
+        )
+        if key not in picked:
+            picked[key] = r
+    merged = list(picked.values())
+    if order == "desc":
+        merged.reverse()
+    return [_msg_to_dict(r) for r in merged[:limit]]
+
+
+def count_messages(lane_slug: str | None = None) -> int:
+    with connect() as conn:
+        if lane_slug:
+            row = conn.execute(
+                "SELECT COUNT(*) AS c FROM messages WHERE lane_slug = ?", (lane_slug,)
+            ).fetchone()
+        else:
+            row = conn.execute("SELECT COUNT(*) AS c FROM messages").fetchone()
+        return row["c"]
+
+
+def seen_chats(lane_slug: str | None = None) -> list[dict]:
+    with connect() as conn:
+        if lane_slug:
+            rows = conn.execute(
+                "SELECT chat_id, title, MAX(last_date) AS last_date FROM seen_chats "
+                "WHERE lane_slug = ? GROUP BY chat_id ORDER BY last_date DESC",
+                (lane_slug,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT chat_id, title, MAX(last_date) AS last_date FROM seen_chats "
+                "GROUP BY chat_id ORDER BY last_date DESC"
+            ).fetchall()
+        return [
+            {"chatId": r["chat_id"], "title": r["title"], "lastDate": r["last_date"]} for r in rows
+        ]

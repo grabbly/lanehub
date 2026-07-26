@@ -1,0 +1,5 @@
+# Copy to ./Caddyfile and replace the domain. Caddy obtains and renews
+# Let's Encrypt certificates automatically (ports 80+443 must be reachable).
+hub.example.com {
+    reverse_proxy lanehub:8080
+}

@@ -1,0 +1,41 @@
+# LaneHub — self-hosted Telegram bridge hub.
+#
+# Plain setup (you provide TLS via your own nginx/caddy):
+#   docker compose up -d              → hub on 127.0.0.1:8080
+#
+# All-in-one with automatic HTTPS (Caddy obtains Let's Encrypt certs):
+#   cp Caddyfile.example Caddyfile    → put your domain in it
+#   docker compose --profile tls up -d
+services:
+  lanehub:
+    build: .
+    env_file: .env
+    environment:
+      HUB_DB_PATH: /data/hub.db
+    volumes:
+      - ./data:/data
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    profiles: ["tls"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
