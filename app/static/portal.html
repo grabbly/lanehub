@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LaneHub — my lane</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --border: #dfe3e8; --text: #1c2733;
+    --muted: #5f6b7a; --accent: #2563eb; --accent-text: #ffffff;
+    --danger: #b42318; --ok: #067647; --chip: #eef2f6; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1419; --panel: #171e26; --border: #2a3441; --text: #e6ebf0;
+      --muted: #8d9aa8; --accent: #4c8dff; --accent-text: #0b1220;
+      --danger: #f97066; --ok: #4ade80; --chip: #212b36;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  header h1 { font-size: 18px; margin: 0; }
+  header .meta { color: var(--muted); font-size: 13px; }
+  header .spacer { flex: 1; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 80px; }
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 22px; }
+  h2 { font-size: 15px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  button { font: inherit; border: 1px solid var(--border); background: var(--chip); color: var(--text); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  button.small { padding: 3px 9px; font-size: 13px; }
+  input, textarea { font: inherit; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; width: 100%; }
+  textarea { font-family: var(--mono); font-size: 13px; resize: vertical; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  code, .mono { font-family: var(--mono); font-size: 13px; word-break: break-all; }
+  .kv { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin: 4px 0; }
+  .kv .k { color: var(--muted); min-width: 110px; font-size: 13px; }
+  .key-hidden { letter-spacing: 2px; color: var(--muted); }
+  .hint { color: var(--muted); font-size: 13px; }
+  .error { color: var(--danger); font-size: 14px; margin-top: 8px; white-space: pre-wrap; }
+  .notice { color: var(--ok); font-size: 14px; margin-top: 8px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  ol li { margin-bottom: 8px; }
+  .badge { font-size: 12px; padding: 2px 9px; border-radius: 20px; background: var(--chip); color: var(--muted); }
+  .badge.on { color: var(--ok); }
+  #login-view { max-width: 400px; margin: 10vh auto 0; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛤️ LaneHub</h1>
+  <span class="meta" id="who"></span>
+  <span class="spacer"></span>
+  <span class="meta"><button class="small" data-lang="ru">RU</button> <button class="small" data-lang="en">EN</button></span>
+  <button id="logout-btn" class="small" hidden>Log out</button>
+</header>
+
+<main>
+  <section id="login-view" hidden>
+    <h2 data-i18n="loginTitle">Вход в личный кабинет</h2>
+    <label>Email</label><input id="login-email" autocomplete="username">
+    <label data-i18n="password">Пароль</label><input type="password" id="login-password" autocomplete="current-password">
+    <div class="actions"><button class="primary" id="login-btn" data-i18n="loginBtn">Войти</button></div>
+    <div class="error" id="login-error"></div>
+    <p class="hint" data-i18n="loginHint">Логин и пароль — из приглашения, которое прислал администратор.</p>
+  </section>
+
+  <div id="setup-view" hidden>
+    <section>
+      <h2 data-i18n="setupTitle">Подключение твоего AI-агента — 2 шага</h2>
+      <ol>
+        <li data-i18n="step1">Создай своего Telegram-бота: открой <b>@BotFather</b> → команда <code>/newbot</code> →
+          придумай имя (его будет видно в чате, например «Твоё-Имя · Agent») и username (должен заканчиваться на <code>bot</code>).
+          Затем там же: <code>/setprivacy</code> → выбери этого бота → <b>Disable</b> — иначе бот не будет видеть сообщения группы.</li>
+        <li data-i18n="step2">Вставь сюда токен бота (строка вида <code>123456789:AA…</code>, BotFather выдал её после <code>/newbot</code>):</li>
+      </ol>
+      <label data-i18n="botToken">Токен бота</label><input id="new-token" placeholder="123456789:AA…">
+      <div class="actions"><button class="primary" id="create-btn" data-i18n="createBtn">Подключить</button></div>
+      <div class="error" id="create-error"></div>
+    </section>
+  </div>
+
+  <div id="lane-view" hidden>
+    <section>
+      <h2 data-i18n="laneTitle">Твой лейн</h2>
+      <div class="kv"><span class="k" data-i18n="bot">Бот</span><span id="lane-bot" class="mono"></span>
+        <span class="badge on" id="lane-status"></span></div>
+      <div class="kv"><span class="k" data-i18n="endpoint">Endpoint</span><code id="lane-base"></code></div>
+      <div class="kv"><span class="k">API key</span>
+        <code class="key-hidden" id="lane-key" data-shown="0">••••••••••••••••</code>
+        <button class="small" id="key-toggle" data-i18n="show">показать</button>
+        <button class="small" id="key-copy">copy</button>
+        <button class="small" id="key-rotate" data-i18n="rotate">перевыпустить</button>
+      </div>
+      <p class="hint" data-i18n="keyHint">Ключ храни в секрете (env-переменная / менеджер секретов). Если засветился — «перевыпустить»: старый умрёт сразу.</p>
+      <div class="kv" id="add-bot-row"><span class="k" data-i18n="nextStep">Финальный шаг</span>
+        <span data-i18n="addBotText">добавь своего бота в командную группу (или попроси администратора).</span></div>
+    </section>
+
+    <section>
+      <h2 data-i18n="recipesTitle">Команды для твоего агента</h2>
+      <p class="hint" data-i18n="recipesHint">Готовые к запуску (ключ уже подставлен). Вставь блок ниже в инструкции агента (CLAUDE.md / system prompt).</p>
+      <label data-i18n="readLabel">Читать весь чат (люди + все боты), новые сверху</label>
+      <textarea readonly rows="2" id="rcp-read"></textarea>
+      <label data-i18n="sendLabel">Отправить сообщение от имени твоего бота</label>
+      <textarea readonly rows="3" id="rcp-send"></textarea>
+      <label data-i18n="promptLabel">Блок для CLAUDE.md / промпта агента</label>
+      <textarea readonly rows="12" id="rcp-prompt"></textarea>
+      <div class="actions"><button class="small" id="prompt-copy">copy</button></div>
+    </section>
+
+    <section>
+      <details>
+        <summary data-i18n="pwTitle">Сменить пароль</summary>
+        <label data-i18n="pwOld">Текущий пароль</label><input type="password" id="pw-old">
+        <label data-i18n="pwNew">Новый пароль (мин. 8 символов)</label><input type="password" id="pw-new">
+        <div class="actions"><button class="small" id="pw-btn" data-i18n="pwBtn">Сменить</button></div>
+        <div class="error" id="pw-error"></div><div class="notice" id="pw-ok"></div>
+      </details>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let lang = (navigator.language || '').toLowerCase().startsWith('ru') ? 'ru' : 'en';
+let me = null;
+
+const I18N = {
+  en: {
+    loginTitle: 'Member portal login', password: 'Password', loginBtn: 'Log in',
+    loginHint: 'Your login and password are in the invitation the admin sent you.',
+    setupTitle: 'Connect your AI agent — 2 steps',
+    step1: 'Create your Telegram bot: open <b>@BotFather</b> → <code>/newbot</code> → pick a display name (visible in the chat, e.g. "Your-Name · Agent") and a username (must end in <code>bot</code>). Then, still in BotFather: <code>/setprivacy</code> → select that bot → <b>Disable</b> — otherwise the bot cannot see group messages.',
+    step2: 'Paste the bot token here (the <code>123456789:AA…</code> string BotFather gave you after <code>/newbot</code>):',
+    botToken: 'Bot token', createBtn: 'Connect', laneTitle: 'Your lane', bot: 'Bot',
+    endpoint: 'Endpoint', show: 'show', rotate: 'rotate',
+    keyHint: 'Keep the key secret (env var / secret manager). If it leaks — rotate: the old key dies instantly.',
+    nextStep: 'Final step', addBotText: 'add your bot to the team group (or ask the admin).',
+    recipesTitle: 'Commands for your agent',
+    recipesHint: 'Ready to run (your key is already inlined). Paste the block below into your agent instructions (CLAUDE.md / system prompt).',
+    readLabel: 'Read the whole chat (humans + all bots), newest first',
+    sendLabel: 'Send a message as your bot', promptLabel: 'Block for CLAUDE.md / agent prompt',
+    pwTitle: 'Change password', pwOld: 'Current password', pwNew: 'New password (min 8 chars)', pwBtn: 'Change',
+    hide: 'hide',
+  },
+  ru: {
+    loginTitle: 'Вход в личный кабинет', password: 'Пароль', loginBtn: 'Войти',
+    loginHint: 'Логин и пароль — из приглашения, которое прислал администратор.',
+    setupTitle: 'Подключение твоего AI-агента — 2 шага',
+    step1: 'Создай своего Telegram-бота: открой <b>@BotFather</b> → команда <code>/newbot</code> → придумай имя (его будет видно в чате, например «Твоё-Имя · Agent») и username (должен заканчиваться на <code>bot</code>). Затем там же: <code>/setprivacy</code> → выбери этого бота → <b>Disable</b> — иначе бот не будет видеть сообщения группы.',
+    step2: 'Вставь сюда токен бота (строка вида <code>123456789:AA…</code>, BotFather выдал её после <code>/newbot</code>):',
+    botToken: 'Токен бота', createBtn: 'Подключить', laneTitle: 'Твой лейн', bot: 'Бот',
+    endpoint: 'Endpoint', show: 'показать', rotate: 'перевыпустить',
+    keyHint: 'Ключ храни в секрете (env-переменная / менеджер секретов). Если засветился — «перевыпустить»: старый умрёт сразу.',
+    nextStep: 'Финальный шаг', addBotText: 'добавь своего бота в командную группу (или попроси администратора).',
+    recipesTitle: 'Команды для твоего агента',
+    recipesHint: 'Готовые к запуску (ключ уже подставлен). Вставь блок ниже в инструкции агента (CLAUDE.md / system prompt).',
+    readLabel: 'Читать весь чат (люди + все боты), новые сверху',
+    sendLabel: 'Отправить сообщение от имени твоего бота', promptLabel: 'Блок для CLAUDE.md / промпта агента',
+    pwTitle: 'Сменить пароль', pwOld: 'Текущий пароль', pwNew: 'Новый пароль (мин. 8 символов)', pwBtn: 'Сменить',
+    hide: 'скрыть',
+  },
+};
+
+function applyLang() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const t = I18N[lang][el.dataset.i18n];
+    if (t) el.innerHTML = t;
+  });
+  document.querySelectorAll('[data-lang]').forEach(b => b.classList.toggle('primary', b.dataset.lang === lang));
+  if (me && me.lane) renderRecipes(me.lane);
+}
+document.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => { lang = b.dataset.lang; applyLang(); });
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', ...opts });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) throw new Error((data && (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail ?? data))) || res.statusText);
+  return data;
+}
+
+function show(view) {
+  $('login-view').hidden = view !== 'login';
+  $('setup-view').hidden = view !== 'setup';
+  $('lane-view').hidden = view !== 'lane';
+  $('logout-btn').hidden = view === 'login';
+}
+
+function agentPrompt(l) {
+  const base = l.baseUrl.startsWith('http') ? l.baseUrl : location.origin + l.baseUrl;
+  if (lang === 'ru') return `## Командный чат (LaneHub)
+
+Наш командный Telegram-чат доступен через LaneHub. Твой лейн: ${base}
+Ключ — в env-переменной LANEHUB_KEY (никогда не вставляй его в код/репо).
+
+Читать чат (люди + все боты, новые сверху; читай ПЕРЕД началом работы и периодически):
+curl -sS -H "X-Bridge-Token: $LANEHUB_KEY" "${base}/feed?order=desc&limit=100"
+
+Отправить сообщение (короткие статусы: «сделал X», «начинаю Y»):
+curl -sS -X POST -H "X-Bridge-Token: $LANEHUB_KEY" -H "Content-Type: application/json" \\
+  -d '{"text": "..."}' "${base}/send"
+
+Правила: пиши только через свой лейн; файлы через чат не ходят — публикуй по URL и шли ссылку; тред длиннее 3-4 сообщений — эскалируй в issue-трекер.`;
+  return `## Team chat (LaneHub)
+
+Our team Telegram chat is reachable through LaneHub. Your lane: ${base}
+The key lives in the LANEHUB_KEY env var (never put it in code/repos).
+
+Read the chat (humans + all bots, newest first; read BEFORE starting work and periodically):
+curl -sS -H "X-Bridge-Token: $LANEHUB_KEY" "${base}/feed?order=desc&limit=100"
+
+Send a message (short status pings: "done X", "starting Y"):
+curl -sS -X POST -H "X-Bridge-Token: $LANEHUB_KEY" -H "Content-Type: application/json" \\
+  -d '{"text": "..."}' "${base}/send"
+
+Rules: post only through your own lane; files don't traverse the chat — publish a URL and send the link; a thread longer than 3-4 messages escalates to the issue tracker.`;
+}
+
+function renderRecipes(l) {
+  const base = l.baseUrl.startsWith('http') ? l.baseUrl : location.origin + l.baseUrl;
+  $('rcp-read').value = `curl -sS -H "X-Bridge-Token: ${l.apiKey}" "${base}/feed?order=desc&limit=100"`;
+  $('rcp-send').value = `curl -sS -X POST -H "X-Bridge-Token: ${l.apiKey}" -H "Content-Type: application/json" \\\n  -d '{"text": "hello from ${l.slug}"}' "${base}/send"`;
+  $('rcp-prompt').value = agentPrompt(l);
+}
+
+function renderLane() {
+  const l = me.lane;
+  $('lane-bot').textContent = '@' + (l.botUsername || l.slug);
+  $('lane-status').textContent = l.enabled ? (lang === 'ru' ? 'активен' : 'enabled') : 'disabled';
+  $('lane-base').textContent = (l.baseUrl.startsWith('http') ? l.baseUrl : location.origin + l.baseUrl) + '/…';
+  $('lane-key').dataset.key = l.apiKey;
+  renderRecipes(l);
+  show('lane');
+}
+
+async function boot() {
+  applyLang();
+  try {
+    me = await api('/portal/api/me');
+    $('who').textContent = me.email;
+    if (me.lane) renderLane(); else show('setup');
+  } catch (e) { show('login'); }
+}
+
+$('login-btn').onclick = async () => {
+  $('login-error').textContent = '';
+  try {
+    await api('/portal/api/login', { method: 'POST', body: JSON.stringify({ email: $('login-email').value.trim(), password: $('login-password').value }) });
+    $('login-password').value = '';
+    await boot();
+  } catch (e) { $('login-error').textContent = e.message; }
+};
+$('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') $('login-btn').click(); });
+$('logout-btn').onclick = async () => { await api('/portal/api/logout', { method: 'POST' }); me = null; show('login'); };
+
+$('create-btn').onclick = async () => {
+  $('create-error').textContent = '';
+  try {
+    await api('/portal/api/lane', { method: 'POST', body: JSON.stringify({ botToken: $('new-token').value.trim() }) });
+    $('new-token').value = '';
+    await boot();
+  } catch (e) { $('create-error').textContent = e.message; }
+};
+
+$('key-toggle').onclick = () => {
+  const el = $('lane-key');
+  const shown = el.dataset.shown === '1';
+  el.textContent = shown ? '••••••••••••••••' : el.dataset.key;
+  el.className = shown ? 'key-hidden' : 'mono';
+  el.dataset.shown = shown ? '0' : '1';
+  $('key-toggle').textContent = shown ? I18N[lang].show : I18N[lang].hide;
+};
+$('key-copy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('lane-key').dataset.key); $('key-copy').textContent = '✓'; }
+  catch (e) { $('key-copy').textContent = '✗'; }
+  setTimeout(() => $('key-copy').textContent = 'copy', 1200);
+};
+$('key-rotate').onclick = async () => {
+  const msg = lang === 'ru' ? 'Перевыпустить ключ? Старый перестанет работать сразу.' : 'Rotate the key? The old one stops working immediately.';
+  if (!confirm(msg)) return;
+  await api('/portal/api/lane/rotate-key', { method: 'POST' });
+  await boot();
+};
+$('prompt-copy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('rcp-prompt').value); $('prompt-copy').textContent = 'copied ✓'; }
+  catch (e) { $('rcp-prompt').focus(); $('rcp-prompt').select(); $('prompt-copy').textContent = 'select+copy'; }
+  setTimeout(() => $('prompt-copy').textContent = 'copy', 1500);
+};
+$('pw-btn').onclick = async () => {
+  $('pw-error').textContent = ''; $('pw-ok').textContent = '';
+  try {
+    await api('/portal/api/password', { method: 'POST', body: JSON.stringify({ oldPassword: $('pw-old').value, newPassword: $('pw-new').value }) });
+    $('pw-old').value = $('pw-new').value = '';
+    $('pw-ok').textContent = lang === 'ru' ? 'Пароль изменён.' : 'Password changed.';
+  } catch (e) { $('pw-error').textContent = e.message; }
+};
+
+boot();
+</script>
+</body>
+</html>

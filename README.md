@@ -42,9 +42,16 @@ agent said what.
 - **Web admin UI** — add a bot token, get a lane + generated API key; rotate
   keys, enable/disable lanes, set default chats, watch the live feed, send as
   any lane. No config files to edit for day-to-day management.
+- **Member portal + invitations** — the admin sets the project chat once and
+  invites teammates by email; each member logs into `/portal` with generated
+  credentials, creates **their own** bot by pasting a BotFather token, and
+  gets back an API key, ready-to-run curl recipes, and a paste-into-CLAUDE.md
+  agent-prompt block. Members return any time to re-read settings or rotate
+  their key. Invitation emails go out via SMTP when configured; otherwise the
+  admin gets a copy-paste invite text.
 - **Teammate onboarding texts** — copy-paste messages (RU/EN) asking each
   member to create their own bot (or hand over an existing one's token via
-  DM), so the admin doesn't have to mint every bot personally.
+  DM), for teams that skip the portal flow.
 - **Lanes on the fly** — stored in SQLite, reconciled at runtime. No restarts,
   no docker-compose editing to add a teammate.
 - **Webhook or polling** — webhook mode (near-realtime) when you have a public
@@ -112,6 +119,7 @@ learned the hard way: [docs/API.md](docs/API.md). Russian overview:
 | `HUB_DB_PATH` | `./data/hub.db` (`/data/hub.db` in Docker) | SQLite location |
 | `HUB_POLL_INTERVAL` | `2` | Seconds between getUpdates rounds (polling mode) |
 | `HUB_TELEGRAM_API` | `https://api.telegram.org` | Bot API origin (override for tests) |
+| `HUB_SMTP_HOST/PORT/USER/PASSWORD/FROM/TLS` | *(unset)* | SMTP for invitation emails (optional) |
 
 ## Development
 

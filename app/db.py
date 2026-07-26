@@ -18,7 +18,7 @@ from .config import settings
 # collide with real Telegram update_ids (32-bit ints) and sort after them.
 OUTGOING_BASE = 1_000_000_000_000_000
 
-RESERVED_SLUGS = {"admin", "api", "health", "version", "static", "assets", "docs", "favicon.ico"}
+RESERVED_SLUGS = {"admin", "portal", "api", "health", "version", "static", "assets", "docs", "favicon.ico"}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS lanes (
@@ -61,6 +61,14 @@ CREATE TABLE IF NOT EXISTS seen_chats (
 CREATE TABLE IF NOT EXISTS hub_state (
     key TEXT PRIMARY KEY,
     value TEXT
+);
+CREATE TABLE IF NOT EXISTS members (
+    email TEXT PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    password_hash TEXT NOT NULL,
+    lane_slug TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    last_login INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -106,6 +114,61 @@ def session_secret() -> str:
         secret = secrets.token_urlsafe(32)
         set_hub_state("session_secret", secret)
     return secret
+
+
+# --- members ---------------------------------------------------------------
+
+
+def hash_password(password: str) -> str:
+    import hashlib
+
+    salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), 200_000)
+    return f"{salt}${dk.hex()}"
+
+
+def check_password(password: str, stored: str) -> bool:
+    import hashlib
+
+    try:
+        salt, expected = stored.split("$", 1)
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), 200_000)
+    except (ValueError,):
+        return False
+    return secrets.compare_digest(dk.hex(), expected)
+
+
+def create_member(email: str, name: str, password_hash: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO members(email, name, password_hash, created_at) VALUES(?, ?, ?, ?)",
+            (email, name, password_hash, int(time.time())),
+        )
+
+
+def get_member(email: str) -> dict | None:
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM members WHERE email = ?", (email,)).fetchone()
+        return dict(row) if row else None
+
+
+def list_members() -> list[dict]:
+    with connect() as conn:
+        return [dict(r) for r in conn.execute("SELECT * FROM members ORDER BY created_at")]
+
+
+def update_member(email: str, fields: dict) -> None:
+    allowed = {"name", "password_hash", "lane_slug", "last_login"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if updates:
+        cols = ", ".join(f"{k} = ?" for k in updates)
+        with connect() as conn:
+            conn.execute(f"UPDATE members SET {cols} WHERE email = ?", (*updates.values(), email))
+
+
+def delete_member(email: str) -> None:
+    with connect() as conn:
+        conn.execute("DELETE FROM members WHERE email = ?", (email,))
 
 
 # --- lanes ---------------------------------------------------------------

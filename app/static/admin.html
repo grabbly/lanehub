@@ -122,6 +122,25 @@
     </section>
 
     <section>
+      <h2>Team</h2>
+      <p class="hint">Set the <b>project chat</b> once — every new lane (including ones members create
+        themselves) inherits it. Then invite teammates: each gets portal credentials by email
+        (or as a copy-paste text) and connects their own bot in the member portal at <code>/portal</code>.</p>
+      <div class="kv"><span class="k">Project chat</span>
+        <input id="project-chat" style="max-width:260px;" placeholder="-100… group/channel id">
+        <button class="small" id="project-chat-save">save</button>
+        <span class="hint" id="team-meta"></span>
+      </div>
+      <div id="members" style="margin-top:10px;"></div>
+      <div class="grid cols-2" style="margin-top:10px;">
+        <div><label>Email</label><input id="inv-email" placeholder="teammate@example.com"></div>
+        <div><label>Name (optional)</label><input id="inv-name" placeholder="Denis"></div>
+      </div>
+      <div class="actions"><button class="primary" id="invite-btn">✉️ Invite teammate</button></div>
+      <div class="error" id="invite-error"></div>
+    </section>
+
+    <section>
       <h2>Feed — the whole chat</h2>
       <div class="feed-controls">
         <select id="feed-chat"><option value="">all chats</option></select>
@@ -383,6 +402,86 @@ $('create-lane-btn').onclick = async () => {
   } catch (e) { $('create-error').textContent = e.message; }
 };
 
+// ---------- team ----------
+
+async function loadTeam() {
+  const [st, ms] = await Promise.all([api('/admin/api/settings'), api('/admin/api/members')]);
+  $('project-chat').value = st.projectChatId || '';
+  $('team-meta').textContent = `portal: ${st.portalUrl} · email: ${st.smtpConfigured ? 'SMTP configured' : 'not configured (copy-paste invites)'}`;
+  const box = $('members');
+  box.innerHTML = ms.members.length ? '' : '<p class="hint">No members invited yet.</p>';
+  ms.members.forEach(m => {
+    const row = document.createElement('div');
+    row.className = 'kv';
+    row.innerHTML = `
+      <span class="mono">${esc(m.email)}</span>
+      <span>${esc(m.name || '')}</span>
+      <span class="badge ${m.laneSlug ? 'on' : ''}">${m.laneSlug ? 'lane /' + esc(m.laneSlug) : 'no lane yet'}</span>
+      <span class="hint">${m.lastLogin ? 'seen ' + fmtDate(m.lastLogin) : 'never logged in'}</span>
+      <button class="small" data-act="reset">re-issue invite</button>
+      <button class="small danger" data-act="del">remove</button>`;
+    row.querySelector('[data-act=reset]').onclick = async () => {
+      if (!confirm(`Re-issue the invite for ${m.email}? Their old password stops working.`)) return;
+      showInvite(await api(`/admin/api/members/${encodeURIComponent(m.email)}/reset-password`, { method: 'POST' }));
+      await loadTeam();
+    };
+    row.querySelector('[data-act=del]').onclick = async () => {
+      if (!confirm(`Remove member ${m.email}? Their lane (if any) stays and is managed in Lanes.`)) return;
+      await api(`/admin/api/members/${encodeURIComponent(m.email)}`, { method: 'DELETE' });
+      await loadTeam();
+    };
+    box.appendChild(row);
+  });
+}
+
+function showInvite(p) {
+  const dlg = document.createElement('dialog');
+  dlg.innerHTML = `
+    <div style="padding:18px 20px;">
+      <h2 style="margin-top:0;">Invitation — ${esc(p.email)}</h2>
+      ${p.emailSent ? '<p class="notice">Invitation email sent ✓</p>'
+        : '<p class="hint">Email not sent' + (p.emailError ? ' (<span class="error">' + esc(p.emailError) + '</span>)' : ' — SMTP not configured') + '. Send the text below yourself (DM / email):</p>'}
+      <div class="kv"><span class="k">Portal</span><code>${esc(p.portalUrl)}</code></div>
+      <div class="kv"><span class="k">Login</span><code>${esc(p.email)}</code></div>
+      <div class="kv"><span class="k">Password</span><code>${esc(p.password)}</code></div>
+      <label style="margin-top:10px;">Invite text (copy-paste)</label>
+      <textarea readonly rows="10">${esc(p.inviteText)}</textarea>
+      <div class="actions">
+        <button class="small" data-copy>copy invite text</button>
+        <span class="spacer" style="flex:1;"></span>
+        <button data-close>Close</button>
+      </div>
+      <p class="hint">The password is shown only here (stored hashed) — pass it on now or re-issue later.</p>
+    </div>`;
+  dlg.querySelector('[data-copy]').onclick = async (e) => {
+    try { await navigator.clipboard.writeText(p.inviteText); e.target.textContent = 'copied ✓'; }
+    catch (err) { dlg.querySelector('textarea').select(); e.target.textContent = 'select+copy manually'; }
+    setTimeout(() => e.target.textContent = 'copy invite text', 1500);
+  };
+  dlg.querySelector('[data-close]').onclick = () => dlg.close();
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.appendChild(dlg);
+  dlg.showModal();
+}
+
+$('invite-btn').onclick = async () => {
+  $('invite-error').textContent = '';
+  try {
+    const p = await api('/admin/api/members', {
+      method: 'POST',
+      body: JSON.stringify({ email: $('inv-email').value.trim(), name: $('inv-name').value.trim() }),
+    });
+    $('inv-email').value = $('inv-name').value = '';
+    showInvite(p);
+    await loadTeam();
+  } catch (e) { $('invite-error').textContent = e.message; }
+};
+
+$('project-chat-save').onclick = async () => {
+  await api('/admin/api/settings', { method: 'PATCH', body: JSON.stringify({ projectChatId: $('project-chat').value.trim() }) });
+  await loadTeam();
+};
+
 // ---------- feed ----------
 
 async function loadFeed() {
@@ -456,6 +555,7 @@ async function boot() {
   if (!st.authenticated) { showLogin(); return; }
   showApp();
   await loadLanes();
+  await loadTeam();
   await loadFeed();
 }
 boot();

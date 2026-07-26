@@ -17,6 +17,7 @@ from . import db
 from .config import VERSION, settings
 from .routes_admin import router as admin_router
 from .routes_bridge import router as bridge_router
+from .routes_portal import router as portal_router
 from .runtime import runtime
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -53,7 +54,12 @@ def create_app() -> FastAPI:
     async def admin_ui() -> FileResponse:
         return FileResponse(STATIC_DIR / "admin.html")
 
+    @app.get("/portal", include_in_schema=False)
+    async def portal_ui() -> FileResponse:
+        return FileResponse(STATIC_DIR / "portal.html")
+
     app.include_router(admin_router)
+    app.include_router(portal_router)
     app.include_router(bridge_router)
     return app
 

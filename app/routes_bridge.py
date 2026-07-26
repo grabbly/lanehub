@@ -50,7 +50,8 @@ async def perform_send(lane: dict, text: str, chat_id: str | None) -> dict:
     """Send text as the lane's bot (splitting long text into <=4000-char parts)
     and record each part as a synthetic outgoing row so other lanes' readers
     see it in /feed (Telegram never delivers a bot's messages to other bots)."""
-    target = (chat_id or lane["default_chat_id"] or "").strip()
+    # fallback chain: explicit chatId → lane default → hub-wide project chat
+    target = (chat_id or lane["default_chat_id"] or db.get_hub_state("project_chat_id") or "").strip()
     if not target:
         raise HTTPException(
             status_code=503,
