@@ -350,6 +350,13 @@ $('login-btn').onclick = async () => {
   $('login-error').textContent = '';
   try {
     await api('/admin/api/login', { method: 'POST', body: JSON.stringify({ password: $('login-password').value }) });
+    const st = await api('/admin/api/status');
+    if (!st.authenticated) {
+      $('login-error').textContent =
+        'Login succeeded but the session cookie was not stored. Access the hub over HTTPS ' +
+        '(or localhost) and make sure your reverse proxy forwards cookies.';
+      return;
+    }
     $('login-password').value = '';
     await boot();
   } catch (e) { $('login-error').textContent = e.message; }
