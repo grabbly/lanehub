@@ -119,7 +119,7 @@ learned the hard way: [docs/API.md](docs/API.md). Russian overview:
 | `HUB_DB_PATH` | `./data/hub.db` (`/data/hub.db` in Docker) | SQLite location |
 | `HUB_POLL_INTERVAL` | `2` | Seconds between getUpdates rounds (polling mode) |
 | `HUB_TELEGRAM_API` | `https://api.telegram.org` | Bot API origin (override for tests) |
-| `HUB_SMTP_HOST/PORT/USER/PASSWORD/FROM/TLS` | *(unset)* | SMTP for invitation emails (optional) |
+| `HUB_SMTP_HOST/PORT/USER/PASSWORD/FROM/TLS` | *(unset)* | SMTP fallback for invitation emails; usually configured in the admin panel instead (Team → Email settings, panel wins) |
 
 ## Development
 

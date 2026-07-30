@@ -131,6 +131,28 @@
         <button class="small" id="project-chat-save">save</button>
         <span class="hint" id="team-meta"></span>
       </div>
+      <details id="smtp-details" style="margin-top:8px;">
+        <summary style="cursor:pointer; font-weight:600;">📧 Email (SMTP) for invitation emails</summary>
+        <p class="hint" id="smtp-status" style="margin:8px 0 4px;"></p>
+        <div class="grid cols-4">
+          <div><label>SMTP host</label><input id="smtp-host" placeholder="smtp.example.com"></div>
+          <div><label>Port</label><input id="smtp-port" type="number" placeholder="587"></div>
+          <div><label>User / login</label><input id="smtp-user" placeholder="no-reply@example.com"></div>
+          <div><label>Password</label><input id="smtp-password" type="password" placeholder="(leave blank to keep)"></div>
+          <div><label>From address</label><input id="smtp-from" placeholder="no-reply@example.com"></div>
+          <div><label style="margin-bottom:10px;">STARTTLS</label>
+            <label style="display:flex; align-items:center; gap:6px; margin:0;">
+              <input type="checkbox" id="smtp-tls" checked style="width:auto;"> enabled</label></div>
+        </div>
+        <div class="actions">
+          <button class="small primary" id="smtp-save">Save SMTP</button>
+          <input id="smtp-test-to" placeholder="you@example.com" style="max-width:220px;">
+          <button class="small" id="smtp-test">Send test email</button>
+          <span class="notice" id="smtp-ok"></span><span class="error" id="smtp-err"></span>
+        </div>
+        <p class="hint">Stored in the hub database (same protection level as bot tokens).
+          Clearing the host falls back to <code>HUB_SMTP_*</code> env vars, if set.</p>
+      </details>
       <div id="members" style="margin-top:10px;"></div>
       <div class="grid cols-2" style="margin-top:10px;">
         <div><label>Email</label><input id="inv-email" placeholder="teammate@example.com"></div>
@@ -408,6 +430,19 @@ async function loadTeam() {
   const [st, ms] = await Promise.all([api('/admin/api/settings'), api('/admin/api/members')]);
   $('project-chat').value = st.projectChatId || '';
   $('team-meta').textContent = `portal: ${st.portalUrl} · email: ${st.smtpConfigured ? 'SMTP configured' : 'not configured (copy-paste invites)'}`;
+  const s = st.smtp || {};
+  $('smtp-status').textContent = s.source === 'panel'
+    ? `Active: configured here in the panel (${s.host}:${s.port}${s.passwordSet ? ', password set' : ''}).`
+    : s.source === 'env'
+      ? `Active: HUB_SMTP_* env vars (${s.host}:${s.port}). Saving here overrides them.`
+      : 'Not configured — invites are copy-paste only. Fill in and save to enable emails.';
+  if (document.activeElement?.id?.startsWith('smtp-') !== true) {
+    $('smtp-host').value = s.source === 'panel' ? s.host : '';
+    $('smtp-port').value = s.source === 'panel' ? s.port : '';
+    $('smtp-user').value = s.source === 'panel' ? s.user : '';
+    $('smtp-from').value = s.source === 'panel' ? s.from : '';
+    $('smtp-tls').checked = s.source === 'panel' ? !!s.tls : true;
+  }
   const box = $('members');
   box.innerHTML = ms.members.length ? '' : '<p class="hint">No members invited yet.</p>';
   ms.members.forEach(m => {
@@ -480,6 +515,33 @@ $('invite-btn').onclick = async () => {
 $('project-chat-save').onclick = async () => {
   await api('/admin/api/settings', { method: 'PATCH', body: JSON.stringify({ projectChatId: $('project-chat').value.trim() }) });
   await loadTeam();
+};
+
+$('smtp-save').onclick = async () => {
+  $('smtp-ok').textContent = ''; $('smtp-err').textContent = '';
+  const body = {
+    smtpHost: $('smtp-host').value.trim(),
+    smtpPort: parseInt($('smtp-port').value, 10) || 587,
+    smtpUser: $('smtp-user').value.trim(),
+    smtpFrom: $('smtp-from').value.trim(),
+    smtpTls: $('smtp-tls').checked,
+  };
+  if ($('smtp-password').value) body.smtpPassword = $('smtp-password').value;  // blank = keep stored
+  try {
+    await api('/admin/api/settings', { method: 'PATCH', body: JSON.stringify(body) });
+    $('smtp-password').value = '';
+    $('smtp-ok').textContent = 'Saved.';
+    await loadTeam();
+  } catch (e) { $('smtp-err').textContent = e.message; }
+  setTimeout(() => $('smtp-ok').textContent = '', 3000);
+};
+
+$('smtp-test').onclick = async () => {
+  $('smtp-ok').textContent = ''; $('smtp-err').textContent = '';
+  try {
+    await api('/admin/api/settings/test-email', { method: 'POST', body: JSON.stringify({ to: $('smtp-test-to').value.trim() }) });
+    $('smtp-ok').textContent = 'Test email sent ✓ — check the inbox.';
+  } catch (e) { $('smtp-err').textContent = e.message; }
 };
 
 // ---------- feed ----------

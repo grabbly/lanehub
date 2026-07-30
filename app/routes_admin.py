@@ -279,6 +279,12 @@ def portal_url() -> str:
 
 class SettingsUpdate(BaseModel):
     project_chat_id: str | None = Field(default=None, alias="projectChatId")
+    smtp_host: str | None = Field(default=None, alias="smtpHost")
+    smtp_port: int | None = Field(default=None, alias="smtpPort")
+    smtp_user: str | None = Field(default=None, alias="smtpUser")
+    smtp_password: str | None = Field(default=None, alias="smtpPassword")
+    smtp_from: str | None = Field(default=None, alias="smtpFrom")
+    smtp_tls: bool | None = Field(default=None, alias="smtpTls")
 
     model_config = {"populate_by_name": True}
 
@@ -288,13 +294,28 @@ class MemberInvite(BaseModel):
     name: str = ""
 
 
+class TestEmail(BaseModel):
+    to: str
+
+
 @router.get("/settings")
 async def settings_get(hub_session: str | None = Cookie(default=None)) -> dict:
     require_admin(hub_session)
+    cfg = mailer.smtp_config()
     return {
         "projectChatId": db.get_hub_state("project_chat_id") or "",
         "portalUrl": portal_url(),
-        "smtpConfigured": bool(settings.smtp_host),
+        "smtpConfigured": cfg.source != "none",
+        # password itself is never echoed back — only whether one is stored
+        "smtp": {
+            "host": cfg.host,
+            "port": cfg.port,
+            "user": cfg.user,
+            "from": cfg.from_addr,
+            "tls": cfg.tls,
+            "passwordSet": bool(cfg.password),
+            "source": cfg.source,
+        },
     }
 
 
@@ -303,7 +324,41 @@ async def settings_update(req: SettingsUpdate, hub_session: str | None = Cookie(
     require_admin(hub_session)
     if req.project_chat_id is not None:
         db.set_hub_state("project_chat_id", req.project_chat_id.strip())
+    # SMTP fields: only provided keys are written; password omitted = unchanged,
+    # empty host = drop panel config (fall back to env / none)
+    if req.smtp_host is not None:
+        db.set_hub_state("smtp_host", req.smtp_host.strip())
+    if req.smtp_port is not None:
+        db.set_hub_state("smtp_port", str(req.smtp_port))
+    if req.smtp_user is not None:
+        db.set_hub_state("smtp_user", req.smtp_user.strip())
+    if req.smtp_password is not None:
+        db.set_hub_state("smtp_password", req.smtp_password)
+    if req.smtp_from is not None:
+        db.set_hub_state("smtp_from", req.smtp_from.strip())
+    if req.smtp_tls is not None:
+        db.set_hub_state("smtp_tls", "1" if req.smtp_tls else "0")
     return await settings_get(hub_session)
+
+
+@router.post("/settings/test-email")
+async def settings_test_email(req: TestEmail, hub_session: str | None = Cookie(default=None)) -> dict:
+    require_admin(hub_session)
+    to = req.to.strip().lower()
+    if not EMAIL_RE.match(to):
+        raise HTTPException(status_code=422, detail="invalid email")
+    try:
+        sent = mailer.send_email(
+            to,
+            "LaneHub test email",
+            "SMTP settings work — this is a test email from your LaneHub admin panel.\n\n"
+            "SMTP настроен верно — это проверочное письмо из админ-панели LaneHub.",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"send failed: {exc}")
+    if not sent:
+        raise HTTPException(status_code=400, detail="SMTP is not configured")
+    return {"ok": True}
 
 
 def _member_view(m: dict) -> dict:
