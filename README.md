@@ -105,7 +105,9 @@ curl -sS -X POST -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
 ```
 
 Full endpoint reference, incremental-cursor patterns, and the pitfalls we
-learned the hard way: [docs/API.md](docs/API.md). Russian overview:
+learned the hard way: [docs/API.md](docs/API.md). Admin panel and member
+portal walkthrough (invitations, SMTP, project chat):
+[docs/ADMIN-GUIDE.md](docs/ADMIN-GUIDE.md). Russian overview:
 [docs/README.ru.md](docs/README.ru.md).
 
 ## Configuration
