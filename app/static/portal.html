@@ -61,11 +61,17 @@
 <main>
   <section id="login-view" hidden>
     <h2 data-i18n="loginTitle">Вход в личный кабинет</h2>
-    <label>Email</label><input id="login-email" autocomplete="username">
-    <label data-i18n="password">Пароль</label><input type="password" id="login-password" autocomplete="current-password">
-    <div class="actions"><button class="primary" id="login-btn" data-i18n="loginBtn">Войти</button></div>
-    <div class="error" id="login-error"></div>
-    <p class="hint" data-i18n="loginHint">Логин и пароль — из приглашения, которое прислал администратор.</p>
+    <!-- A real <form> + submit event is what makes browser password managers
+         (Safari/iCloud Keychain especially) offer to save the credentials. -->
+    <form id="login-form">
+      <label for="login-email">Email</label>
+      <input id="login-email" name="username" type="email" autocomplete="username">
+      <label for="login-password" data-i18n="password">Пароль</label>
+      <input type="password" name="password" id="login-password" autocomplete="current-password">
+      <div class="actions"><button class="primary" id="login-btn" type="submit" data-i18n="loginBtn">Войти</button></div>
+      <div class="error" id="login-error"></div>
+      <p class="hint" data-i18n="loginHint">Логин и пароль — из приглашения, которое прислал администратор.</p>
+    </form>
   </section>
 
   <div id="setup-view" hidden>
@@ -247,15 +253,19 @@ async function boot() {
   } catch (e) { show('login'); }
 }
 
-$('login-btn').onclick = async () => {
+// Submit (not click) so the browser sees a real login and offers to save the
+// password; Enter comes for free from the form.
+$('login-form').addEventListener('submit', async e => {
+  e.preventDefault();
   $('login-error').textContent = '';
   try {
     await api('/portal/api/login', { method: 'POST', body: JSON.stringify({ email: $('login-email').value.trim(), password: $('login-password').value }) });
-    $('login-password').value = '';
+    // Leave the field alone until the manager has processed the submit, else
+    // Safari sometimes captures an empty password.
+    setTimeout(() => { $('login-password').value = ''; }, 1000);
     await boot();
   } catch (e) { $('login-error').textContent = e.message; }
-};
-$('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') $('login-btn').click(); });
+});
 $('logout-btn').onclick = async () => { await api('/portal/api/logout', { method: 'POST' }); me = null; show('login'); };
 
 $('create-btn').onclick = async () => {

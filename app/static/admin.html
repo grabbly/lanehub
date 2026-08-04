@@ -68,6 +68,9 @@
   .error { color: var(--danger); font-size: 14px; margin-top: 8px; white-space: pre-wrap; }
   .notice { color: var(--ok); font-size: 14px; margin-top: 8px; }
   #login-view { max-width: 380px; margin: 12vh auto 0; }
+  /* Off-screen rather than display:none — password managers ignore hidden fields. */
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+             overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
   .hint { color: var(--muted); font-size: 13px; }
   dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--text); max-width: 560px; width: 92vw; }
   dialog::backdrop { background: rgba(0,0,0,.45); }
@@ -84,12 +87,20 @@
 <main>
   <section id="login-view" hidden>
     <h2>Admin login</h2>
-    <div class="grid">
-      <div><label>Password</label><input type="password" id="login-password" autocomplete="current-password"></div>
-      <button class="primary" id="login-btn">Log in</button>
+    <!-- A real <form> with a username field is what makes browser password
+         managers (Safari/iCloud Keychain especially) offer to save the
+         password: they need a submit event and an account to key the entry on.
+         The hub authenticates by password alone, so the username is fixed and
+         only visually hidden — never display:none, which managers skip. -->
+    <form id="login-form" class="grid">
+      <input type="text" name="username" id="login-username" value="admin"
+             autocomplete="username" class="sr-only" tabindex="-1" aria-hidden="true">
+      <div><label for="login-password">Password</label>
+        <input type="password" name="password" id="login-password" autocomplete="current-password"></div>
+      <button class="primary" id="login-btn" type="submit">Log in</button>
       <div class="error" id="login-error"></div>
       <p class="hint">The password is the <code>HUB_ADMIN_PASSWORD</code> value from the server's <code>.env</code>.</p>
-    </div>
+    </form>
   </section>
 
   <div id="app-view" hidden>
@@ -588,7 +599,10 @@ $('send-btn').onclick = async () => {
 
 // ---------- auth ----------
 
-$('login-btn').onclick = async () => {
+// Submit (not click) so the browser sees a real login and offers to save the
+// password; Enter comes for free from the form.
+$('login-form').addEventListener('submit', async e => {
+  e.preventDefault();
   $('login-error').textContent = '';
   try {
     await api('/admin/api/login', { method: 'POST', body: JSON.stringify({ password: $('login-password').value }) });
@@ -599,11 +613,12 @@ $('login-btn').onclick = async () => {
         '(or localhost) and make sure your reverse proxy forwards cookies.';
       return;
     }
-    $('login-password').value = '';
+    // Leave the field alone until the manager has processed the submit, else
+    // Safari sometimes captures an empty password.
+    setTimeout(() => { $('login-password').value = ''; }, 1000);
     await boot();
   } catch (e) { $('login-error').textContent = e.message; }
-};
-$('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') $('login-btn').click(); });
+});
 $('logout-btn').onclick = async () => { await api('/admin/api/logout', { method: 'POST' }); showLogin(); };
 
 async function boot() {
