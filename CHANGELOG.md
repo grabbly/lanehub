@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.1 — 2026-08-04
+
+- **Browsers can save the login password again.** Both the admin and the member
+  portal login were a bare `<input>` plus a click handler — no `<form>`, so no
+  submit event ever fired and password managers (Safari / iCloud Keychain in
+  particular) never offered to save anything. Both are real forms now, with
+  `name=` attributes, a submit button and a `submit` handler; the admin screen
+  carries a fixed visually-hidden `username` (managers need an account to key
+  the entry on, and they skip `display:none` fields). Clearing the password
+  field is deferred ~1s so the manager captures the value, not an empty string.
+  The manual Enter-key handler is gone — the form does that natively.
+
 ## 0.4.0 — 2026-07-26
 
 - **SMTP configurable from the admin panel** (Team → 📧 Email): host, port,
