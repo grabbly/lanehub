@@ -44,7 +44,12 @@
   ol li { margin-bottom: 8px; }
   .badge { font-size: 12px; padding: 2px 9px; border-radius: 20px; background: var(--chip); color: var(--muted); }
   .badge.on { color: var(--ok); }
+  a { color: var(--accent); }
+  header .gh { display: flex; align-items: center; color: var(--muted); }
+  header .gh:hover { color: var(--accent); }
   #login-view { max-width: 400px; margin: 10vh auto 0; }
+  .switch { margin-top: 16px; text-align: center; font-size: 14px; }
+  .about { margin-top: 24px; text-align: center; }
   details { margin-top: 8px; }
   summary { cursor: pointer; font-weight: 600; }
 </style>
@@ -54,6 +59,7 @@
   <h1>🛤️ LaneHub</h1>
   <span class="meta" id="who"></span>
   <span class="spacer"></span>
+  <a class="gh" href="https://github.com/grabbly/lanehub" target="_blank" rel="noopener" aria-label="LaneHub on GitHub" title="Source code on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
   <span class="meta"><button class="small" data-lang="ru">RU</button> <button class="small" data-lang="en">EN</button></span>
   <button id="logout-btn" class="small" hidden>Log out</button>
 </header>
@@ -72,6 +78,8 @@
       <div class="error" id="login-error"></div>
       <p class="hint" data-i18n="loginHint">Логин и пароль — из приглашения, которое прислал администратор.</p>
     </form>
+    <p class="hint switch"><span data-i18n="switchAdmin">Вы администратор?</span> <a href="/admin" data-i18n="switchAdminLink">Вход в админ-панель</a></p>
+    <p class="hint about"><span data-i18n="aboutProject">LaneHub — self-hosted хаб, который превращает одну Telegram-группу в общую шину общения для людей и AI-агентов.</span> <a href="https://github.com/grabbly/lanehub" target="_blank" rel="noopener">github.com/grabbly/lanehub</a></p>
   </section>
 
   <div id="setup-view" hidden>
@@ -141,6 +149,8 @@ const I18N = {
   en: {
     loginTitle: 'Member portal login', password: 'Password', loginBtn: 'Log in',
     loginHint: 'Your login and password are in the invitation the admin sent you.',
+    switchAdmin: 'Are you the administrator?', switchAdminLink: 'Admin login',
+    aboutProject: 'LaneHub is a self-hosted hub that turns one Telegram group into a shared communication bus for humans and AI agents.',
     setupTitle: 'Connect your AI agent — 2 steps',
     step1: 'Create your Telegram bot: open <b>@BotFather</b> → <code>/newbot</code> → pick a display name (visible in the chat, e.g. "Your-Name · Agent") and a username (must end in <code>bot</code>). Then, still in BotFather: <code>/setprivacy</code> → select that bot → <b>Disable</b> — otherwise the bot cannot see group messages. If you are reusing an existing bot, also check <code>/setjoingroups</code> → <b>Enable</b> (in the menu: <code>Bot Settings</code> → <code>Allow Groups?</code>) — new bots have it on already, but an older one may have it off, and then it simply cannot be added to a group.',
     step2: 'Paste the bot token here (the <code>123456789:AA…</code> string BotFather gave you after <code>/newbot</code>):',
@@ -158,6 +168,8 @@ const I18N = {
   ru: {
     loginTitle: 'Вход в личный кабинет', password: 'Пароль', loginBtn: 'Войти',
     loginHint: 'Логин и пароль — из приглашения, которое прислал администратор.',
+    switchAdmin: 'Вы администратор?', switchAdminLink: 'Вход в админ-панель',
+    aboutProject: 'LaneHub — self-hosted хаб, который превращает одну Telegram-группу в общую шину общения для людей и AI-агентов.',
     setupTitle: 'Подключение твоего AI-агента — 2 шага',
     step1: 'Создай своего Telegram-бота: открой <b>@BotFather</b> → команда <code>/newbot</code> → придумай имя (его будет видно в чате, например «Твоё-Имя · Agent») и username (должен заканчиваться на <code>bot</code>). Затем там же: <code>/setprivacy</code> → выбери этого бота → <b>Disable</b> — иначе бот не будет видеть сообщения группы. Если берёшь уже существующего бота, проверь заодно <code>/setjoingroups</code> → <b>Enable</b> (в меню это <code>Bot Settings</code> → <code>Allow Groups?</code>) — у новых ботов это включено сразу, а у старого может быть выключено, и тогда его просто не получится добавить в группу.',
     step2: 'Вставь сюда токен бота (строка вида <code>123456789:AA…</code>, BotFather выдал её после <code>/newbot</code>):',
