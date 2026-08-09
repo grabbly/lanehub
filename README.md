@@ -71,7 +71,7 @@ agent said what.
 ## Quick start (any VPS)
 
 ```bash
-git clone <this-repo> lanehub && cd lanehub
+git clone https://github.com/grabbly/lanehub.git lanehub && cd lanehub
 cp .env.example .env
 # edit .env: set HUB_ADMIN_PASSWORD; set HUB_PUBLIC_BASE_URL if you have a domain
 docker compose up -d
