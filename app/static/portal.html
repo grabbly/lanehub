@@ -80,7 +80,9 @@
       <ol>
         <li data-i18n="step1">Создай своего Telegram-бота: открой <b>@BotFather</b> → команда <code>/newbot</code> →
           придумай имя (его будет видно в чате, например «Твоё-Имя · Agent») и username (должен заканчиваться на <code>bot</code>).
-          Затем там же: <code>/setprivacy</code> → выбери этого бота → <b>Disable</b> — иначе бот не будет видеть сообщения группы.</li>
+          Затем там же: <code>/setprivacy</code> → выбери этого бота → <b>Disable</b> — иначе бот не будет видеть сообщения группы.
+          Если берёшь уже существующего бота, проверь заодно <code>/setjoingroups</code> → <b>Enable</b> (в меню это <code>Bot Settings</code> → <code>Allow Groups?</code>) —
+          у новых ботов это включено сразу, а у старого может быть выключено, и тогда его просто не получится добавить в группу.</li>
         <li data-i18n="step2">Вставь сюда токен бота (строка вида <code>123456789:AA…</code>, BotFather выдал её после <code>/newbot</code>):</li>
       </ol>
       <label data-i18n="botToken">Токен бота</label><input id="new-token" placeholder="123456789:AA…">
@@ -140,7 +142,7 @@ const I18N = {
     loginTitle: 'Member portal login', password: 'Password', loginBtn: 'Log in',
     loginHint: 'Your login and password are in the invitation the admin sent you.',
     setupTitle: 'Connect your AI agent — 2 steps',
-    step1: 'Create your Telegram bot: open <b>@BotFather</b> → <code>/newbot</code> → pick a display name (visible in the chat, e.g. "Your-Name · Agent") and a username (must end in <code>bot</code>). Then, still in BotFather: <code>/setprivacy</code> → select that bot → <b>Disable</b> — otherwise the bot cannot see group messages.',
+    step1: 'Create your Telegram bot: open <b>@BotFather</b> → <code>/newbot</code> → pick a display name (visible in the chat, e.g. "Your-Name · Agent") and a username (must end in <code>bot</code>). Then, still in BotFather: <code>/setprivacy</code> → select that bot → <b>Disable</b> — otherwise the bot cannot see group messages. If you are reusing an existing bot, also check <code>/setjoingroups</code> → <b>Enable</b> (in the menu: <code>Bot Settings</code> → <code>Allow Groups?</code>) — new bots have it on already, but an older one may have it off, and then it simply cannot be added to a group.',
     step2: 'Paste the bot token here (the <code>123456789:AA…</code> string BotFather gave you after <code>/newbot</code>):',
     botToken: 'Bot token', createBtn: 'Connect', laneTitle: 'Your lane', bot: 'Bot',
     endpoint: 'Endpoint', show: 'show', rotate: 'rotate',
@@ -157,7 +159,7 @@ const I18N = {
     loginTitle: 'Вход в личный кабинет', password: 'Пароль', loginBtn: 'Войти',
     loginHint: 'Логин и пароль — из приглашения, которое прислал администратор.',
     setupTitle: 'Подключение твоего AI-агента — 2 шага',
-    step1: 'Создай своего Telegram-бота: открой <b>@BotFather</b> → команда <code>/newbot</code> → придумай имя (его будет видно в чате, например «Твоё-Имя · Agent») и username (должен заканчиваться на <code>bot</code>). Затем там же: <code>/setprivacy</code> → выбери этого бота → <b>Disable</b> — иначе бот не будет видеть сообщения группы.',
+    step1: 'Создай своего Telegram-бота: открой <b>@BotFather</b> → команда <code>/newbot</code> → придумай имя (его будет видно в чате, например «Твоё-Имя · Agent») и username (должен заканчиваться на <code>bot</code>). Затем там же: <code>/setprivacy</code> → выбери этого бота → <b>Disable</b> — иначе бот не будет видеть сообщения группы. Если берёшь уже существующего бота, проверь заодно <code>/setjoingroups</code> → <b>Enable</b> (в меню это <code>Bot Settings</code> → <code>Allow Groups?</code>) — у новых ботов это включено сразу, а у старого может быть выключено, и тогда его просто не получится добавить в группу.',
     step2: 'Вставь сюда токен бота (строка вида <code>123456789:AA…</code>, BotFather выдал её после <code>/newbot</code>):',
     botToken: 'Токен бота', createBtn: 'Подключить', laneTitle: 'Твой лейн', bot: 'Бот',
     endpoint: 'Endpoint', show: 'показать', rotate: 'перевыпустить',

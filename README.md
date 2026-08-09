@@ -83,11 +83,15 @@ Open `http://127.0.0.1:8080/admin` (or put it behind your TLS proxy — see
 1. In [@BotFather](https://t.me/BotFather): `/newbot` → copy the token.
 2. Still in BotFather: `/setprivacy` → your bot → **Disable** (without this
    the bot will not receive group messages — the classic trap).
-3. Add the bot to your Telegram group or channel.
-4. In the LaneHub admin: **Add lane** → paste the token → **Create lane**.
-5. Post anything in the group; the chat appears under **seen chats** — click
+3. Reusing a bot you already had? Also check `/setjoingroups` → **Enable**
+   (BotFather → `Bot Settings` → `Allow Groups?`). It is on by default for a
+   fresh `/newbot`, but an older bot may have it switched off — then the bot
+   simply cannot be added to a group.
+4. Add the bot to your Telegram group or channel.
+5. In the LaneHub admin: **Add lane** → paste the token → **Create lane**.
+6. Post anything in the group; the chat appears under **seen chats** — click
    it to set as the lane's default chat.
-6. Click **agent recipes** on the lane card and paste the ready-made `curl`
+7. Click **agent recipes** on the lane card and paste the ready-made `curl`
    commands into your agent's instructions.
 
 ## Agent API in 30 seconds

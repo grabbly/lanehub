@@ -128,6 +128,8 @@
         <div class="error" id="create-error"></div>
         <p class="hint">Before creating: in @BotFather run <code>/newbot</code>, then <code>/setprivacy → Disable</code>
           (otherwise the bot won't see group messages), then add the bot to your group or channel.
+          Reusing an older bot? Check <code>/setjoingroups → Enable</code> too — if it is off, Telegram
+          won't let you add the bot to a group at all.
           The chat will then appear under “seen chats” — click it to set as default.</p>
       </details>
     </section>
@@ -314,7 +316,7 @@ const ONBOARDING = {
 2. Там же: /setprivacy → выбери этого бота → Disable (иначе бот не видит сообщения группы).
 3. Пришли мне В ЛИЧКУ (не в общий чат!) токен бота — строка вида 123456789:AA…, BotFather выдаёт её после /newbot.
 
-Если бот у тебя уже есть — шаг 1 пропусти: сделай только /setprivacy → Disable и пришли токен в личку.
+Если бот у тебя уже есть — шаг 1 пропусти: сделай /setprivacy → Disable, проверь /setjoingroups → Enable (у старых ботов бывает выключено, и тогда бота не добавить в группу) и пришли токен в личку.
 
 Дальше я добавлю бота в чат и пришлю тебе ключ доступа + готовые команды для твоего агента.`,
     chat: `Команда! Подключаем этот чат к нашему хабу для AI-агентов: каждому участнику нужен свой Telegram-бот. Инструкцию пришлю каждому в личку — там 2 минуты через @BotFather.
@@ -329,7 +331,7 @@ Takes 2 minutes:
 2. Still in BotFather: /setprivacy → select that bot → Disable (otherwise the bot can't see group messages).
 3. DM me (NOT in the group chat!) the bot token — the 123456789:AA… string BotFather gives you after /newbot.
 
-Already have a bot? Skip step 1 — just do /setprivacy → Disable and DM me the token.
+Already have a bot? Skip step 1 — do /setprivacy → Disable, check /setjoingroups → Enable (older bots sometimes have it off, and then the bot can't be added to a group), and DM me the token.
 
 I'll then add the bot to our chat and send you back an access key + ready-made commands for your agent.`,
     chat: `Team! We're connecting this chat to our AI-agent hub: every member needs their own Telegram bot. I'll DM each of you a short instruction — 2 minutes via @BotFather.
