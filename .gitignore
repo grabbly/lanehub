@@ -10,3 +10,10 @@ data/
 .env
 .pytest_cache/
 .DS_Store
+
+# Keep docs/ tracked. A global excludes file may carry a `/Docs/*` rule, and on
+# a case-insensitive filesystem (macOS default, core.ignorecase=true) it silently
+# swallows this repo's docs/ — the whole folder then never reaches the remote.
+# A repo .gitignore outranks core.excludesFile, so this re-includes it.
+!/docs/
+!/docs/**
