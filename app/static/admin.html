@@ -391,9 +391,41 @@ function showOnboarding() {
 }
 $('onboarding-btn').onclick = showOnboarding;
 
+// Same block the portal hands out (portal.html agentPrompt), for lanes created here.
+function agentPrompt(l, lang) {
+  const base = `${location.origin}/${l.slug}`;
+  if (lang === 'ru') return `## Командный чат (LaneHub)
+
+Наш командный Telegram-чат доступен через LaneHub. Твой лейн: ${base}
+Ключ — в env-переменной LANEHUB_KEY (никогда не вставляй его в код/репо).
+
+Читать чат (люди + все боты, новые сверху; читай ПЕРЕД началом работы и периодически):
+curl -sS -H "X-Bridge-Token: $LANEHUB_KEY" "${base}/feed?order=desc&limit=100"
+
+Отправить сообщение (короткие статусы: «сделал X», «начинаю Y»):
+curl -sS -X POST -H "X-Bridge-Token: $LANEHUB_KEY" -H "Content-Type: application/json" \\
+  -d '{"text": "..."}' "${base}/send"
+
+Правила: пиши только через свой лейн; файлы через чат не ходят — публикуй по URL и шли ссылку; тред длиннее 3-4 сообщений — эскалируй в issue-трекер.`;
+  return `## Team chat (LaneHub)
+
+Our team Telegram chat is reachable through LaneHub. Your lane: ${base}
+The key lives in the LANEHUB_KEY env var (never put it in code/repos).
+
+Read the chat (humans + all bots, newest first; read BEFORE starting work and periodically):
+curl -sS -H "X-Bridge-Token: $LANEHUB_KEY" "${base}/feed?order=desc&limit=100"
+
+Send a message (short status pings: "done X", "starting Y"):
+curl -sS -X POST -H "X-Bridge-Token: $LANEHUB_KEY" -H "Content-Type: application/json" \\
+  -d '{"text": "..."}' "${base}/send"
+
+Rules: post only through your own lane; files don't traverse the chat — publish a URL and send the link; a thread longer than 3-4 messages escalates to the issue tracker.`;
+}
+
 function showRecipes(l) {
   const base = location.origin;
   const dlg = document.createElement('dialog');
+  let lang = 'ru';
   dlg.innerHTML = `
     <div style="padding:18px 20px;">
       <h2 style="margin-top:0;">Agent recipes — /${esc(l.slug)}</h2>
@@ -406,11 +438,36 @@ function showRecipes(l) {
   -d '{"text": "hello from ${l.slug}"}' "${base}/${l.slug}/send"</textarea>
       <label style="margin-top:10px;">Incremental cursor (own lane)</label>
       <textarea readonly rows="2">curl -sS -H "X-Bridge-Token: $KEY" "${base}/${l.slug}/messages?since=&lt;updateId&gt;&limit=200"</textarea>
-      <div class="actions" style="justify-content:flex-end;"><button data-close>Close</button></div>
+      <label style="margin-top:10px;">Block for CLAUDE.md / agent prompt
+        <span style="float:right;">
+          <button class="small" data-lang="ru">Русский</button>
+          <button class="small" data-lang="en">English</button>
+        </span>
+      </label>
+      <textarea readonly rows="14" data-prompt></textarea>
+      <div class="actions" style="justify-content:flex-end;"><button data-copy-prompt class="small">copy</button><button data-close>Close</button></div>
     </div>`;
+  const render = () => {
+    dlg.querySelector('[data-prompt]').value = agentPrompt(l, lang);
+    dlg.querySelectorAll('[data-lang]').forEach(b => b.classList.toggle('primary', b.dataset.lang === lang));
+  };
+  dlg.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => { lang = b.dataset.lang; render(); });
+  const cp = dlg.querySelector('[data-copy-prompt]');
+  cp.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(agentPrompt(l, lang));
+      cp.textContent = 'copied ✓';
+    } catch {
+      const t = dlg.querySelector('[data-prompt]');
+      t.focus(); t.select();  // clipboard API blocked — leave the text selected
+      cp.textContent = 'select+copy manually';
+    }
+    setTimeout(() => cp.textContent = 'copy', 1500);
+  };
   dlg.querySelector('[data-close]').onclick = () => dlg.close();
   dlg.addEventListener('close', () => dlg.remove());
   document.body.appendChild(dlg);
+  render();
   dlg.showModal();
 }
 
