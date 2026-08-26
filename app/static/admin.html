@@ -317,7 +317,7 @@ function laneCard(l) {
 // bot (or the admin creates one for them as a fallback). Tokens go via DM only.
 const ONBOARDING = {
   ru: {
-    dm: `Привет! Подключаем наш командный чат к хабу: у каждого участника будет свой Telegram-бот — через него твой AI-агент читает общий чат и пишет от твоего имени.
+    dm: `Привет! Подключаем наш командный чат к хабу (${location.origin}): у каждого участника будет свой Telegram-бот — через него твой AI-агент читает общий чат и пишет от твоего имени.
 
 Нужно 2 минуты:
 1. Открой @BotFather → /newbot → задай имя (видно в чате, напр. «Имя · Agent») и username (заканчивается на bot).
@@ -326,13 +326,13 @@ const ONBOARDING = {
 
 Если бот у тебя уже есть — шаг 1 пропусти: сделай /setprivacy → Disable, проверь /setjoingroups → Enable (у старых ботов бывает выключено, и тогда бота не добавить в группу) и пришли токен в личку.
 
-Дальше я добавлю бота в чат и пришлю тебе ключ доступа + готовые команды для твоего агента.`,
+Дальше я добавлю бота в чат и пришлю тебе готовую инструкцию для агента + ключ доступа отдельным сообщением.`,
     chat: `Команда! Подключаем этот чат к нашему хабу для AI-агентов: каждому участнику нужен свой Telegram-бот. Инструкцию пришлю каждому в личку — там 2 минуты через @BotFather.
 
 ⚠️ Токены ботов присылайте мне ТОЛЬКО в личку, не в этот чат.`,
   },
   en: {
-    dm: `Hi! We're connecting our team chat to a hub: every member gets their own Telegram bot — your AI agent reads the shared chat and posts as you through it.
+    dm: `Hi! We're connecting our team chat to a hub (${location.origin}): every member gets their own Telegram bot — your AI agent reads the shared chat and posts as you through it.
 
 Takes 2 minutes:
 1. Open @BotFather → /newbot → pick a display name (visible in the chat, e.g. "Name · Agent") and a username (must end in "bot").
@@ -341,7 +341,7 @@ Takes 2 minutes:
 
 Already have a bot? Skip step 1 — do /setprivacy → Disable, check /setjoingroups → Enable (older bots sometimes have it off, and then the bot can't be added to a group), and DM me the token.
 
-I'll then add the bot to our chat and send you back an access key + ready-made commands for your agent.`,
+I'll then add the bot to our chat and send you back a ready-made agent instruction + the access key in a separate message.`,
     chat: `Team! We're connecting this chat to our AI-agent hub: every member needs their own Telegram bot. I'll DM each of you a short instruction — 2 minutes via @BotFather.
 
 ⚠️ Send bot tokens to me via DM ONLY, never into this chat.`,
@@ -422,15 +422,54 @@ curl -sS -X POST -H "X-Bridge-Token: $LANEHUB_KEY" -H "Content-Type: application
 Rules: post only through your own lane; files don't traverse the chat — publish a URL and send the link; a thread longer than 3-4 messages escalates to the issue tracker.`;
 }
 
+// One paste-into-DM message for the teammate: lane URL + agent instruction.
+// The API key deliberately stays out — it travels in its own message.
+function handoffMessage(l, lang) {
+  const base = `${location.origin}/${l.slug}`;
+  if (lang === 'ru') return `Готово — твой бот подключён к нашему хабу.
+
+Твой лейн: ${base}
+API-ключ пришлю отдельным сообщением. Положи его в env-переменную LANEHUB_KEY (в код/репо не вставляй):
+export LANEHUB_KEY="<ключ из отдельного сообщения>"
+
+Вставь этот блок в CLAUDE.md / промпт своего агента:
+
+${agentPrompt(l, lang)}`;
+  return `Done — your bot is connected to our hub.
+
+Your lane: ${base}
+I'll send the API key in a separate message. Put it in the LANEHUB_KEY env var (never in code/repos):
+export LANEHUB_KEY="<key from the separate message>"
+
+Paste this block into your CLAUDE.md / agent prompt:
+
+${agentPrompt(l, lang)}`;
+}
+
 function showRecipes(l) {
   const base = location.origin;
   const dlg = document.createElement('dialog');
   let lang = 'ru';
   dlg.innerHTML = `
     <div style="padding:18px 20px;">
-      <h2 style="margin-top:0;">Agent recipes — /${esc(l.slug)}</h2>
-      <p class="hint">Put the API key in an env var (never in a repo). Read the whole chat with <code>/feed</code>;
-      always use <code>order=desc</code> to get the newest messages.</p>
+      <h2 style="margin-top:0;">Agent recipes — /${esc(l.slug)}
+        <span style="float:right;">
+          <button class="small" data-lang="ru">Русский</button>
+          <button class="small" data-lang="en">English</button>
+        </span>
+      </h2>
+      <label>Message for the teammate — one paste: lane URL + agent instruction</label>
+      <textarea readonly rows="12" data-handoff></textarea>
+      <div class="actions">
+        <button class="small" data-copy-handoff>copy message</button>
+        <button class="small" data-copy-key>copy API key (send separately)</button>
+      </div>
+      <input readonly data-key-fallback hidden style="margin-top:6px;">
+      <label style="margin-top:10px;">Block for CLAUDE.md / agent prompt (alone)</label>
+      <textarea readonly rows="8" data-prompt></textarea>
+      <div class="actions"><button class="small" data-copy-prompt>copy</button></div>
+      <p class="hint" style="margin-top:10px;">Raw commands (put the key in an env var, never in a repo; always
+      <code>order=desc</code> for the newest messages first):</p>
       <label>Read the whole chat (all bots + humans)</label>
       <textarea readonly rows="2">curl -sS -H "X-Bridge-Token: $KEY" "${base}/${l.slug}/feed?order=desc&limit=100"</textarea>
       <label style="margin-top:10px;">Send a message</label>
@@ -438,32 +477,39 @@ function showRecipes(l) {
   -d '{"text": "hello from ${l.slug}"}' "${base}/${l.slug}/send"</textarea>
       <label style="margin-top:10px;">Incremental cursor (own lane)</label>
       <textarea readonly rows="2">curl -sS -H "X-Bridge-Token: $KEY" "${base}/${l.slug}/messages?since=&lt;updateId&gt;&limit=200"</textarea>
-      <label style="margin-top:10px;">Block for CLAUDE.md / agent prompt
-        <span style="float:right;">
-          <button class="small" data-lang="ru">Русский</button>
-          <button class="small" data-lang="en">English</button>
-        </span>
-      </label>
-      <textarea readonly rows="14" data-prompt></textarea>
-      <div class="actions" style="justify-content:flex-end;"><button data-copy-prompt class="small">copy</button><button data-close>Close</button></div>
+      <div class="actions" style="justify-content:flex-end;"><button data-close>Close</button></div>
     </div>`;
   const render = () => {
+    dlg.querySelector('[data-handoff]').value = handoffMessage(l, lang);
     dlg.querySelector('[data-prompt]').value = agentPrompt(l, lang);
     dlg.querySelectorAll('[data-lang]').forEach(b => b.classList.toggle('primary', b.dataset.lang === lang));
   };
   dlg.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => { lang = b.dataset.lang; render(); });
-  const cp = dlg.querySelector('[data-copy-prompt]');
-  cp.onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(agentPrompt(l, lang));
-      cp.textContent = 'copied ✓';
-    } catch {
-      const t = dlg.querySelector('[data-prompt]');
-      t.focus(); t.select();  // clipboard API blocked — leave the text selected
-      cp.textContent = 'select+copy manually';
-    }
-    setTimeout(() => cp.textContent = 'copy', 1500);
+  const wireCopy = (btnSel, getText, tareaSel) => {
+    const btn = dlg.querySelector(btnSel);
+    const idle = btn.textContent;
+    btn.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(getText());
+        btn.textContent = 'copied ✓';
+      } catch {
+        // clipboard API blocked — leave the text selected for a manual copy
+        if (tareaSel) {
+          const t = dlg.querySelector(tareaSel);
+          t.focus(); t.select();
+        } else {
+          const inp = dlg.querySelector('[data-key-fallback]');
+          inp.hidden = false; inp.value = getText();
+          inp.focus(); inp.select();
+        }
+        btn.textContent = 'select+copy manually';
+      }
+      setTimeout(() => btn.textContent = idle, 1500);
+    };
   };
+  wireCopy('[data-copy-handoff]', () => handoffMessage(l, lang), '[data-handoff]');
+  wireCopy('[data-copy-prompt]', () => agentPrompt(l, lang), '[data-prompt]');
+  wireCopy('[data-copy-key]', () => l.apiKey, null);
   dlg.querySelector('[data-close]').onclick = () => dlg.close();
   dlg.addEventListener('close', () => dlg.remove());
   document.body.appendChild(dlg);
