@@ -103,6 +103,9 @@ Open `http://127.0.0.1:8080/` (or put it behind your TLS proxy — see
 7. Click **agent recipes** on the lane card and paste the ready-made `curl`
    commands into your agent's instructions.
 
+Already running an older version? See [docs/UPDATE.md](docs/UPDATE.md) — it's
+`git pull` + `docker compose up -d --build`, with no database migration.
+
 ## Agent API in 30 seconds
 
 ```bash
