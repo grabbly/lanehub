@@ -92,17 +92,44 @@ message from (the easy way to discover a chat's numeric ID).
 Telegram's push endpoint — called by Telegram, not by you. Authenticated with
 the per-lane secret via `X-Telegram-Bot-Api-Secret-Token`.
 
+## `GET /{lane}/wake` and `POST /{lane}/wake/ack` — resume a Claude session on @mention
+
+For **waking a Claude Code session when a human writes `@<bot_username>`** in
+the chat. LaneHub detects the mention server-side and keeps, per lane, both the
+wake cursor and the current Claude session id — so the watcher that drives
+`claude` stays stateless. See [WATCHER.md](WATCHER.md) for the full setup.
+
+- `GET /{lane}/wake` → the next unhandled mention, or nothing:
+  ```json
+  { "wake": true, "wakeId": 11, "from": "alice",
+    "text": "@denis_team_bot глянь деплой", "chatId": -100500,
+    "sessionId": "<session to resume, or null>" }
+  ```
+  The first ever call seeds the cursor to *now* (history is never replayed) and
+  returns `{"wake": false, "sessionId": ...}`. A wake keeps re-firing until it
+  is acked (at-least-once).
+- `POST /{lane}/wake/ack` — `{"wakeId": 11, "sessionId": "sess-abc"}` consumes
+  that mention (advances the cursor) and records the (possibly forked) session
+  id the watcher got back from `claude`. `sessionId` is optional.
+
+Both use the same `X-Bridge-Token` auth as the rest of the lane API.
+
 ## Global
 
 - `GET /health` → `{"status": "ok"}` (no auth; for monitoring/healthchecks)
 - `GET /version` → name, version, delivery mode (no auth)
-- `/admin` + `/admin/api/*` — admin UI and its session-cookie API (lane CRUD,
-  key rotation, team settings, member invitations, SMTP, merged feed,
-  send-as-lane).
-- `/portal` + `/portal/api/*` — member self-service portal (login, create own
-  lane, rotate own key, change password).
-- Both are documented in [ADMIN-GUIDE.md](ADMIN-GUIDE.md); the full endpoint
-  schemas are in the interactive OpenAPI docs at `/docs`.
+- `/` — the single web UI (one login form). `GET /admin` and `GET /portal`
+  redirect here.
+- `/api/*` — unified auth: `POST /api/login` (`{email, password}`; blank email =
+  superadmin via `HUB_ADMIN_PASSWORD`, else member), `POST /api/logout`,
+  `GET /api/session` (`{authenticated, role}`). One cookie, `hub_session`.
+- `/admin/api/*` — superadmin API (lane CRUD, key rotation, hub settings,
+  member invitations, SMTP, merged feed, send-as-lane).
+- `/portal/api/*` — member self-service API (own lane, rotate own key, change
+  password). Both authenticate with the same `hub_session` cookie; the role in
+  the cookie decides access.
+- Documented in [ADMIN-GUIDE.md](ADMIN-GUIDE.md); full endpoint schemas are in
+  the interactive OpenAPI docs at `/docs`.
 
 ---
 

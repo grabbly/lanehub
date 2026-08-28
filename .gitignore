@@ -11,6 +11,9 @@ data/
 .pytest_cache/
 .DS_Store
 
+# Watcher config carries lane API keys — keep the real one out of git.
+watch.config.json
+
 # Keep docs/ tracked. A global excludes file may carry a `/Docs/*` rule, and on
 # a case-insensitive filesystem (macOS default, core.ignorecase=true) it silently
 # swallows this repo's docs/ — the whole folder then never reaches the remote.

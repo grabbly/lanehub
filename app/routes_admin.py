@@ -1,23 +1,23 @@
-"""Admin API + session auth for the web UI.
+"""Superadmin API for the web UI.
 
-Login: POST /admin/api/login with the HUB_ADMIN_PASSWORD value → signed,
-expiring session cookie (HMAC over an expiry timestamp with a secret persisted
-in the DB). Everything under /admin/api/* except login requires the cookie.
+Login/logout live in routes_auth (POST /api/login sets the shared `hub_session`
+cookie — an HMAC over an expiry + subject, secret persisted in the DB). This
+module owns the token machinery (sign_token/token_subject/require_admin) plus
+every /admin/api/* endpoint, all of which require an admin-subject cookie.
 """
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import hmac
 import re
 import secrets as pysecrets
 import time
 
-from fastapi import APIRouter, Cookie, HTTPException, Response
+from fastapi import APIRouter, Cookie, HTTPException
 from pydantic import BaseModel, Field
 
 from . import db, mailer, telegram
-from .config import VERSION, settings
+from .config import settings
 from .routes_bridge import perform_send
 from .runtime import runtime
 
@@ -60,42 +60,6 @@ def _check_session(token: str | None) -> bool:
 def require_admin(hub_session: str | None = Cookie(default=None)) -> None:
     if not _check_session(hub_session):
         raise HTTPException(status_code=401, detail="admin login required")
-
-
-class LoginRequest(BaseModel):
-    password: str
-
-
-@router.post("/login")
-async def login(req: LoginRequest, response: Response) -> dict:
-    if not settings.admin_password:
-        raise HTTPException(status_code=503, detail="HUB_ADMIN_PASSWORD is not set — admin UI is locked")
-    if not pysecrets.compare_digest(req.password, settings.admin_password):
-        await asyncio.sleep(1)  # slow down brute force
-        raise HTTPException(status_code=401, detail="wrong password")
-    token = sign_token("admin", int(time.time()) + SESSION_TTL)
-    response.set_cookie(
-        SESSION_COOKIE, token, max_age=SESSION_TTL, httponly=True, samesite="lax", path="/"
-    )
-    return {"ok": True}
-
-
-@router.post("/logout")
-async def logout(response: Response) -> dict:
-    response.delete_cookie(SESSION_COOKIE, path="/")
-    return {"ok": True}
-
-
-@router.get("/status")
-async def status(hub_session: str | None = Cookie(default=None)) -> dict:
-    """Unauthenticated probe: tells the UI whether a login session is active."""
-    return {
-        "version": VERSION,
-        "authenticated": _check_session(hub_session),
-        "deliveryMode": settings.resolved_delivery_mode(),
-        "publicBaseUrl": settings.public_base_url or None,
-        "adminPasswordSet": bool(settings.admin_password),
-    }
 
 
 def _lane_view(lane: dict) -> dict:
@@ -273,8 +237,9 @@ async def lanes_send(slug: str, req: AdminSend, hub_session: str | None = Cookie
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-def portal_url() -> str:
-    return f"{settings.public_base_url}/portal" if settings.public_base_url else "/portal"
+def login_url() -> str:
+    """The single sign-in entrance members log into."""
+    return settings.public_base_url or "/"
 
 
 class SettingsUpdate(BaseModel):
@@ -304,7 +269,7 @@ async def settings_get(hub_session: str | None = Cookie(default=None)) -> dict:
     cfg = mailer.smtp_config()
     return {
         "projectChatId": db.get_hub_state("project_chat_id") or "",
-        "portalUrl": portal_url(),
+        "loginUrl": login_url(),
         "smtpConfigured": cfg.source != "none",
         # password itself is never echoed back — only whether one is stored
         "smtp": {
@@ -378,16 +343,16 @@ def _invite_payload(email: str, name: str) -> dict:
         db.update_member(email, {"password_hash": db.hash_password(password)})
     else:
         db.create_member(email, name, db.hash_password(password))
-    text = mailer.invite_text(email, password, portal_url())
+    text = mailer.invite_text(email, password, login_url())
     email_sent, email_error = False, None
     try:
-        email_sent = mailer.send_invite(email, password, portal_url())
+        email_sent = mailer.send_invite(email, password, login_url())
     except Exception as exc:
         email_error = str(exc)
     return {
         "email": email,
         "password": password,
-        "portalUrl": portal_url(),
+        "loginUrl": login_url(),
         "inviteText": text,
         "emailSent": email_sent,
         "emailError": email_error,

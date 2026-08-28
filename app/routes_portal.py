@@ -1,42 +1,36 @@
-"""Member self-service portal API.
+"""Member self-service API (the member half of the unified web UI).
 
-A member is invited by the admin (email + generated password), logs in at
-/portal, creates their OWN bot lane by pasting a BotFather token, and can
-come back any time for their API key, agent recipes, or a password change.
-Members can only ever touch their own lane.
+A member is invited by the admin (email + generated password), logs in through
+the single sign-in form, creates their OWN bot lane by pasting a BotFather
+token, and can come back any time for their API key, agent recipes, or a
+password change. Members can only ever touch their own lane.
+
+Login/logout are handled by the unified `/api/*` endpoints (routes_auth); these
+endpoints authenticate via the shared `hub_session` cookie.
 """
 from __future__ import annotations
 
 import asyncio
-import secrets as pysecrets
-import time
 
-from fastapi import APIRouter, Cookie, HTTPException, Response
+from fastapi import APIRouter, Cookie, HTTPException
 from pydantic import BaseModel, Field
 
 from . import db, telegram
 from .config import settings
-from .routes_admin import SESSION_TTL, derive_slug, sign_token, token_subject
+from .routes_admin import derive_slug, token_subject
 from .runtime import runtime
 
 router = APIRouter(prefix="/portal/api")
 
-MEMBER_COOKIE = "hub_member"
 
-
-def require_member(hub_member: str | None) -> dict:
-    subject = token_subject(hub_member)
+def require_member(hub_session: str | None) -> dict:
+    subject = token_subject(hub_session)
     if not subject or subject == "admin":
-        raise HTTPException(status_code=401, detail="portal login required")
+        raise HTTPException(status_code=401, detail="member login required")
     member = db.get_member(subject)
     if not member:
         raise HTTPException(status_code=401, detail="account no longer exists")
     return member
-
-
-class PortalLogin(BaseModel):
-    email: str
-    password: str
 
 
 class PortalLaneCreate(BaseModel):
@@ -51,26 +45,6 @@ class PasswordChange(BaseModel):
     new_password: str = Field(alias="newPassword", min_length=8)
 
     model_config = {"populate_by_name": True}
-
-
-@router.post("/login")
-async def login(req: PortalLogin, response: Response) -> dict:
-    member = db.get_member(req.email.strip().lower())
-    if not member or not db.check_password(req.password, member["password_hash"]):
-        await asyncio.sleep(1)  # slow down brute force
-        raise HTTPException(status_code=401, detail="wrong email or password")
-    db.update_member(member["email"], {"last_login": int(time.time())})
-    token = sign_token(member["email"], int(time.time()) + SESSION_TTL)
-    response.set_cookie(
-        MEMBER_COOKIE, token, max_age=SESSION_TTL, httponly=True, samesite="lax", path="/"
-    )
-    return {"ok": True}
-
-
-@router.post("/logout")
-async def logout(response: Response) -> dict:
-    response.delete_cookie(MEMBER_COOKIE, path="/")
-    return {"ok": True}
 
 
 def _lane_view(member: dict) -> dict | None:
@@ -93,8 +67,8 @@ def _lane_view(member: dict) -> dict | None:
 
 
 @router.get("/me")
-async def me(hub_member: str | None = Cookie(default=None)) -> dict:
-    member = require_member(hub_member)
+async def me(hub_session: str | None = Cookie(default=None)) -> dict:
+    member = require_member(hub_session)
     return {
         "email": member["email"],
         "name": member["name"],
@@ -104,8 +78,8 @@ async def me(hub_member: str | None = Cookie(default=None)) -> dict:
 
 
 @router.post("/lane", status_code=201)
-async def create_lane(req: PortalLaneCreate, hub_member: str | None = Cookie(default=None)) -> dict:
-    member = require_member(hub_member)
+async def create_lane(req: PortalLaneCreate, hub_session: str | None = Cookie(default=None)) -> dict:
+    member = require_member(hub_session)
     if member["lane_slug"] and db.get_lane(member["lane_slug"]):
         raise HTTPException(status_code=409, detail="you already have a lane")
     token = req.bot_token.strip()
@@ -132,16 +106,16 @@ async def create_lane(req: PortalLaneCreate, hub_member: str | None = Cookie(def
 
 
 @router.post("/lane/rotate-key")
-async def rotate_key(hub_member: str | None = Cookie(default=None)) -> dict:
-    member = require_member(hub_member)
+async def rotate_key(hub_session: str | None = Cookie(default=None)) -> dict:
+    member = require_member(hub_session)
     if not member["lane_slug"] or not db.get_lane(member["lane_slug"]):
         raise HTTPException(status_code=404, detail="you have no lane yet")
     return {"apiKey": db.rotate_lane_key(member["lane_slug"])}
 
 
 @router.post("/password")
-async def change_password(req: PasswordChange, hub_member: str | None = Cookie(default=None)) -> dict:
-    member = require_member(hub_member)
+async def change_password(req: PasswordChange, hub_session: str | None = Cookie(default=None)) -> dict:
+    member = require_member(hub_session)
     if not db.check_password(req.old_password, member["password_hash"]):
         await asyncio.sleep(1)
         raise HTTPException(status_code=401, detail="current password is wrong")

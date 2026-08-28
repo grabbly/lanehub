@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from . import db
 from .config import VERSION, settings
 from .routes_admin import router as admin_router
+from .routes_auth import router as auth_router
 from .routes_bridge import router as bridge_router
 from .routes_portal import router as portal_router
 from .runtime import runtime
@@ -23,6 +24,7 @@ from .runtime import runtime
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 STATIC_DIR = Path(__file__).parent / "static"
+WATCHER_FILE = Path(__file__).parent.parent / "scripts" / "telegram_watch.py"
 
 
 @asynccontextmanager
@@ -47,17 +49,26 @@ def create_app() -> FastAPI:
         return {"name": "LaneHub", "version": VERSION, "deliveryMode": settings.resolved_delivery_mode()}
 
     @app.get("/", include_in_schema=False)
-    async def root() -> RedirectResponse:
-        return RedirectResponse(url="/admin")
+    async def root() -> FileResponse:
+        """The single web UI: one login, then role-based sections."""
+        return FileResponse(STATIC_DIR / "app.html")
 
+    # Old split entrances redirect to the unified one (invite emails, docs, bookmarks).
     @app.get("/admin", include_in_schema=False)
-    async def admin_ui() -> FileResponse:
-        return FileResponse(STATIC_DIR / "admin.html")
+    async def admin_ui() -> RedirectResponse:
+        return RedirectResponse(url="/", status_code=307)
 
     @app.get("/portal", include_in_schema=False)
-    async def portal_ui() -> FileResponse:
-        return FileResponse(STATIC_DIR / "portal.html")
+    async def portal_ui() -> RedirectResponse:
+        return RedirectResponse(url="/", status_code=307)
 
+    @app.get("/watcher.py", include_in_schema=False)
+    async def watcher_script() -> FileResponse:
+        """The @mention watcher, served straight from the hub so onboarding can
+        `curl {hub}/watcher.py` and always get the version matching this hub."""
+        return FileResponse(WATCHER_FILE, media_type="text/x-python", filename="telegram_watch.py")
+
+    app.include_router(auth_router)
     app.include_router(admin_router)
     app.include_router(portal_router)
     app.include_router(bridge_router)

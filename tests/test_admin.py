@@ -8,15 +8,16 @@ def test_admin_requires_login(client):
 
 
 def test_wrong_password(client):
-    resp = client.post("/admin/api/login", json={"password": "nope"})
+    resp = client.post("/api/login", json={"email": "", "password": "nope"})
     assert resp.status_code == 401
 
 
-def test_status_reflects_auth(client):
-    assert client.get("/admin/api/status").json()["authenticated"] is False
+def test_session_reflects_auth(client):
+    assert client.get("/api/session").json()["authenticated"] is False
     login(client)
-    st = client.get("/admin/api/status").json()
+    st = client.get("/api/session").json()
     assert st["authenticated"] is True
+    assert st["role"] == "admin"
     assert st["adminPasswordSet"] is True
 
 
@@ -82,7 +83,7 @@ def test_admin_send_and_feed(client):
 def test_logout(client):
     login(client)
     assert client.get("/admin/api/lanes").status_code == 200
-    client.post("/admin/api/logout")
+    client.post("/api/logout")
     assert client.get("/admin/api/lanes").status_code == 401
 
 

@@ -159,6 +159,76 @@ def test_disabled_lane_rejects(client):
     assert resp.status_code == 403
 
 
+def test_wake_flow(client):
+    login(client)
+    lane = make_lane(client)
+    headers = {"X-Bridge-Token": lane["apiKey"]}
+
+    # first poll seeds the cursor to "now" and returns nothing
+    w = client.get("/backend/wake", headers=headers).json()
+    assert w == {"wake": False, "sessionId": None}
+
+    # a non-mention does not wake
+    _push_human(client, "backend", update_id=10, message_id=600, text="просто болтовня")
+    assert client.get("/backend/wake", headers=headers).json()["wake"] is False
+
+    # an @mention does — with the lane's stored (still empty) session id
+    _push_human(client, "backend", update_id=11, message_id=601, text="эй @test_bot глянь")
+    w = client.get("/backend/wake", headers=headers).json()
+    assert w["wake"] is True and w["wakeId"] == 11 and w["sessionId"] is None
+    assert "@test_bot" in w["text"]
+
+    # unacked -> same wake fires again (at-least-once)
+    assert client.get("/backend/wake", headers=headers).json()["wakeId"] == 11
+
+    # ack advances the cursor and stores the session id reported by the watcher
+    ack = client.post("/backend/wake/ack", json={"wakeId": 11, "sessionId": "sess-1"}, headers=headers)
+    assert ack.status_code == 200 and ack.json() == {"ok": True}
+    w = client.get("/backend/wake", headers=headers).json()
+    assert w == {"wake": False, "sessionId": "sess-1"}
+
+    # next mention carries the now-stored session id
+    _push_human(client, "backend", update_id=12, message_id=602, text="@test_bot ещё раз")
+    w = client.get("/backend/wake", headers=headers).json()
+    assert w["wake"] is True and w["wakeId"] == 12 and w["sessionId"] == "sess-1"
+
+
+def test_wake_ignores_history_before_first_poll(client):
+    login(client)
+    lane = make_lane(client)
+    headers = {"X-Bridge-Token": lane["apiKey"]}
+
+    # mention exists BEFORE the watcher ever polled -> must not be replayed
+    _push_human(client, "backend", update_id=5, message_id=500, text="@test_bot старое")
+    assert client.get("/backend/wake", headers=headers).json()["wake"] is False
+    # and a mention arriving AFTER the seed still fires
+    _push_human(client, "backend", update_id=6, message_id=501, text="@test_bot новое")
+    assert client.get("/backend/wake", headers=headers).json()["wakeId"] == 6
+
+
+def test_wake_mention_is_whole_token(client):
+    login(client)
+    lane = make_lane(client)
+    headers = {"X-Bridge-Token": lane["apiKey"]}
+    client.get("/backend/wake", headers=headers)  # seed
+    _push_human(client, "backend", update_id=20, message_id=700, text="@test_bot2 не он")
+    assert client.get("/backend/wake", headers=headers).json()["wake"] is False
+
+
+def test_wake_requires_auth(client):
+    login(client)
+    make_lane(client)
+    assert client.get("/backend/wake").status_code == 401
+    assert client.post("/backend/wake/ack", json={"wakeId": 1}).status_code == 401
+
+
+def test_watcher_script_served(client):
+    # onboarding does `curl {hub}/watcher.py`; it must be served from the hub
+    resp = client.get("/watcher.py")
+    assert resp.status_code == 200
+    assert "LANEHUB_BASE" in resp.text and "/wake" in resp.text
+
+
 def test_info(client):
     login(client)
     lane = make_lane(client)
@@ -167,3 +237,25 @@ def test_info(client):
     assert info["botUsername"] == "test_bot"
     assert info["storedMessages"] == 1
     assert info["seenChats"][0]["chatId"] == -100500
+    # wake state visible before any watcher has polled
+    assert info["wake"] == {"armed": False, "cursor": None, "claudeSessionId": None, "pendingMention": None}
+
+
+def test_info_shows_wake_state(client):
+    login(client)
+    lane = make_lane(client)
+    headers = {"X-Bridge-Token": lane["apiKey"]}
+
+    client.get("/backend/wake", headers=headers)  # arm (seed cursor)
+    _push_human(client, "backend", update_id=30, message_id=800, text="@test_bot глянь")
+
+    info = client.get("/backend/info", headers=headers).json()
+    assert info["wake"]["armed"] is True
+    assert info["wake"]["pendingMention"] == {"wakeId": 30, "from": "alice"}
+    assert info["wake"]["claudeSessionId"] is None
+
+    client.post("/backend/wake/ack", json={"wakeId": 30, "sessionId": "sess-x"}, headers=headers)
+    info = client.get("/backend/info", headers=headers).json()
+    assert info["wake"]["pendingMention"] is None
+    assert info["wake"]["claudeSessionId"] == "sess-x"
+    assert info["wake"]["cursor"] == 30

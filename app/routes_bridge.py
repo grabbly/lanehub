@@ -121,10 +121,92 @@ async def feed(
     return {"messages": rows, "count": len(rows)}
 
 
+class WakeAck(BaseModel):
+    wake_id: int = Field(alias="wakeId")
+    session_id: str | None = Field(default=None, alias="sessionId")
+
+    model_config = {"populate_by_name": True}
+
+
+def _scan_mention(lane: dict, cursor: int) -> tuple[dict | None, list[dict]]:
+    """Look past `cursor` for the first @mention of the lane's bot. Returns
+    (mention_row | None, scanned_incoming_rows). Read-only — no state change."""
+    bot_username = lane.get("bot_username") or ""
+    rows = db.query_messages(lane["slug"], cursor, 500, "asc")
+    incoming = [r for r in rows if not r["outgoing"]]
+    for r in incoming:
+        sender = (r.get("from") or "").lstrip("@").lower()
+        if sender == bot_username.lstrip("@").lower():
+            continue
+        if telegram.mentions_bot(r.get("text") or "", bot_username):
+            return r, incoming
+    return None, incoming
+
+
+@router.get("/{lane_slug}/wake")
+async def wake(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict:
+    """Next @mention of this lane's bot the watcher hasn't handled yet.
+
+    Detection and the cursor live server-side: the watcher stays stateless. On
+    the first call the cursor is seeded to 'now' so history is never replayed.
+    Returns the mention plus the lane's stored Claude session id to resume; the
+    watcher acks via POST /wake/ack after running claude (which also reports the
+    resulting session id back)."""
+    lane = _auth_lane(lane_slug, x_bridge_token)
+    session_id = db.get_lane_state(lane_slug, "claude_session_id")
+
+    cursor_raw = db.get_lane_state(lane_slug, "wake_cursor")
+    if cursor_raw is None:
+        seed = db.max_incoming_update_id(lane_slug)
+        db.set_lane_state(lane_slug, "wake_cursor", str(seed))
+        return {"wake": False, "sessionId": session_id}
+    cursor = int(cursor_raw)
+
+    mention, incoming = _scan_mention(lane, cursor)
+    if mention:
+        return {
+            "wake": True,
+            "wakeId": mention["updateId"],
+            "from": mention.get("from"),
+            "text": mention.get("text"),
+            "chatId": mention.get("chatId"),
+            "sessionId": session_id,
+        }
+    # No mention in this window: advance past the incoming messages we scanned
+    # (never past outgoing high-namespace ids) so we don't rescan them.
+    if incoming:
+        db.set_lane_state(lane_slug, "wake_cursor", str(max(r["updateId"] for r in incoming)))
+    return {"wake": False, "sessionId": session_id}
+
+
+@router.post("/{lane_slug}/wake/ack")
+async def wake_ack(lane_slug: str, req: WakeAck, x_bridge_token: str = Header(default="")) -> dict:
+    """Mark a wake handled and record the (possibly forked) session id.
+
+    Advancing the cursor to wakeId consumes that mention; storing sessionId is
+    how the watcher reports which session to resume next time."""
+    _auth_lane(lane_slug, x_bridge_token)
+    db.set_lane_state(lane_slug, "wake_cursor", str(req.wake_id))
+    if req.session_id:
+        db.set_lane_state(lane_slug, "claude_session_id", req.session_id)
+    return {"ok": True}
+
+
 @router.get("/{lane_slug}/info")
 async def info(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict:
     lane = _auth_lane(lane_slug, x_bridge_token)
     mode = settings.resolved_delivery_mode()
+
+    # Wake state — visible from the server, so you can see what the (remote,
+    # stateless) watcher is working against without shelling into its machine.
+    cursor_raw = db.get_lane_state(lane_slug, "wake_cursor")
+    session_id = db.get_lane_state(lane_slug, "claude_session_id")
+    pending: dict | None = None
+    if cursor_raw is not None:
+        mention, _ = _scan_mention(lane, int(cursor_raw))
+        if mention:
+            pending = {"wakeId": mention["updateId"], "from": mention.get("from")}
+
     return {
         "lane": lane["slug"],
         "botUsername": lane["bot_username"],
@@ -134,6 +216,12 @@ async def info(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
         "polling": runtime.polling(lane["slug"]),
         "storedMessages": db.count_messages(lane["slug"]),
         "seenChats": db.seen_chats(lane["slug"]),
+        "wake": {
+            "armed": cursor_raw is not None,  # a watcher has polled at least once
+            "cursor": int(cursor_raw) if cursor_raw is not None else None,
+            "claudeSessionId": session_id,
+            "pendingMention": pending,  # a mention waiting to be handled, if any
+        },
     }
 
 

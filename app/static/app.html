@@ -23,6 +23,10 @@
   header h1 { font-size: 18px; margin: 0; }
   header .meta { color: var(--muted); font-size: 13px; }
   header .spacer { flex: 1; }
+  nav.tabs { display: flex; gap: 6px; max-width: 1080px; margin: 0 auto; padding: 14px 16px 0; flex-wrap: wrap; }
+  nav.tabs[hidden] { display: none; }  /* explicit display: flex otherwise overrides the [hidden] attribute */
+  nav.tabs .tab { font-size: 14px; }
+  nav.tabs .tab.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
   main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 80px; }
   section { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 22px; }
   h2 { font-size: 15px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
@@ -67,16 +71,18 @@
   @media (max-width: 760px) { .sendbox { grid-template-columns: 1fr; } }
   .error { color: var(--danger); font-size: 14px; margin-top: 8px; white-space: pre-wrap; }
   .notice { color: var(--ok); font-size: 14px; margin-top: 8px; }
-  #login-view { max-width: 380px; margin: 12vh auto 0; }
+  #login-view { max-width: 400px; margin: 12vh auto 0; }
   /* Off-screen rather than display:none — password managers ignore hidden fields. */
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
              overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
   .hint { color: var(--muted); font-size: 13px; }
+  ol li { margin-bottom: 8px; }
   a { color: var(--accent); }
   a.gh { color: var(--muted); display: flex; align-items: center; }
   a.gh:hover { color: var(--accent); }
-  .switch { margin-top: 14px; text-align: center; font-size: 14px; }
   .about { margin-top: 24px; text-align: center; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; font-weight: 600; }
   dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--text); max-width: 560px; width: 92vw; }
   dialog::backdrop { background: rgba(0,0,0,.45); }
 </style>
@@ -85,34 +91,42 @@
 <header>
   <h1>🛤️ LaneHub</h1>
   <span class="meta" id="hub-meta"></span>
+  <span class="meta" id="who"></span>
   <span class="spacer"></span>
   <a class="gh" href="https://github.com/grabbly/lanehub" target="_blank" rel="noopener" aria-label="LaneHub on GitHub" title="Source code on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
+  <span class="meta" id="lang-switch"><button class="small" data-lang="ru">RU</button> <button class="small" data-lang="en">EN</button></span>
   <button id="logout-btn" class="small" hidden>Log out</button>
 </header>
 
+<nav id="nav" class="tabs" hidden>
+  <button class="tab" data-tab="lanes">Lanes</button>
+  <button class="tab" data-tab="team">Team</button>
+  <button class="tab" data-tab="feed">Feed</button>
+  <button class="tab" data-tab="settings">Settings</button>
+</nav>
+
 <main>
+  <!-- ============ LOGIN (shared) ============ -->
   <section id="login-view" hidden>
-    <h2>Admin login</h2>
-    <!-- A real <form> with a username field is what makes browser password
-         managers (Safari/iCloud Keychain especially) offer to save the
-         password: they need a submit event and an account to key the entry on.
-         The hub authenticates by password alone, so the username is fixed and
-         only visually hidden — never display:none, which managers skip. -->
+    <h2>Sign in</h2>
+    <!-- A real <form> + submit event + a username field is what makes browser
+         password managers (Safari/iCloud Keychain especially) offer to save the
+         credentials. Members log in with email; the admin leaves email blank. -->
     <form id="login-form" class="grid">
-      <input type="text" name="username" id="login-username" value="admin"
-             autocomplete="username" class="sr-only" tabindex="-1" aria-hidden="true">
-      <div><label for="login-password">Password</label>
+      <div><label for="login-email">Email <span class="hint">— админам оставьте пустым / admins leave blank</span></label>
+        <input id="login-email" name="username" type="email" autocomplete="username" placeholder="teammate@example.com"></div>
+      <div><label for="login-password">Password / Пароль</label>
         <input type="password" name="password" id="login-password" autocomplete="current-password"></div>
-      <button class="primary" id="login-btn" type="submit">Log in</button>
+      <button class="primary" id="login-btn" type="submit">Log in / Войти</button>
       <div class="error" id="login-error"></div>
-      <p class="hint">The password is the <code>HUB_ADMIN_PASSWORD</code> value from the server's <code>.env</code>.</p>
+      <p class="hint">Members: the email + password from your invitation. Admin: leave email blank and enter <code>HUB_ADMIN_PASSWORD</code>.</p>
     </form>
-    <p class="hint switch">Team member? <a href="/portal">Log in to the member portal</a></p>
     <p class="hint about">LaneHub — a self-hosted hub that turns one Telegram group into a shared bus where humans and AI agents talk through their own bot lanes. Source code &amp; setup guide: <a href="https://github.com/grabbly/lanehub" target="_blank" rel="noopener">github.com/grabbly/lanehub</a></p>
   </section>
 
-  <div id="app-view" hidden>
-    <section>
+  <!-- ============ ADMIN (superadmin only, tabbed) ============ -->
+  <div id="admin-view" hidden>
+    <section data-tabpanel="lanes">
       <h2>Lanes</h2>
       <p class="hint">A lane = one Telegram bot identity + its own API key. Agents call
         <code>/&lt;lane&gt;/send</code>, <code>/&lt;lane&gt;/messages</code> and <code>/&lt;lane&gt;/feed</code>
@@ -123,7 +137,7 @@
       <div id="lanes"></div>
 
       <details id="add-lane">
-        <summary style="cursor:pointer; font-weight:600; margin:6px 0;">➕ Add lane</summary>
+        <summary style="margin:6px 0;">➕ Add lane</summary>
         <div class="grid cols-4" style="margin-top:10px;">
           <div><label>Bot token (from @BotFather) — the only required field</label><input id="new-token" placeholder="123456:ABC-…"></div>
           <div><label>Title (optional)</label><input id="new-title" placeholder="Backend agent"></div>
@@ -142,18 +156,50 @@
       </details>
     </section>
 
-    <section>
+    <section data-tabpanel="team" hidden>
       <h2>Team</h2>
-      <p class="hint">Set the <b>project chat</b> once — every new lane (including ones members create
-        themselves) inherits it. Then invite teammates: each gets portal credentials by email
-        (or as a copy-paste text) and connects their own bot in the member portal at <code>/portal</code>.</p>
+      <p class="hint">Invite teammates: each gets sign-in credentials by email (or as a copy-paste text)
+        and connects their own bot after logging in. New lanes inherit the project chat set under
+        <b>Settings</b>.</p>
+      <div id="members"></div>
+      <div class="grid cols-2" style="margin-top:10px;">
+        <div><label>Email</label><input id="inv-email" placeholder="teammate@example.com"></div>
+        <div><label>Name (optional)</label><input id="inv-name" placeholder="Denis"></div>
+      </div>
+      <div class="actions"><button class="primary" id="invite-btn">✉️ Invite teammate</button></div>
+      <div class="error" id="invite-error"></div>
+    </section>
+
+    <section data-tabpanel="feed" hidden>
+      <h2>Feed — the whole chat</h2>
+      <div class="feed-controls">
+        <select id="feed-chat"><option value="">all chats</option></select>
+        <label style="margin:0; display:flex; align-items:center; gap:6px;">
+          <input type="checkbox" id="feed-auto" checked style="width:auto;"> auto-refresh
+        </label>
+        <button class="small" id="feed-refresh">Refresh</button>
+      </div>
+      <div id="feed"></div>
+      <div class="sendbox">
+        <select id="send-lane"></select>
+        <textarea id="send-text" placeholder="Message text… (sent as the selected lane's bot)"></textarea>
+        <button class="primary" id="send-btn">Send</button>
+      </div>
+      <div class="error" id="send-error"></div>
+      <div class="notice" id="send-ok"></div>
+    </section>
+
+    <section data-tabpanel="settings" hidden>
+      <h2>Hub settings</h2>
       <div class="kv"><span class="k">Project chat</span>
         <input id="project-chat" style="max-width:260px;" placeholder="-100… group/channel id">
         <button class="small" id="project-chat-save">save</button>
         <span class="hint" id="team-meta"></span>
       </div>
+      <p class="hint">Set the <b>project chat</b> once — every new lane (including ones members create
+        themselves) inherits it, so freshly onboarded bots post to the team chat with zero config.</p>
       <details id="smtp-details" style="margin-top:8px;">
-        <summary style="cursor:pointer; font-weight:600;">📧 Email (SMTP) for invitation emails</summary>
+        <summary>📧 Email (SMTP) for invitation emails</summary>
         <p class="hint" id="smtp-status" style="margin:8px 0 4px;"></p>
         <div class="grid cols-4">
           <div><label>SMTP host</label><input id="smtp-host" placeholder="smtp.example.com"></div>
@@ -174,32 +220,65 @@
         <p class="hint">Stored in the hub database (same protection level as bot tokens).
           Clearing the host falls back to <code>HUB_SMTP_*</code> env vars, if set.</p>
       </details>
-      <div id="members" style="margin-top:10px;"></div>
-      <div class="grid cols-2" style="margin-top:10px;">
-        <div><label>Email</label><input id="inv-email" placeholder="teammate@example.com"></div>
-        <div><label>Name (optional)</label><input id="inv-name" placeholder="Denis"></div>
+    </section>
+  </div>
+
+  <!-- ============ MEMBER: no lane yet ============ -->
+  <div id="setup-view" hidden>
+    <section>
+      <h2 data-i18n="setupTitle">Подключение твоего AI-агента — 2 шага</h2>
+      <ol>
+        <li data-i18n="step1">Создай своего Telegram-бота: открой <b>@BotFather</b> → команда <code>/newbot</code> →
+          придумай имя (его будет видно в чате, например «Твоё-Имя · Agent») и username (должен заканчиваться на <code>bot</code>).
+          Затем там же: <code>/setprivacy</code> → выбери этого бота → <b>Disable</b> — иначе бот не будет видеть сообщения группы.
+          Если берёшь уже существующего бота, проверь заодно <code>/setjoingroups</code> → <b>Enable</b> (в меню это <code>Bot Settings</code> → <code>Allow Groups?</code>) —
+          у новых ботов это включено сразу, а у старого может быть выключено, и тогда его просто не получится добавить в группу.</li>
+        <li data-i18n="step2">Вставь сюда токен бота (строка вида <code>123456789:AA…</code>, BotFather выдал её после <code>/newbot</code>):</li>
+      </ol>
+      <label data-i18n="botToken">Токен бота</label><input id="new-token-m" placeholder="123456789:AA…">
+      <div class="actions"><button class="primary" id="create-btn" data-i18n="createBtn">Подключить</button></div>
+      <div class="error" id="create-error-m"></div>
+    </section>
+  </div>
+
+  <!-- ============ MEMBER: lane view ============ -->
+  <div id="lane-view" hidden>
+    <section>
+      <h2 data-i18n="laneTitle">Твой лейн</h2>
+      <div class="kv"><span class="k" data-i18n="bot">Бот</span><span id="lane-bot" class="mono"></span>
+        <span class="badge on" id="lane-status"></span></div>
+      <div class="kv"><span class="k" data-i18n="endpoint">Endpoint</span><code id="lane-base"></code></div>
+      <div class="kv"><span class="k">API key</span>
+        <code class="key-hidden" id="lane-key" data-shown="0">••••••••••••••••</code>
+        <button class="small" id="key-toggle" data-i18n="show">показать</button>
+        <button class="small" id="key-copy">copy</button>
+        <button class="small" id="key-rotate" data-i18n="rotate">перевыпустить</button>
       </div>
-      <div class="actions"><button class="primary" id="invite-btn">✉️ Invite teammate</button></div>
-      <div class="error" id="invite-error"></div>
+      <p class="hint" data-i18n="keyHint">Ключ храни в секрете (env-переменная / менеджер секретов). Если засветился — «перевыпустить»: старый умрёт сразу.</p>
+      <div class="kv" id="add-bot-row"><span class="k" data-i18n="nextStep">Финальный шаг</span>
+        <span data-i18n="addBotText">добавь своего бота в командную группу (или попроси администратора).</span></div>
     </section>
 
     <section>
-      <h2>Feed — the whole chat</h2>
-      <div class="feed-controls">
-        <select id="feed-chat"><option value="">all chats</option></select>
-        <label style="margin:0; display:flex; align-items:center; gap:6px;">
-          <input type="checkbox" id="feed-auto" checked style="width:auto;"> auto-refresh
-        </label>
-        <button class="small" id="feed-refresh">Refresh</button>
-      </div>
-      <div id="feed"></div>
-      <div class="sendbox">
-        <select id="send-lane"></select>
-        <textarea id="send-text" placeholder="Message text… (sent as the selected lane's bot)"></textarea>
-        <button class="primary" id="send-btn">Send</button>
-      </div>
-      <div class="error" id="send-error"></div>
-      <div class="notice" id="send-ok"></div>
+      <h2 data-i18n="recipesTitle">Команды для твоего агента</h2>
+      <p class="hint" data-i18n="recipesHint">Готовые к запуску (ключ уже подставлен). Вставь блок ниже в инструкции агента (CLAUDE.md / system prompt).</p>
+      <label data-i18n="readLabel">Читать весь чат (люди + все боты), новые сверху</label>
+      <textarea readonly rows="2" id="rcp-read"></textarea>
+      <label data-i18n="sendLabel">Отправить сообщение от имени твоего бота</label>
+      <textarea readonly rows="3" id="rcp-send"></textarea>
+      <label data-i18n="promptLabel">Блок для CLAUDE.md / промпта агента</label>
+      <textarea readonly rows="12" id="rcp-prompt"></textarea>
+      <div class="actions"><button class="small" id="prompt-copy">copy</button></div>
+    </section>
+
+    <section>
+      <details>
+        <summary data-i18n="pwTitle">Сменить пароль</summary>
+        <label data-i18n="pwOld">Текущий пароль</label><input type="password" id="pw-old">
+        <label data-i18n="pwNew">Новый пароль (мин. 8 символов)</label><input type="password" id="pw-new">
+        <div class="actions"><button class="small" id="pw-btn" data-i18n="pwBtn">Сменить</button></div>
+        <div class="error" id="pw-error"></div><div class="notice" id="pw-ok"></div>
+      </details>
     </section>
   </div>
 </main>
@@ -207,6 +286,10 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let lanes = [];
+let me = null;
+let role = null;              // 'admin' | 'member' | null
+let currentTab = 'lanes';
+let lang = (navigator.language || '').toLowerCase().startsWith('ru') ? 'ru' : 'en';
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -216,18 +299,77 @@ async function api(path, opts = {}) {
   });
   let data = null;
   try { data = await res.json(); } catch (e) { /* empty body */ }
-  if (res.status === 401 && path !== '/admin/api/login') { showLogin(); throw new Error('login required'); }
-  if (!res.ok) throw new Error((data && (data.detail?.description || JSON.stringify(data.detail ?? data))) || res.statusText);
+  if (res.status === 401 && path !== '/api/login') { showLogin(); throw new Error('login required'); }
+  if (!res.ok) throw new Error((data && (data.detail?.description || (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail ?? data)))) || res.statusText);
   return data;
 }
-
-function showLogin() { $('login-view').hidden = false; $('app-view').hidden = true; $('logout-btn').hidden = true; }
-function showApp()   { $('login-view').hidden = true;  $('app-view').hidden = false; $('logout-btn').hidden = false; }
 
 function esc(s) { const d = document.createElement('span'); d.textContent = s ?? ''; return d.innerHTML; }
 function fmtDate(ts) { return ts ? new Date(ts * 1000).toLocaleString() : ''; }
 
-// ---------- lanes ----------
+// ---------- view switching ----------
+
+function hideAll() {
+  ['login-view', 'admin-view', 'setup-view', 'lane-view'].forEach(id => $(id).hidden = true);
+  $('nav').hidden = true;
+  $('logout-btn').hidden = true;
+}
+function showLogin() { hideAll(); $('login-view').hidden = false; role = null; $('who').textContent = ''; }
+function showAdmin() { hideAll(); $('admin-view').hidden = false; $('nav').hidden = false; $('logout-btn').hidden = false; role = 'admin'; showTab(currentTab); }
+function showMemberView(v) { hideAll(); $(v + '-view').hidden = false; $('logout-btn').hidden = false; role = 'member'; }  // v = 'setup' | 'lane'
+
+function showTab(name) {
+  currentTab = name;
+  document.querySelectorAll('#admin-view [data-tabpanel]').forEach(s => s.hidden = s.dataset.tabpanel !== name);
+  document.querySelectorAll('#nav [data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  if (name === 'feed') loadFeed();
+}
+document.querySelectorAll('#nav [data-tab]').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+// ---------- shared: the CLAUDE.md agent-prompt block ----------
+
+function promptText(base, hub, lng) {
+  if (lng === 'ru') return `## Командный чат (LaneHub)
+
+Наш командный Telegram-чат доступен через LaneHub. Твой лейн: ${base}
+Ключ — в env-переменной LANEHUB_KEY (никогда не вставляй его в код/репо).
+
+Читать чат (люди + все боты, новые сверху; читай ПЕРЕД началом работы и периодически):
+curl -sS -H "X-Bridge-Token: $LANEHUB_KEY" "${base}/feed?order=desc&limit=100"
+
+Отправить сообщение (короткие статусы: «сделал X», «начинаю Y»):
+curl -sS -X POST -H "X-Bridge-Token: $LANEHUB_KEY" -H "Content-Type: application/json" \\
+  -d '{"text": "..."}' "${base}/send"
+
+Отвечать, когда тебя зовут через @<бот> в чате (продолжает ЭТУ сессию). Подними вотчер один раз (нужен запущенный \`claude\` и python3; зависимостей нет):
+curl -sSO ${hub}/watcher.py
+LANEHUB_BASE=${base} CLAUDE_PROJECT_DIR="$(pwd)" nohup python3 watcher.py > watcher.log 2>&1 &
+  # LANEHUB_KEY берётся из env. Статус: python3 watcher.py --status
+  # Остановить: kill $(pgrep -f watcher.py)
+
+Правила: пиши только через свой лейн; файлы через чат не ходят — публикуй по URL и шли ссылку; тред длиннее 3-4 сообщений — эскалируй в issue-трекер.`;
+  return `## Team chat (LaneHub)
+
+Our team Telegram chat is reachable through LaneHub. Your lane: ${base}
+The key lives in the LANEHUB_KEY env var (never put it in code/repos).
+
+Read the chat (humans + all bots, newest first; read BEFORE starting work and periodically):
+curl -sS -H "X-Bridge-Token: $LANEHUB_KEY" "${base}/feed?order=desc&limit=100"
+
+Send a message (short status pings: "done X", "starting Y"):
+curl -sS -X POST -H "X-Bridge-Token: $LANEHUB_KEY" -H "Content-Type: application/json" \\
+  -d '{"text": "..."}' "${base}/send"
+
+Answer when you're @<bot>-mentioned in the chat (resumes THIS session). Start the watcher once (needs a running \`claude\` and python3; no deps):
+curl -sSO ${hub}/watcher.py
+LANEHUB_BASE=${base} CLAUDE_PROJECT_DIR="$(pwd)" nohup python3 watcher.py > watcher.log 2>&1 &
+  # LANEHUB_KEY is read from env. Status: python3 watcher.py --status
+  # Stop: kill $(pgrep -f watcher.py)
+
+Rules: post only through your own lane; files don't traverse the chat — publish a URL and send the link; a thread longer than 3-4 messages escalates to the issue tracker.`;
+}
+
+// ---------- admin: lanes ----------
 
 function laneCard(l) {
   const div = document.createElement('div');
@@ -313,8 +455,7 @@ function laneCard(l) {
   return div;
 }
 
-// Copy-paste texts the admin sends to teammates: each member brings their own
-// bot (or the admin creates one for them as a fallback). Tokens go via DM only.
+// Copy-paste texts the admin sends to teammates.
 const ONBOARDING = {
   ru: {
     dm: `Привет! Подключаем наш командный чат к хабу (${location.origin}): у каждого участника будет свой Telegram-бот — через него твой AI-агент читает общий чат и пишет от твоего имени.
@@ -350,7 +491,7 @@ I'll then add the bot to our chat and send you back a ready-made agent instructi
 
 function showOnboarding() {
   const dlg = document.createElement('dialog');
-  let lang = 'ru';
+  let lng = 'ru';
   dlg.innerHTML = `
     <div style="padding:18px 20px;">
       <h2 style="margin-top:0;">Teammate onboarding messages</h2>
@@ -368,17 +509,17 @@ function showOnboarding() {
       <div class="actions" style="justify-content:flex-end;"><button data-close>Close</button></div>
     </div>`;
   const render = () => {
-    dlg.querySelectorAll('[data-tpl]').forEach(t => t.value = ONBOARDING[lang][t.dataset.tpl]);
-    dlg.querySelectorAll('[data-lang]').forEach(b => b.classList.toggle('primary', b.dataset.lang === lang));
+    dlg.querySelectorAll('[data-tpl]').forEach(t => t.value = ONBOARDING[lng][t.dataset.tpl]);
+    dlg.querySelectorAll('[data-lang]').forEach(b => b.classList.toggle('primary', b.dataset.lang === lng));
   };
-  dlg.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => { lang = b.dataset.lang; render(); });
+  dlg.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => { lng = b.dataset.lang; render(); });
   dlg.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
     try {
-      await navigator.clipboard.writeText(ONBOARDING[lang][b.dataset.copy]);
+      await navigator.clipboard.writeText(ONBOARDING[lng][b.dataset.copy]);
       b.textContent = 'copied ✓';
     } catch (e) {
       const t = dlg.querySelector(`[data-tpl="${b.dataset.copy}"]`);
-      t.focus(); t.select();  // clipboard API blocked — leave the text selected
+      t.focus(); t.select();
       b.textContent = 'select+copy manually';
     }
     setTimeout(() => b.textContent = 'copy', 1500);
@@ -389,44 +530,15 @@ function showOnboarding() {
   render();
   dlg.showModal();
 }
-$('onboarding-btn').onclick = showOnboarding;
 
-// Same block the portal hands out (portal.html agentPrompt), for lanes created here.
-function agentPrompt(l, lang) {
-  const base = `${location.origin}/${l.slug}`;
-  if (lang === 'ru') return `## Командный чат (LaneHub)
-
-Наш командный Telegram-чат доступен через LaneHub. Твой лейн: ${base}
-Ключ — в env-переменной LANEHUB_KEY (никогда не вставляй его в код/репо).
-
-Читать чат (люди + все боты, новые сверху; читай ПЕРЕД началом работы и периодически):
-curl -sS -H "X-Bridge-Token: $LANEHUB_KEY" "${base}/feed?order=desc&limit=100"
-
-Отправить сообщение (короткие статусы: «сделал X», «начинаю Y»):
-curl -sS -X POST -H "X-Bridge-Token: $LANEHUB_KEY" -H "Content-Type: application/json" \\
-  -d '{"text": "..."}' "${base}/send"
-
-Правила: пиши только через свой лейн; файлы через чат не ходят — публикуй по URL и шли ссылку; тред длиннее 3-4 сообщений — эскалируй в issue-трекер.`;
-  return `## Team chat (LaneHub)
-
-Our team Telegram chat is reachable through LaneHub. Your lane: ${base}
-The key lives in the LANEHUB_KEY env var (never put it in code/repos).
-
-Read the chat (humans + all bots, newest first; read BEFORE starting work and periodically):
-curl -sS -H "X-Bridge-Token: $LANEHUB_KEY" "${base}/feed?order=desc&limit=100"
-
-Send a message (short status pings: "done X", "starting Y"):
-curl -sS -X POST -H "X-Bridge-Token: $LANEHUB_KEY" -H "Content-Type: application/json" \\
-  -d '{"text": "..."}' "${base}/send"
-
-Rules: post only through your own lane; files don't traverse the chat — publish a URL and send the link; a thread longer than 3-4 messages escalates to the issue tracker.`;
+function agentPrompt(l, lng) {
+  return promptText(`${location.origin}/${l.slug}`, location.origin, lng);
 }
 
 // One paste-into-DM message for the teammate: lane URL + agent instruction.
-// The API key deliberately stays out — it travels in its own message.
-function handoffMessage(l, lang) {
+function handoffMessage(l, lng) {
   const base = `${location.origin}/${l.slug}`;
-  if (lang === 'ru') return `Готово — твой бот подключён к нашему хабу.
+  if (lng === 'ru') return `Готово — твой бот подключён к нашему хабу.
 
 Твой лейн: ${base}
 API-ключ пришлю отдельным сообщением. Положи его в env-переменную LANEHUB_KEY (в код/репо не вставляй):
@@ -434,7 +546,7 @@ export LANEHUB_KEY="<ключ из отдельного сообщения>"
 
 Вставь этот блок в CLAUDE.md / промпт своего агента:
 
-${agentPrompt(l, lang)}`;
+${agentPrompt(l, lng)}`;
   return `Done — your bot is connected to our hub.
 
 Your lane: ${base}
@@ -443,13 +555,13 @@ export LANEHUB_KEY="<key from the separate message>"
 
 Paste this block into your CLAUDE.md / agent prompt:
 
-${agentPrompt(l, lang)}`;
+${agentPrompt(l, lng)}`;
 }
 
 function showRecipes(l) {
   const base = location.origin;
   const dlg = document.createElement('dialog');
-  let lang = 'ru';
+  let lng = 'ru';
   dlg.innerHTML = `
     <div style="padding:18px 20px;">
       <h2 style="margin-top:0;">Agent recipes — /${esc(l.slug)}
@@ -480,11 +592,11 @@ function showRecipes(l) {
       <div class="actions" style="justify-content:flex-end;"><button data-close>Close</button></div>
     </div>`;
   const render = () => {
-    dlg.querySelector('[data-handoff]').value = handoffMessage(l, lang);
-    dlg.querySelector('[data-prompt]').value = agentPrompt(l, lang);
-    dlg.querySelectorAll('[data-lang]').forEach(b => b.classList.toggle('primary', b.dataset.lang === lang));
+    dlg.querySelector('[data-handoff]').value = handoffMessage(l, lng);
+    dlg.querySelector('[data-prompt]').value = agentPrompt(l, lng);
+    dlg.querySelectorAll('[data-lang]').forEach(b => b.classList.toggle('primary', b.dataset.lang === lng));
   };
-  dlg.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => { lang = b.dataset.lang; render(); });
+  dlg.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => { lng = b.dataset.lang; render(); });
   const wireCopy = (btnSel, getText, tareaSel) => {
     const btn = dlg.querySelector(btnSel);
     const idle = btn.textContent;
@@ -493,7 +605,6 @@ function showRecipes(l) {
         await navigator.clipboard.writeText(getText());
         btn.textContent = 'copied ✓';
       } catch {
-        // clipboard API blocked — leave the text selected for a manual copy
         if (tareaSel) {
           const t = dlg.querySelector(tareaSel);
           t.focus(); t.select();
@@ -507,8 +618,8 @@ function showRecipes(l) {
       setTimeout(() => btn.textContent = idle, 1500);
     };
   };
-  wireCopy('[data-copy-handoff]', () => handoffMessage(l, lang), '[data-handoff]');
-  wireCopy('[data-copy-prompt]', () => agentPrompt(l, lang), '[data-prompt]');
+  wireCopy('[data-copy-handoff]', () => handoffMessage(l, lng), '[data-handoff]');
+  wireCopy('[data-copy-prompt]', () => agentPrompt(l, lng), '[data-prompt]');
   wireCopy('[data-copy-key]', () => l.apiKey, null);
   dlg.querySelector('[data-close]').onclick = () => dlg.close();
   dlg.addEventListener('close', () => dlg.remove());
@@ -548,12 +659,14 @@ $('create-lane-btn').onclick = async () => {
   } catch (e) { $('create-error').textContent = e.message; }
 };
 
-// ---------- team ----------
+$('onboarding-btn').onclick = showOnboarding;
+
+// ---------- admin: team + settings ----------
 
 async function loadTeam() {
   const [st, ms] = await Promise.all([api('/admin/api/settings'), api('/admin/api/members')]);
   $('project-chat').value = st.projectChatId || '';
-  $('team-meta').textContent = `portal: ${st.portalUrl} · email: ${st.smtpConfigured ? 'SMTP configured' : 'not configured (copy-paste invites)'}`;
+  $('team-meta').textContent = `sign-in: ${st.loginUrl} · email: ${st.smtpConfigured ? 'SMTP configured' : 'not configured (copy-paste invites)'}`;
   const s = st.smtp || {};
   $('smtp-status').textContent = s.source === 'panel'
     ? `Active: configured here in the panel (${s.host}:${s.port}${s.passwordSet ? ', password set' : ''}).`
@@ -600,7 +713,7 @@ function showInvite(p) {
       <h2 style="margin-top:0;">Invitation — ${esc(p.email)}</h2>
       ${p.emailSent ? '<p class="notice">Invitation email sent ✓</p>'
         : '<p class="hint">Email not sent' + (p.emailError ? ' (<span class="error">' + esc(p.emailError) + '</span>)' : ' — SMTP not configured') + '. Send the text below yourself (DM / email):</p>'}
-      <div class="kv"><span class="k">Portal</span><code>${esc(p.portalUrl)}</code></div>
+      <div class="kv"><span class="k">Sign in</span><code>${esc(p.loginUrl)}</code></div>
       <div class="kv"><span class="k">Login</span><code>${esc(p.email)}</code></div>
       <div class="kv"><span class="k">Password</span><code>${esc(p.password)}</code></div>
       <label style="margin-top:10px;">Invite text (copy-paste)</label>
@@ -650,7 +763,7 @@ $('smtp-save').onclick = async () => {
     smtpFrom: $('smtp-from').value.trim(),
     smtpTls: $('smtp-tls').checked,
   };
-  if ($('smtp-password').value) body.smtpPassword = $('smtp-password').value;  // blank = keep stored
+  if ($('smtp-password').value) body.smtpPassword = $('smtp-password').value;
   try {
     await api('/admin/api/settings', { method: 'PATCH', body: JSON.stringify(body) });
     $('smtp-password').value = '';
@@ -668,10 +781,10 @@ $('smtp-test').onclick = async () => {
   } catch (e) { $('smtp-err').textContent = e.message; }
 };
 
-// ---------- feed ----------
+// ---------- admin: feed ----------
 
 async function loadFeed() {
-  if ($('app-view').hidden) return;
+  if (role !== 'admin') return;
   try {
     const chat = $('feed-chat').value;
     const data = await api('/admin/api/feed?limit=100&order=desc' + (chat ? `&chatId=${chat}` : ''));
@@ -696,7 +809,10 @@ async function loadFeed() {
 
 $('feed-refresh').onclick = loadFeed;
 $('feed-chat').onchange = loadFeed;
-setInterval(() => { if ($('feed-auto').checked) loadFeed(); }, 10000);
+setInterval(() => {
+  const panel = $('feed').closest('[data-tabpanel]');
+  if (role === 'admin' && $('feed-auto').checked && panel && !panel.hidden) loadFeed();
+}, 10000);
 
 $('send-btn').onclick = async () => {
   $('send-error').textContent = ''; $('send-ok').textContent = '';
@@ -710,16 +826,133 @@ $('send-btn').onclick = async () => {
   } catch (e) { $('send-error').textContent = e.message; }
 };
 
-// ---------- auth ----------
+// ---------- member ----------
+
+const I18N = {
+  en: {
+    setupTitle: 'Connect your AI agent — 2 steps',
+    step1: 'Create your Telegram bot: open <b>@BotFather</b> → <code>/newbot</code> → pick a display name (visible in the chat, e.g. "Your-Name · Agent") and a username (must end in <code>bot</code>). Then, still in BotFather: <code>/setprivacy</code> → select that bot → <b>Disable</b> — otherwise the bot cannot see group messages. If you are reusing an existing bot, also check <code>/setjoingroups</code> → <b>Enable</b> (in the menu: <code>Bot Settings</code> → <code>Allow Groups?</code>) — new bots have it on already, but an older one may have it off, and then it simply cannot be added to a group.',
+    step2: 'Paste the bot token here (the <code>123456789:AA…</code> string BotFather gave you after <code>/newbot</code>):',
+    botToken: 'Bot token', createBtn: 'Connect', laneTitle: 'Your lane', bot: 'Bot',
+    endpoint: 'Endpoint', show: 'show', rotate: 'rotate',
+    keyHint: 'Keep the key secret (env var / secret manager). If it leaks — rotate: the old key dies instantly.',
+    nextStep: 'Final step', addBotText: 'add your bot to the team group (or ask the admin).',
+    recipesTitle: 'Commands for your agent',
+    recipesHint: 'Ready to run (your key is already inlined). Paste the block below into your agent instructions (CLAUDE.md / system prompt).',
+    readLabel: 'Read the whole chat (humans + all bots), newest first',
+    sendLabel: 'Send a message as your bot', promptLabel: 'Block for CLAUDE.md / agent prompt',
+    pwTitle: 'Change password', pwOld: 'Current password', pwNew: 'New password (min 8 chars)', pwBtn: 'Change',
+    hide: 'hide',
+  },
+  ru: {
+    setupTitle: 'Подключение твоего AI-агента — 2 шага',
+    step1: 'Создай своего Telegram-бота: открой <b>@BotFather</b> → команда <code>/newbot</code> → придумай имя (его будет видно в чате, например «Твоё-Имя · Agent») и username (должен заканчиваться на <code>bot</code>). Затем там же: <code>/setprivacy</code> → выбери этого бота → <b>Disable</b> — иначе бот не будет видеть сообщения группы. Если берёшь уже существующего бота, проверь заодно <code>/setjoingroups</code> → <b>Enable</b> (в меню это <code>Bot Settings</code> → <code>Allow Groups?</code>) — у новых ботов это включено сразу, а у старого может быть выключено, и тогда его просто не получится добавить в группу.',
+    step2: 'Вставь сюда токен бота (строка вида <code>123456789:AA…</code>, BotFather выдал её после <code>/newbot</code>):',
+    botToken: 'Токен бота', createBtn: 'Подключить', laneTitle: 'Твой лейн', bot: 'Бот',
+    endpoint: 'Endpoint', show: 'показать', rotate: 'перевыпустить',
+    keyHint: 'Ключ храни в секрете (env-переменная / менеджер секретов). Если засветился — «перевыпустить»: старый умрёт сразу.',
+    nextStep: 'Финальный шаг', addBotText: 'добавь своего бота в командную группу (или попроси администратора).',
+    recipesTitle: 'Команды для твоего агента',
+    recipesHint: 'Готовые к запуску (ключ уже подставлен). Вставь блок ниже в инструкции агента (CLAUDE.md / system prompt).',
+    readLabel: 'Читать весь чат (люди + все боты), новые сверху',
+    sendLabel: 'Отправить сообщение от имени твоего бота', promptLabel: 'Блок для CLAUDE.md / промпта агента',
+    pwTitle: 'Сменить пароль', pwOld: 'Текущий пароль', pwNew: 'Новый пароль (мин. 8 символов)', pwBtn: 'Сменить',
+    hide: 'скрыть',
+  },
+};
+
+function applyLang() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const t = I18N[lang][el.dataset.i18n];
+    if (t) el.innerHTML = t;
+  });
+  document.querySelectorAll('#lang-switch [data-lang]').forEach(b => b.classList.toggle('primary', b.dataset.lang === lang));
+  if (me && me.lane) renderRecipes(me.lane);
+}
+document.querySelectorAll('#lang-switch [data-lang]').forEach(b => b.onclick = () => { lang = b.dataset.lang; applyLang(); });
+
+function memberBase(l) { return l.baseUrl.startsWith('http') ? l.baseUrl : location.origin + l.baseUrl; }
+
+function renderRecipes(l) {
+  const base = memberBase(l);
+  const hub = base.replace(/\/[^/]*$/, '');
+  $('rcp-read').value = `curl -sS -H "X-Bridge-Token: ${l.apiKey}" "${base}/feed?order=desc&limit=100"`;
+  $('rcp-send').value = `curl -sS -X POST -H "X-Bridge-Token: ${l.apiKey}" -H "Content-Type: application/json" \\\n  -d '{"text": "hello from ${l.slug}"}' "${base}/send"`;
+  $('rcp-prompt').value = promptText(base, hub, lang);
+}
+
+function renderLane() {
+  const l = me.lane;
+  $('lane-bot').textContent = '@' + (l.botUsername || l.slug);
+  $('lane-status').textContent = l.enabled ? (lang === 'ru' ? 'активен' : 'enabled') : 'disabled';
+  $('lane-base').textContent = memberBase(l) + '/…';
+  $('lane-key').dataset.key = l.apiKey;
+  renderRecipes(l);
+  showMemberView('lane');
+}
+
+async function loadMe() {
+  applyLang();
+  me = await api('/portal/api/me');
+  $('who').textContent = me.email;
+  if (me.lane) renderLane(); else showMemberView('setup');
+}
+
+$('create-btn').onclick = async () => {
+  $('create-error-m').textContent = '';
+  try {
+    await api('/portal/api/lane', { method: 'POST', body: JSON.stringify({ botToken: $('new-token-m').value.trim() }) });
+    $('new-token-m').value = '';
+    await loadMe();
+  } catch (e) { $('create-error-m').textContent = e.message; }
+};
+
+$('key-toggle').onclick = () => {
+  const el = $('lane-key');
+  const shown = el.dataset.shown === '1';
+  el.textContent = shown ? '••••••••••••••••' : el.dataset.key;
+  el.className = shown ? 'key-hidden' : 'mono';
+  el.dataset.shown = shown ? '0' : '1';
+  $('key-toggle').textContent = shown ? I18N[lang].show : I18N[lang].hide;
+};
+$('key-copy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('lane-key').dataset.key); $('key-copy').textContent = '✓'; }
+  catch (e) { $('key-copy').textContent = '✗'; }
+  setTimeout(() => $('key-copy').textContent = 'copy', 1200);
+};
+$('key-rotate').onclick = async () => {
+  const msg = lang === 'ru' ? 'Перевыпустить ключ? Старый перестанет работать сразу.' : 'Rotate the key? The old one stops working immediately.';
+  if (!confirm(msg)) return;
+  await api('/portal/api/lane/rotate-key', { method: 'POST' });
+  await loadMe();
+};
+$('prompt-copy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('rcp-prompt').value); $('prompt-copy').textContent = 'copied ✓'; }
+  catch (e) { $('rcp-prompt').focus(); $('rcp-prompt').select(); $('prompt-copy').textContent = 'select+copy'; }
+  setTimeout(() => $('prompt-copy').textContent = 'copy', 1500);
+};
+$('pw-btn').onclick = async () => {
+  $('pw-error').textContent = ''; $('pw-ok').textContent = '';
+  try {
+    await api('/portal/api/password', { method: 'POST', body: JSON.stringify({ oldPassword: $('pw-old').value, newPassword: $('pw-new').value }) });
+    $('pw-old').value = $('pw-new').value = '';
+    $('pw-ok').textContent = lang === 'ru' ? 'Пароль изменён.' : 'Password changed.';
+  } catch (e) { $('pw-error').textContent = e.message; }
+};
+
+// ---------- auth / boot ----------
 
 // Submit (not click) so the browser sees a real login and offers to save the
-// password; Enter comes for free from the form.
+// credentials; Enter comes for free from the form.
 $('login-form').addEventListener('submit', async e => {
   e.preventDefault();
   $('login-error').textContent = '';
   try {
-    await api('/admin/api/login', { method: 'POST', body: JSON.stringify({ password: $('login-password').value }) });
-    const st = await api('/admin/api/status');
+    await api('/api/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: $('login-email').value.trim(), password: $('login-password').value }),
+    });
+    const st = await api('/api/session');
     if (!st.authenticated) {
       $('login-error').textContent =
         'Login succeeded but the session cookie was not stored. Access the hub over HTTPS ' +
@@ -732,21 +965,27 @@ $('login-form').addEventListener('submit', async e => {
     await boot();
   } catch (e) { $('login-error').textContent = e.message; }
 });
-$('logout-btn').onclick = async () => { await api('/admin/api/logout', { method: 'POST' }); showLogin(); };
+$('logout-btn').onclick = async () => { await api('/api/logout', { method: 'POST' }); me = null; showLogin(); };
 
 async function boot() {
-  const st = await api('/admin/api/status');
+  const st = await api('/api/session');
   $('hub-meta').textContent = `v${st.version} · ${st.deliveryMode}${st.publicBaseUrl ? ' · ' + st.publicBaseUrl : ''}`;
-  if (!st.adminPasswordSet) {
+  if (!st.authenticated) {
+    if (!st.adminPasswordSet) {
+      $('login-error').textContent = 'HUB_ADMIN_PASSWORD is not set on the server — admin login is disabled until it is set in .env.';
+    }
     showLogin();
-    $('login-error').textContent = 'HUB_ADMIN_PASSWORD is not set on the server — set it in .env and restart.';
     return;
   }
-  if (!st.authenticated) { showLogin(); return; }
-  showApp();
-  await loadLanes();
-  await loadTeam();
-  await loadFeed();
+  if (st.role === 'admin') {
+    showAdmin();
+    await loadLanes();
+    await loadTeam();
+    await loadFeed();
+  } else {
+    showMemberView('setup');   // placeholder until /me resolves
+    await loadMe();
+  }
 }
 boot();
 </script>

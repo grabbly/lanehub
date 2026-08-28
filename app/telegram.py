@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -9,6 +10,17 @@ import httpx
 from .config import settings
 
 LOG = logging.getLogger("lanehub.telegram")
+
+
+def mentions_bot(text: str, bot_username: str) -> bool:
+    """True when `text` @-mentions `bot_username` as a whole token.
+
+    Case-insensitive; `@foo_bot` does not match `@foo_bot2` (username chars are
+    [A-Za-z0-9_], so we require a non-username char or end after the name)."""
+    if not text or not bot_username:
+        return False
+    handle = re.escape(bot_username.lstrip("@"))
+    return re.search(rf"@{handle}(?![A-Za-z0-9_])", text, re.IGNORECASE) is not None
 
 # Telegram's hard limit is 4096 chars per message; we split a bit below it.
 CHUNK_LIMIT = 4000

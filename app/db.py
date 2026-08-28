@@ -301,6 +301,21 @@ def next_outgoing_update_id(lane_slug: str) -> int:
         return row["m"] + 1
 
 
+def max_incoming_update_id(lane_slug: str) -> int:
+    """Highest update_id among incoming (real Telegram) messages, ignoring the
+    high-namespace synthetic ids of the lane's own sends. 0 if none yet.
+
+    Used to seed the wake cursor 'from now' so enabling wake never replays
+    historical @mentions."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(MAX(update_id), 0) AS m FROM messages "
+            "WHERE lane_slug = ? AND is_outgoing = 0 AND update_id < ?",
+            (lane_slug, OUTGOING_BASE),
+        ).fetchone()
+        return row["m"]
+
+
 def _msg_to_dict(r: sqlite3.Row) -> dict:
     return {
         "lane": r["lane_slug"],

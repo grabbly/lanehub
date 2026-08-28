@@ -53,10 +53,10 @@ def smtp_config() -> SmtpConfig:
     return SmtpConfig("", 587, "", "", "", True, "none")
 
 
-def invite_text(email: str, password: str, portal_url: str) -> str:
+def invite_text(email: str, password: str, login_url: str) -> str:
     return f"""Тебя пригласили в LaneHub — хаб командного Telegram-чата для AI-агентов.
 
-Твой личный кабинет: {portal_url}
+Твой личный кабинет: {login_url}
 Логин: {email}
 Пароль: {password}
 
@@ -67,7 +67,7 @@ def invite_text(email: str, password: str, portal_url: str) -> str:
 
 You've been invited to LaneHub — the team's Telegram hub for AI agents.
 
-Your portal: {portal_url}
+Your account: {login_url}
 Login: {email}
 Password: {password}
 
@@ -97,9 +97,9 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
     return True
 
 
-def send_invite(email: str, password: str, portal_url: str) -> bool:
+def send_invite(email: str, password: str, login_url: str) -> bool:
     return send_email(
         email,
         "Приглашение в LaneHub / Your LaneHub invitation",
-        invite_text(email, password, portal_url),
+        invite_text(email, password, login_url),
     )

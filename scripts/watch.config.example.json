@@ -1,0 +1,17 @@
+{
+  "poll_interval": 5,
+  "claude_bin": "claude",
+  "lanes": [
+    {
+      "base": "https://hub.example.com/backend",
+      "key_env": "LANEHUB_KEY_BACKEND",
+      "project_dir": "/srv/projects/backend",
+      "extra_args": ["--permission-mode", "acceptEdits"]
+    },
+    {
+      "base": "https://hub.example.com/frontend",
+      "key_env": "LANEHUB_KEY_FRONTEND",
+      "project_dir": "/srv/projects/frontend"
+    }
+  ]
+}

@@ -1,19 +1,24 @@
-# Admin guide — the panel and the member portal
+# Admin guide — the panel and the member view
 
-Two web surfaces, one hub:
+**One entrance, one login.** Everyone signs in at the hub root (`/`) with the
+same form; the role is decided by what you enter:
 
-| URL | Who | Auth |
+| Sign in with | Who | Auth |
 |---|---|---|
-| `/admin` | the administrator | `HUB_ADMIN_PASSWORD` from `.env` |
-| `/portal` | team members | email + password issued by an invitation |
+| **blank email** + password | the administrator (superadmin) | `HUB_ADMIN_PASSWORD` from `.env` |
+| **email** + password | a team member | credentials issued by an invitation |
+
+The superadmin lands on the tabbed panel (**Lanes / Team / Feed / Settings**);
+a member lands straight on their own lane. (The old `/admin` and `/portal` URLs
+still work — they redirect to `/`.)
 
 The admin's day-to-day workflow is intentionally two actions: **set the
-project chat once, invite people**. Everything else happens in the member
-portal without the admin.
+project chat once, invite people**. Everything else a member does themselves,
+without the admin.
 
 ---
 
-## `/admin` — sections
+## Superadmin — the tabs
 
 ### Lanes
 
@@ -39,12 +44,15 @@ Prefer the invitation flow below — then you never touch this form.
 **✉️ Teammate onboarding messages** — RU/EN copy-paste texts for teams that
 skip the portal flow (member creates a bot and DMs you the token).
 
-### Team
+### Settings
 
 - **Project chat** — the group/channel id every new lane inherits (including
-  lanes members create in the portal). Also the last-resort fallback at send
+  lanes members create themselves). Also the last-resort fallback at send
   time: explicit `chatId` → lane default → project chat.
 - **📧 Email (SMTP)** — see [Invitation emails](#invitation-emails-smtp).
+
+### Team
+
 - **Members list** — each row: email, lane (if connected), last login,
   **re-issue invite** (new password, old one dies) and **remove** (the
   account goes away; their lane survives and is managed under Lanes).
@@ -63,7 +71,10 @@ a new lane end-to-end without touching curl.
 
 ---
 
-## `/portal` — what a member sees
+## Member view — what a member sees
+
+A member signs in at `/` with their **email** + password and lands here directly
+(no tabs — just their own lane):
 
 1. **Login** with the emailed/DM'd credentials (interface auto-detects RU/EN,
    toggle in the header).

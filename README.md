@@ -21,7 +21,7 @@ extracted, generalized, self-hostable version of that tool.
                                        │  /backend/*   → bot A + key A   │
                                        │  /frontend/*  → bot B + key B   │
                                        │  /pm/*        → bot C + key C   │
-                                       │  /admin       → web UI          │
+                                       │  /            → web UI          │
                                        └─────────────────────────────────┘
                                             ▲              ▲
                                        curl + API key   browser
@@ -39,11 +39,14 @@ agent said what.
 
 ## Features
 
+- **One login, role-based UI** — everyone signs in at the hub root with the
+  same form. Blank email + `HUB_ADMIN_PASSWORD` → the superadmin panel (tabs:
+  Lanes / Team / Feed / Settings); an email + password → that member's own lane.
 - **Web admin UI** — add a bot token, get a lane + generated API key; rotate
   keys, enable/disable lanes, set default chats, watch the live feed, send as
   any lane. No config files to edit for day-to-day management.
-- **Member portal + invitations** — the admin sets the project chat once and
-  invites teammates by email; each member logs into `/portal` with generated
+- **Member self-service + invitations** — the admin sets the project chat once
+  and invites teammates by email; each member signs in with generated
   credentials, creates **their own** bot by pasting a BotFather token, and
   gets back an API key, ready-to-run curl recipes, and a paste-into-CLAUDE.md
   agent-prompt block. Members return any time to re-read settings or rotate
@@ -51,7 +54,7 @@ agent said what.
   admin gets a copy-paste invite text.
 - **Teammate onboarding texts** — copy-paste messages (RU/EN) asking each
   member to create their own bot (or hand over an existing one's token via
-  DM), for teams that skip the portal flow.
+  DM), for teams that skip the self-service flow.
 - **Lanes on the fly** — stored in SQLite, reconciled at runtime. No restarts,
   no docker-compose editing to add a teammate.
 - **Webhook or polling** — webhook mode (near-realtime) when you have a public
@@ -60,6 +63,11 @@ agent said what.
   in the UI makes chat-ID discovery a one-click affair.
 - **Merged feed** — `GET /{lane}/feed` returns the whole conversation across
   all lanes, deduped, sorted by date, each row tagged with its source lane.
+- **`@mention` → resume a Claude Code session** — an optional thin watcher
+  ([scripts/telegram_watch.py](scripts/telegram_watch.py)) resumes the *same*
+  Claude Code session when a human writes `@your_bot` in the chat. Mention
+  detection and the session id live in LaneHub (`/wake` endpoints); the watcher
+  is stateless. See [docs/WATCHER.md](docs/WATCHER.md).
 - **Long messages** — text over Telegram's limit is split on line boundaries
   automatically (`parts` in the response tells you how many).
 - **Media markers** — attachments become `[document: name]` / `[photo]`
@@ -77,8 +85,9 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Open `http://127.0.0.1:8080/admin` (or put it behind your TLS proxy — see
-[docs/INSTALL.md](docs/INSTALL.md)), log in, and for each agent:
+Open `http://127.0.0.1:8080/` (or put it behind your TLS proxy — see
+[docs/INSTALL.md](docs/INSTALL.md)), sign in as admin (leave email blank, enter
+`HUB_ADMIN_PASSWORD`), and for each agent:
 
 1. In [@BotFather](https://t.me/BotFather): `/newbot` → copy the token.
 2. Still in BotFather: `/setprivacy` → your bot → **Disable** (without this
@@ -118,7 +127,7 @@ portal walkthrough (invitations, SMTP, project chat):
 
 | Env var | Default | Meaning |
 |---|---|---|
-| `HUB_ADMIN_PASSWORD` | *(empty — admin locked)* | Password for the `/admin` web UI |
+| `HUB_ADMIN_PASSWORD` | *(empty — admin locked)* | Superadmin password (sign in with a blank email) |
 | `HUB_PUBLIC_BASE_URL` | *(empty)* | Public HTTPS origin, e.g. `https://hub.example.com`. Set → webhook mode |
 | `HUB_DELIVERY_MODE` | auto | Force `webhook` / `polling` / `off` |
 | `HUB_PORT` | `8080` | Host port docker publishes on 127.0.0.1 (compose only) |
@@ -137,7 +146,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/uvicorn scripts.fake_telegram:app --port 8081 &
 HUB_ADMIN_PASSWORD=dev HUB_TELEGRAM_API=http://127.0.0.1:8081 \
   .venv/bin/uvicorn app.main:app --port 8090
-# → http://127.0.0.1:8090/admin (password: dev); simulate a human message:
+# → http://127.0.0.1:8090/ (sign in: blank email + password "dev"); simulate a human message:
 curl -X POST http://127.0.0.1:8081/_push -H 'Content-Type: application/json' \
   -d '{"token": "<lane bot token>", "from": "alice", "chat_id": -100500, "text": "hi"}'
 ```

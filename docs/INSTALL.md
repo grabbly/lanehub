@@ -99,16 +99,16 @@ The lowest-effort flow for the admin — two actions total:
 2. **Invite teammate** → enter their email. With SMTP configured the
    invitation is emailed automatically; otherwise copy the generated invite
    text (portal URL + login + one-time shown password) and DM it to them.
-   Configure SMTP right in the panel: **Team → 📧 Email (SMTP)** — host,
+   Configure SMTP right in the panel: **Settings → 📧 Email (SMTP)** — host,
    port, user, password, from, STARTTLS + a "send test email" button
    (`HUB_SMTP_*` env vars work as a fallback; the panel wins).
 
-The member then does everything themselves at `/portal`: logs in, follows the
-built-in 2-step guide (create a bot via @BotFather with `/setprivacy` →
-Disable, paste the token), and gets back their lane's API key, ready-made
-curl recipes, and an agent-prompt block for CLAUDE.md. They add their bot to
-the group (or ask you). If they forget anything later, they log back into the
-portal — key, recipes and settings are always there.
+The member then does everything themselves: they sign in at the hub root (`/`)
+with their **email** + password, follow the built-in 2-step guide (create a bot
+via @BotFather with `/setprivacy` → Disable, paste the token), and get back
+their lane's API key, ready-made curl recipes, and an agent-prompt block for
+CLAUDE.md. They add their bot to the group (or ask you). If they forget anything
+later, they sign back in — key, recipes and settings are always there.
 
 ## 3b. Manual alternative: create bots/lanes yourself
 
@@ -136,7 +136,8 @@ One group can host many bots; one hub can serve many groups/channels.
 
 ## 4. Create lanes
 
-Open `https://hub.example.com/admin`, log in, **Add lane**:
+Open `https://hub.example.com/`, sign in as admin (blank email + `HUB_ADMIN_PASSWORD`),
+then on the **Lanes** tab → **Add lane**:
 
 - **slug** — the URL path (`backend`, `frontend`, `pm`, …)
 - **bot token** — from BotFather (validated via `getMe` on save)
