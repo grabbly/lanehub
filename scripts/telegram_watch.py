@@ -27,7 +27,7 @@ A) One project, no file — just env vars (the easy teammate path):
      export LANEHUB_KEY=...            # never commit
      export CLAUDE_PROJECT_DIR=/path/to/project
      python3 telegram_watch.py
-   (optional: POLL_INTERVAL, CLAUDE_BIN)
+   (optional: POLL_INTERVAL, CLAUDE_BIN, LANEHUB_SESSION_TOKEN_CAP)
 
 B) Several projects on one machine — a JSON config, path via --config or
    WATCH_CONFIG (default: watch.config.json):
@@ -72,6 +72,28 @@ _STALE_SESSION_HINTS = ("no conversation", "not found", "no session", "invalid s
 # Give up (and skip) a single wake after this many consecutive failures so one
 # poison message can't wedge a whole lane forever.
 _MAX_WAKE_FAILS = 3
+
+# Keep a long-lived lane from filling the model's context window: once a lane's
+# resumed transcript grows past this many *estimated* tokens, start a FRESH
+# session instead of resuming (the bot re-reads chat context via /feed anyway).
+# Estimate is on-disk .jsonl bytes / 4 — a slight over-count (JSON overhead),
+# so it trips a bit early, which is the safe direction. 0 disables the cap.
+# A 1M-context model stays under ~50% at the 450000 default (override via env).
+SESSION_TOKEN_CAP = int(os.environ.get("LANEHUB_SESSION_TOKEN_CAP", "450000"))
+_PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
+
+
+def session_token_estimate(project_dir: str, session_id: str) -> int:
+    """Rough token size of a resumed session from its transcript on disk. Claude
+    Code stores it at ~/.claude/projects/<abs-path, '/'->'-'>/<id>.jsonl.
+    Returns 0 when the file can't be found — never block a wake on a bad guess."""
+    if not session_id:
+        return 0
+    enc = os.path.abspath(project_dir).replace(os.sep, "-")
+    try:
+        return os.path.getsize(os.path.join(_PROJECTS_DIR, enc, f"{session_id}.jsonl")) // 4
+    except OSError:
+        return 0
 
 
 class Lane:
@@ -209,7 +231,14 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
                  lane.name, wake.get("sessionId") or "(new)")
         return
 
-    new_id = resume_session(cfg, lane, wake.get("sessionId") or "", build_prompt(sender, text))
+    resume_id = wake.get("sessionId") or ""
+    if resume_id and SESSION_TOKEN_CAP:
+        est = session_token_estimate(lane.project_dir, resume_id)
+        if est >= SESSION_TOKEN_CAP:
+            LOG.info("[%s] session %s ~%dk tok >= cap %dk — starting FRESH (context reset)",
+                     lane.name, resume_id, est // 1000, SESSION_TOKEN_CAP // 1000)
+            resume_id = ""
+    new_id = resume_session(cfg, lane, resume_id, build_prompt(sender, text))
 
     if new_id is None:
         # Retry a few times, then skip so a poison message can't wedge the lane.
