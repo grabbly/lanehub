@@ -164,6 +164,16 @@ def http_json(url: str, key: str, method: str = "GET", body: dict | None = None)
         return json.loads(resp.read().decode("utf-8"))
 
 
+def hub_log(lane: "Lane", level: str, message: str) -> None:
+    """Best-effort: mirror a watcher event to the hub (POST /{lane}/log) so it
+    shows in the web UI. Never let logging break the watch loop."""
+    try:
+        http_json(f"{lane.base}/log", lane.key, method="POST",
+                  body={"level": level, "message": message})
+    except Exception:
+        pass
+
+
 def _run_claude(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[str | None, str]:
     """One claude invocation. Returns (new_session_id | None, stderr)."""
     claude_bin = lane.claude_bin or cfg.claude_bin
@@ -181,6 +191,7 @@ def _run_claude(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[
     if proc.returncode != 0:
         stderr = proc.stderr.strip()
         LOG.error("[%s] claude exited %s: %s", lane.name, proc.returncode, stderr[:500])
+        hub_log(lane, "error", f"claude exited {proc.returncode}: {stderr[:300] or '(no stderr)'}")
         return None, stderr
     try:
         result = json.loads(proc.stdout)
@@ -193,6 +204,7 @@ def _run_claude(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[
     if mu:
         primary = max(mu, key=lambda k: (mu[k].get("input_tokens", 0) + mu[k].get("output_tokens", 0)) if isinstance(mu[k], dict) else 0)
         LOG.info("[%s] replied via %s", lane.name, primary)
+        hub_log(lane, "info", f"replied via {primary}")
     return result.get("session_id") or session_id, ""
 
 
@@ -237,12 +249,14 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
                  lane.name, wake.get("sessionId") or "(new)")
         return
 
+    hub_log(lane, "info", f"@mention from {sender}: {text[:200]}")
     resume_id = wake.get("sessionId") or ""
     if resume_id and SESSION_TOKEN_CAP:
         est = session_token_estimate(lane.project_dir, resume_id)
         if est >= SESSION_TOKEN_CAP:
             LOG.info("[%s] session %s ~%dk tok >= cap %dk — starting FRESH (context reset)",
                      lane.name, resume_id, est // 1000, SESSION_TOKEN_CAP // 1000)
+            hub_log(lane, "info", f"context reset — session ~{est // 1000}k tok >= {SESSION_TOKEN_CAP // 1000}k cap; fresh session")
             resume_id = ""
     new_id = resume_session(cfg, lane, resume_id, build_prompt(sender, text))
 

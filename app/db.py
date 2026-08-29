@@ -70,7 +70,18 @@ CREATE TABLE IF NOT EXISTS members (
     created_at INTEGER NOT NULL,
     last_login INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS lane_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lane_slug TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    level TEXT NOT NULL DEFAULT 'info',
+    message TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_lane_logs ON lane_logs(lane_slug, id);
 """
+
+# Keep at most this many log lines per lane (a rolling watcher-activity buffer).
+LANE_LOG_CAP = 300
 
 
 def connect() -> sqlite3.Connection:
@@ -240,6 +251,7 @@ def delete_lane(slug: str) -> None:
     with connect() as conn:
         conn.execute("DELETE FROM lanes WHERE slug = ?", (slug,))
         conn.execute("DELETE FROM lane_state WHERE lane_slug = ?", (slug,))
+        conn.execute("DELETE FROM lane_logs WHERE lane_slug = ?", (slug,))
 
 
 # --- lane state (poll offsets) -------------------------------------------
@@ -260,6 +272,34 @@ def set_lane_state(slug: str, key: str, value: str) -> None:
             "ON CONFLICT(lane_slug, key) DO UPDATE SET value = excluded.value",
             (slug, key, value),
         )
+
+
+# --- lane logs (watcher activity, rolling per lane) ----------------------
+
+
+def add_lane_log(slug: str, level: str, message: str, ts: int) -> None:
+    """Append one watcher log line for a lane and trim to the last LANE_LOG_CAP."""
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO lane_logs(lane_slug, ts, level, message) VALUES(?, ?, ?, ?)",
+            (slug, ts, (level or "info")[:16], message[:2000]),
+        )
+        conn.execute(
+            "DELETE FROM lane_logs WHERE lane_slug = ? AND id NOT IN "
+            "(SELECT id FROM lane_logs WHERE lane_slug = ? ORDER BY id DESC LIMIT ?)",
+            (slug, slug, LANE_LOG_CAP),
+        )
+
+
+def query_lane_logs(slug: str, limit: int = 200) -> list[dict]:
+    """Most-recent-first log lines for a lane."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT ts, level, message FROM lane_logs WHERE lane_slug = ? "
+            "ORDER BY id DESC LIMIT ?",
+            (slug, max(1, min(limit, LANE_LOG_CAP))),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 # --- messages ------------------------------------------------------------

@@ -77,6 +77,16 @@ async def me(hub_session: str | None = Cookie(default=None)) -> dict:
     }
 
 
+@router.get("/logs")
+async def logs(hub_session: str | None = Cookie(default=None)) -> dict:
+    """Watcher-activity log for the member's OWN lane only."""
+    member = require_member(hub_session)
+    slug = member["lane_slug"]
+    if not slug or not db.get_lane(slug):
+        return {"logs": []}
+    return {"slug": slug, "logs": db.query_lane_logs(slug)}
+
+
 @router.post("/lane", status_code=201)
 async def create_lane(req: PortalLaneCreate, hub_session: str | None = Cookie(default=None)) -> dict:
     member = require_member(hub_session)

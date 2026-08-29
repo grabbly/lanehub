@@ -12,6 +12,7 @@ which Telegram authenticates with X-Telegram-Bot-Api-Secret-Token).
 from __future__ import annotations
 
 import secrets as pysecrets
+import time
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -189,6 +190,25 @@ async def wake_ack(lane_slug: str, req: WakeAck, x_bridge_token: str = Header(de
     db.set_lane_state(lane_slug, "wake_cursor", str(req.wake_id))
     if req.session_id:
         db.set_lane_state(lane_slug, "claude_session_id", req.session_id)
+    return {"ok": True}
+
+
+class LogEntry(BaseModel):
+    level: str = Field(default="info", max_length=16)
+    message: str = Field(min_length=1, max_length=2000)
+    ts: int | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+@router.post("/{lane_slug}/log")
+async def lane_log(lane_slug: str, req: LogEntry, x_bridge_token: str = Header(default="")) -> dict:
+    """Append one watcher-activity line for this lane (rolling buffer, newest
+    kept). The watcher self-reports with its own lane key; the admin panel reads
+    every lane and the lane's owner reads their own — nobody reaches into a
+    watcher, each pushes here."""
+    _auth_lane(lane_slug, x_bridge_token)
+    db.add_lane_log(lane_slug, req.level, req.message, req.ts or int(time.time()))
     return {"ok": True}
 
 

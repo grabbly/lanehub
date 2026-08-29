@@ -263,6 +263,14 @@ class TestEmail(BaseModel):
     to: str
 
 
+@router.get("/lanes/{slug}/logs")
+async def lanes_logs(slug: str, hub_session: str | None = Cookie(default=None)) -> dict:
+    require_admin(hub_session)
+    if not db.get_lane(slug):
+        raise HTTPException(status_code=404, detail="unknown lane")
+    return {"slug": slug, "logs": db.query_lane_logs(slug)}
+
+
 @router.get("/settings")
 async def settings_get(hub_session: str | None = Cookie(default=None)) -> dict:
     require_admin(hub_session)

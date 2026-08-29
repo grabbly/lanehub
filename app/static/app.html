@@ -248,6 +248,9 @@
       <div class="kv"><span class="k" data-i18n="bot">Бот</span><span id="lane-bot" class="mono"></span>
         <span class="badge on" id="lane-status"></span></div>
       <div class="kv"><span class="k" data-i18n="endpoint">Endpoint</span><code id="lane-base"></code></div>
+      <div class="kv"><span class="k" data-i18n="activity">Активность</span>
+        <button class="small" id="log-btn" data-i18n="sessionLog">лог сессий</button>
+        <span class="hint" data-i18n="activityHint">когда бота зовут — кто, какая модель ответила, ошибки</span></div>
       <div class="kv"><span class="k">API key</span>
         <code class="key-hidden" id="lane-key" data-shown="0">••••••••••••••••</code>
         <button class="small" id="key-toggle" data-i18n="show">показать</button>
@@ -369,6 +372,58 @@ LANEHUB_BASE=${base} CLAUDE_PROJECT_DIR="$(pwd)" nohup python3 watcher.py > watc
 Rules: post only through your own lane; files don't traverse the chat — publish a URL and send the link; a thread longer than 3-4 messages escalates to the issue tracker.`;
 }
 
+// ---------- shared: session log dialog ----------
+
+async function showLogDialog(title, path) {
+  const dlg = document.createElement('dialog');
+  dlg.innerHTML = `
+    <div style="padding:18px 20px; min-width:min(700px,92vw); max-width:92vw;">
+      <h2 style="margin:0 0 12px; display:flex; align-items:center; gap:10px;">${esc(title)}
+        <span style="margin-left:auto; display:flex; gap:8px;">
+          <button class="small" data-refresh>refresh</button>
+          <button class="small" data-auto>auto-refresh: on</button>
+        </span>
+      </h2>
+      <p class="hint" style="margin:0 0 10px;">What the watcher reported for this bot — newest first. Each @mention: who called it, the model that answered, resets and errors.</p>
+      <div data-body style="max-height:58vh; overflow:auto; border:1px solid var(--border,#dde3ea); border-radius:8px;"></div>
+      <div class="actions" style="justify-content:flex-end; margin-top:12px;"><button data-close>Close</button></div>
+    </div>`;
+  const body = dlg.querySelector('[data-body]');
+  let timer = null;
+  const load = async () => {
+    try {
+      const logs = (await api(path)).logs || [];
+      if (!logs.length) {
+        body.innerHTML = '<p class="hint" style="padding:16px;">No activity yet — this fills in when the bot is @-mentioned in the chat.</p>';
+        return;
+      }
+      body.innerHTML = logs.map(r => {
+        const err = r.level === 'error';
+        return `<div style="display:flex; gap:12px; padding:8px 12px; border-bottom:1px solid var(--border,#eee); font-family:'IBM Plex Mono','SF Mono',monospace; font-size:12.5px; line-height:1.5;">
+          <span style="color:var(--muted,#889); white-space:nowrap;">${esc(fmtDate(r.ts))}</span>
+          <span style="font-weight:700; font-size:10px; letter-spacing:.05em; width:40px; flex:none; color:${err ? 'var(--danger,#c0392b)' : 'var(--accent,#0d7c88)'};">${err ? 'ERR' : 'INFO'}</span>
+          <span style="white-space:pre-wrap; word-break:break-word;">${esc(r.message)}</span>
+        </div>`;
+      }).join('');
+    } catch (e) {
+      body.innerHTML = '<p class="error" style="padding:16px;">' + esc(e.message) + '</p>';
+    }
+  };
+  const autoBtn = dlg.querySelector('[data-auto]');
+  const stopAuto = () => { if (timer) { clearInterval(timer); timer = null; } };
+  autoBtn.onclick = () => {
+    if (timer) { stopAuto(); autoBtn.textContent = 'auto-refresh: off'; }
+    else { timer = setInterval(load, 5000); autoBtn.textContent = 'auto-refresh: on'; }
+  };
+  dlg.querySelector('[data-refresh]').onclick = load;
+  dlg.querySelector('[data-close]').onclick = () => dlg.close();
+  dlg.addEventListener('close', () => { stopAuto(); dlg.remove(); });
+  document.body.appendChild(dlg);
+  await load();
+  timer = setInterval(load, 5000);
+  dlg.showModal();
+}
+
 // ---------- admin: lanes ----------
 
 function laneCard(l) {
@@ -406,6 +461,7 @@ function laneCard(l) {
       <button class="small" data-act="toggle">${l.enabled ? 'disable' : 'enable'}</button>
       ${l.deliveryMode === 'webhook' ? '<button class="small" data-act="webhook-info">webhook status</button>' : ''}
       <button class="small" data-act="recipes">agent recipes</button>
+      <button class="small" data-act="log">session log</button>
       <button class="small danger" data-act="delete">delete</button>
     </div>
     <div class="error" data-err></div>`;
@@ -447,6 +503,7 @@ function laneCard(l) {
     alert(JSON.stringify(info, null, 2));
   });
   div.querySelector('[data-act=recipes]').onclick = () => showRecipes(l);
+  div.querySelector('[data-act=log]').onclick = () => showLogDialog('Session log — /' + l.slug, `/admin/api/lanes/${l.slug}/logs`);
   div.querySelector('[data-act=delete]').onclick = run(async () => {
     if (!confirm(`Delete lane /${l.slug}? Its API key stops working. Message history is kept.`)) return;
     await api(`/admin/api/lanes/${l.slug}`, { method: 'DELETE' });
@@ -887,6 +944,7 @@ function renderLane() {
   $('lane-status').textContent = l.enabled ? (lang === 'ru' ? 'активен' : 'enabled') : 'disabled';
   $('lane-base').textContent = memberBase(l) + '/…';
   $('lane-key').dataset.key = l.apiKey;
+  $('log-btn').onclick = () => showLogDialog('Session log — @' + (l.botUsername || l.slug), '/portal/api/logs');
   renderRecipes(l);
   showMemberView('lane');
 }
