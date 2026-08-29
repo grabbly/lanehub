@@ -236,8 +236,9 @@ def build_prompt(sender: str, text: str) -> str:
     return (
         f"You were @-mentioned in the team Telegram chat by {sender}:\n\n"
         f"{text}\n\n"
-        "Read the chat via your LaneHub /feed for full context and reply through "
-        "your lane's /send. Keep it short."
+        "Read context by running ./tg-fetch.sh (then read the tail of "
+        "tg-chat-log.jsonl), and reply by running ./tg-report.sh \"your reply\". "
+        "Use only those helper scripts to read and post. Keep it short."
     )
 
 
