@@ -207,13 +207,15 @@ def _run_claude(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[
     if mu:
         primary = max(mu, key=lambda k: (mu[k].get("input_tokens", 0) + mu[k].get("output_tokens", 0)) if isinstance(mu[k], dict) else 0)
         u = result.get("usage") or {}
-        ctx = u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
         out = u.get("output_tokens", 0)
         dur_s = (result.get("duration_ms") or 0) / 1000.0
         cost = result.get("total_cost_usd") or 0
-        # ctx / 10000 == ctx as a percentage of a 1M-token window
-        summary = (f"replied via {primary} · {dur_s:.1f}s · ctx {ctx // 1000}k "
-                   f"({ctx / 10000:.1f}% of 1M) · out {out} tok · ${cost:.3f}")
+        # Session size = what actually reloads on resume (the transcript on disk),
+        # NOT the per-run usage sum — that double-counts across tool iterations and
+        # can read far above the window (e.g. "281% of 1M") on a long agentic run.
+        sess = session_token_estimate(lane.project_dir, result.get("session_id") or session_id)
+        summary = (f"replied via {primary} · {dur_s:.1f}s · session {sess // 1000}k "
+                   f"({sess / 10000:.1f}% of 1M) · out {out} tok · ${cost:.3f}")
         LOG.info("[%s] %s", lane.name, summary)
         hub_log(lane, "info", summary, cost_usd=cost)
     return result.get("session_id") or session_id, "", result
