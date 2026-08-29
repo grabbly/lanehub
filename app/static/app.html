@@ -204,6 +204,12 @@
         <button class="small" id="budget-save">save</button>
       </div>
       <p class="hint">Your own 5h / weekly $ caps for what the bots spend (0 = off). Shown as "spent / left" in each bot's session log. Note: Anthropic's real 5h/weekly limits aren't exposed to headless Claude — this tracks the watcher's own cost.</p>
+      <div class="kv"><span class="k">Operator console</span>
+        <input id="op-chat" style="max-width:200px;" placeholder="-100… operator chat id">
+        <select id="op-console"><option value="">— console bot —</option></select>
+        <button class="small" id="op-save">save</button>
+      </div>
+      <p class="hint">Human-in-the-loop console in a separate Telegram chat: draft previews with approve/reject, start/finish + cost, and <code>/status</code>. Set the operator chat id and pick which bot speaks there (it must be a member of that chat). Then switch a lane's <b>Reply mode</b> to <b>confirm</b>. Leave empty = every lane posts directly (auto).</p>
       <details id="smtp-details" style="margin-top:8px;">
         <summary>📧 Email (SMTP) for invitation emails</summary>
         <p class="hint" id="smtp-status" style="margin:8px 0 4px;"></p>
@@ -496,6 +502,13 @@ function laneCard(l) {
         <button class="small" data-act="rotate">rotate</button>
       </div>
       <div class="kv"><span class="k">Endpoint</span><code>${esc(base)}/${esc(l.slug)}/…</code></div>
+      <div class="kv"><span class="k">Reply mode</span>
+        <select data-mode>
+          <option value="auto">auto — post directly</option>
+          <option value="confirm">confirm — operator approves</option>
+        </select>
+        <span class="hint">confirm routes drafts through the operator chat</span>
+      </div>
       <div class="kv"><span class="k">Default chat</span>
         <input data-chat-input value="${esc(l.defaultChatId || '')}" placeholder="-100… or @channelname" style="max-width:240px;">
         <button class="small" data-act="save-chat">save</button>
@@ -549,6 +562,12 @@ function laneCard(l) {
   });
   div.querySelector('[data-act=recipes]').onclick = () => showRecipes(l);
   div.querySelector('[data-act=log]').onclick = () => showLogDialog('Session log — /' + l.slug, `/admin/api/lanes/${l.slug}/logs`);
+  const modeSel = div.querySelector('[data-mode]');
+  modeSel.value = l.replyMode || 'auto';
+  modeSel.onchange = run(async () => {
+    await api(`/admin/api/lanes/${l.slug}`, { method: 'PATCH', body: JSON.stringify({ replyMode: modeSel.value }) });
+    await loadLanes();
+  });
   div.querySelector('[data-act=delete]').onclick = run(async () => {
     if (!confirm(`Delete lane /${l.slug}? Its API key stops working. Message history is kept.`)) return;
     await api(`/admin/api/lanes/${l.slug}`, { method: 'DELETE' });
@@ -766,10 +785,14 @@ $('onboarding-btn').onclick = showOnboarding;
 // ---------- admin: team + settings ----------
 
 async function loadTeam() {
-  const [st, ms] = await Promise.all([api('/admin/api/settings'), api('/admin/api/members')]);
+  const [st, ms, ln] = await Promise.all([api('/admin/api/settings'), api('/admin/api/members'), api('/admin/api/lanes')]);
   $('project-chat').value = st.projectChatId || '';
   $('budget-5h').value = st.budget5hUsd || '';
   $('budget-week').value = st.budgetWeekUsd || '';
+  $('op-chat').value = st.operatorChatId || '';
+  $('op-console').innerHTML = '<option value="">— console bot —</option>' +
+    (ln.lanes || []).map(l => `<option value="${esc(l.slug)}">${esc(l.slug)}${l.botUsername ? ' (@' + esc(l.botUsername) + ')' : ''}</option>`).join('');
+  $('op-console').value = st.operatorConsoleSlug || '';
   $('team-meta').textContent = `sign-in: ${st.loginUrl} · email: ${st.smtpConfigured ? 'SMTP configured' : 'not configured (copy-paste invites)'}`;
   const s = st.smtp || {};
   $('smtp-status').textContent = s.source === 'panel'
@@ -862,6 +885,14 @@ $('budget-save').onclick = async () => {
   await api('/admin/api/settings', { method: 'PATCH', body: JSON.stringify({
     budget5hUsd: parseFloat($('budget-5h').value) || 0,
     budgetWeekUsd: parseFloat($('budget-week').value) || 0,
+  }) });
+  await loadTeam();
+};
+
+$('op-save').onclick = async () => {
+  await api('/admin/api/settings', { method: 'PATCH', body: JSON.stringify({
+    operatorChatId: $('op-chat').value.trim(),
+    operatorConsoleSlug: $('op-console').value,
   }) });
   await loadTeam();
 };

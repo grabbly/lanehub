@@ -55,11 +55,35 @@ async def send_message(bot_token: str, chat_id: str, text: str) -> dict:
     return await tg_call(bot_token, "sendMessage", {"chat_id": chat_id, "text": text})
 
 
+def _inline_kb(buttons: list[tuple[str, str]]) -> dict:
+    """One row of inline buttons as (label, callback_data) pairs."""
+    return {"inline_keyboard": [[{"text": t, "callback_data": d} for t, d in buttons]]}
+
+
+async def send_buttons(bot_token: str, chat_id: str, text: str, buttons: list[tuple[str, str]]) -> dict:
+    return await tg_call(bot_token, "sendMessage",
+                         {"chat_id": chat_id, "text": text, "reply_markup": _inline_kb(buttons)})
+
+
+async def edit_message(bot_token: str, chat_id: str, message_id: int, text: str) -> dict:
+    """Replace a message's text and drop its buttons (used after a decision)."""
+    return await tg_call(bot_token, "editMessageText",
+                         {"chat_id": chat_id, "message_id": message_id, "text": text})
+
+
+async def answer_callback(bot_token: str, callback_id: str, text: str = "") -> None:
+    try:
+        await tg_call(bot_token, "answerCallbackQuery", {"callback_query_id": callback_id, "text": text})
+    except TelegramError:
+        pass  # answering is best-effort; the decision is already recorded
+
+
 async def set_webhook(bot_token: str, url: str, secret: str) -> None:
     await tg_call(
         bot_token,
         "setWebhook",
-        {"url": url, "secret_token": secret, "allowed_updates": ["message", "channel_post"]},
+        {"url": url, "secret_token": secret,
+         "allowed_updates": ["message", "channel_post", "callback_query"]},
     )
 
 

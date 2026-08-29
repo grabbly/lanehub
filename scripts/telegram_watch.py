@@ -27,7 +27,7 @@ A) One project, no file — just env vars (the easy teammate path):
      export LANEHUB_KEY=...            # never commit
      export CLAUDE_PROJECT_DIR=/path/to/project
      python3 telegram_watch.py
-   (optional: POLL_INTERVAL, CLAUDE_BIN, LANEHUB_SESSION_TOKEN_CAP)
+   (optional: POLL_INTERVAL, CLAUDE_BIN)
 
 B) Several projects on one machine — a JSON config, path via --config or
    WATCH_CONFIG (default: watch.config.json):
@@ -78,7 +78,7 @@ _MAX_WAKE_FAILS = 3
 # session instead of resuming (the bot re-reads chat context via /feed anyway).
 # Estimate is on-disk .jsonl bytes / 4 — a slight over-count (JSON overhead),
 # so it trips a bit early, which is the safe direction. 0 disables the cap.
-# A 1M-context model stays under ~50% at the 450000 default (override via env).
+# Opus 4.8 window is 1M; default 450k keeps a lane under ~50% with headroom.
 SESSION_TOKEN_CAP = int(os.environ.get("LANEHUB_SESSION_TOKEN_CAP", "450000"))
 _PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
 
@@ -177,8 +177,8 @@ def hub_log(lane: "Lane", level: str, message: str, cost_usd: float | None = Non
         pass
 
 
-def _run_claude(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[str | None, str]:
-    """One claude invocation. Returns (new_session_id | None, stderr)."""
+def _run_claude(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[str | None, str, dict | None]:
+    """One claude invocation. Returns (new_session_id | None, stderr, result_json)."""
     claude_bin = lane.claude_bin or cfg.claude_bin
     cmd = [claude_bin, "-p", prompt, "--output-format", "json"]
     if session_id:
@@ -190,17 +190,17 @@ def _run_claude(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[
         )
     except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
         LOG.error("[%s] claude invocation failed: %s", lane.name, exc)
-        return None, str(exc)
+        return None, str(exc), None
     if proc.returncode != 0:
         stderr = proc.stderr.strip()
         LOG.error("[%s] claude exited %s: %s", lane.name, proc.returncode, stderr[:500])
         hub_log(lane, "error", f"claude exited {proc.returncode}: {stderr[:300] or '(no stderr)'}")
-        return None, stderr
+        return None, stderr, None
     try:
         result = json.loads(proc.stdout)
     except json.JSONDecodeError:
         LOG.warning("[%s] could not parse claude json output; keeping session id", lane.name)
-        return session_id, ""
+        return session_id, "", None
     # Surface which model actually answered (the one that did the most work this
     # turn) — a resumed session keeps its ORIGINAL model unless --model overrides.
     mu = result.get("modelUsage") or {}
@@ -216,18 +216,18 @@ def _run_claude(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[
                    f"({ctx / 10000:.1f}% of 1M) · out {out} tok · ${cost:.3f}")
         LOG.info("[%s] %s", lane.name, summary)
         hub_log(lane, "info", summary, cost_usd=cost)
-    return result.get("session_id") or session_id, ""
+    return result.get("session_id") or session_id, "", result
 
 
-def resume_session(cfg: Config, lane: Lane, session_id: str, prompt: str) -> str | None:
+def resume_session(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[str | None, dict | None]:
     """Resume `session_id` (or start fresh when empty), self-healing a stale id.
-    Returns the session id to report back, or None if even a fresh run failed."""
+    Returns (session id to report back | None if even a fresh run failed, result_json)."""
     LOG.info("[%s] resuming session %s", lane.name, session_id or "(new)")
-    new_id, stderr = _run_claude(cfg, lane, session_id, prompt)
+    new_id, stderr, result = _run_claude(cfg, lane, session_id, prompt)
     if new_id is None and session_id and any(h in stderr.lower() for h in _STALE_SESSION_HINTS):
         LOG.warning("[%s] session %s looks gone; starting a fresh one", lane.name, session_id)
-        new_id, _ = _run_claude(cfg, lane, "", prompt)
-    return new_id
+        new_id, _, result = _run_claude(cfg, lane, "", prompt)
+    return new_id, result
 
 
 def build_prompt(sender: str, text: str) -> str:
@@ -237,6 +237,27 @@ def build_prompt(sender: str, text: str) -> str:
         "Read the chat via your LaneHub /feed for full context and reply through "
         "your lane's /send. Keep it short."
     )
+
+
+def build_draft_prompt(sender: str, text: str) -> str:
+    """Confirm-mode: produce the reply as the FINAL message, do NOT send it —
+    an operator reviews and approves it before it reaches the team chat."""
+    return (
+        f"You were @-mentioned in the team Telegram chat by {sender}:\n\n"
+        f"{text}\n\n"
+        "Read the chat via ./tg-fetch.sh (or /feed) for context, then write your "
+        "reply as your FINAL message. Do NOT send it — do NOT run ./tg-report.sh "
+        "or /send. An operator will review and approve it. Output only the reply "
+        "text, kept short."
+    )
+
+
+def hub_notify(lane: Lane, text: str) -> None:
+    """Best-effort start/finish/status line to the operator chat via the hub."""
+    try:
+        http_json(f"{lane.base}/operator", lane.key, method="POST", body={"text": text})
+    except Exception:
+        pass
 
 
 def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
@@ -260,7 +281,9 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
                  lane.name, wake.get("sessionId") or "(new)")
         return
 
+    mode = wake.get("mode") or "auto"
     hub_log(lane, "info", f"@mention from {sender}: {text[:200]}")
+    hub_notify(lane, f"🟡 [{lane.name}] {sender}: {text[:150]}")
     resume_id = wake.get("sessionId") or ""
     if resume_id and SESSION_TOKEN_CAP:
         est = session_token_estimate(lane.project_dir, resume_id)
@@ -269,7 +292,9 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
                      lane.name, resume_id, est // 1000, SESSION_TOKEN_CAP // 1000)
             hub_log(lane, "info", f"context reset — session ~{est // 1000}k tok >= {SESSION_TOKEN_CAP // 1000}k cap; fresh session")
             resume_id = ""
-    new_id = resume_session(cfg, lane, resume_id, build_prompt(sender, text))
+
+    prompt = build_draft_prompt(sender, text) if mode == "confirm" else build_prompt(sender, text)
+    new_id, result = resume_session(cfg, lane, resume_id, prompt)
 
     if new_id is None:
         # Retry a few times, then skip so a poison message can't wedge the lane.
@@ -282,8 +307,32 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
                         lane.name, wake_id, lane._fail_count, _MAX_WAKE_FAILS)
             return
         LOG.error("[%s] wake %s failed %d times; skipping it", lane.name, wake_id, _MAX_WAKE_FAILS)
+        hub_notify(lane, f"✗ [{lane.name}] не удалось ответить — пропущено")
+        # fall through to ack so the poison wake is consumed
+    else:
+        lane._last_fail_wake, lane._fail_count = None, 0
+        cost = (result or {}).get("total_cost_usd") or 0
+        if mode == "confirm":
+            draft = ((result or {}).get("result") or "").strip()
+            if draft:
+                resp = {}
+                try:
+                    resp = http_json(f"{lane.base}/draft", lane.key, method="POST",
+                                     body={"wakeId": wake_id, "text": draft, "costUsd": cost})
+                except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+                    LOG.warning("[%s] draft submit failed: %s", lane.name, exc)
+                if resp.get("posted"):
+                    LOG.info("[%s] draft sent to operator for approval", lane.name)
+                    # non-blocking: the hub posts to the team chat when approved
+                else:
+                    # no operator console configured — behave as auto and send now
+                    _send_direct(lane, draft)
+                    hub_notify(lane, f"✅ [{lane.name}] отправлено (оператор не настроен) · ${cost:.3f}")
+            else:
+                LOG.warning("[%s] empty draft; nothing to submit", lane.name)
+        else:
+            hub_notify(lane, f"✅ [{lane.name}] ответил · ${cost:.3f}")
 
-    lane._last_fail_wake, lane._fail_count = None, 0
     ack = {"wakeId": wake_id}
     if new_id:
         ack["sessionId"] = new_id
@@ -291,6 +340,15 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
         http_json(f"{lane.base}/wake/ack", lane.key, method="POST", body=ack)
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         LOG.warning("[%s] ack failed: %s (wake will re-fire)", lane.name, exc)
+
+
+def _send_direct(lane: Lane, text: str) -> None:
+    """Fallback for confirm-mode when no operator console is configured: post the
+    draft to the team chat via the lane's own /send."""
+    try:
+        http_json(f"{lane.base}/send", lane.key, method="POST", body={"text": text})
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        LOG.warning("[%s] direct send failed: %s", lane.name, exc)
 
 
 def print_status(cfg: Config) -> None:

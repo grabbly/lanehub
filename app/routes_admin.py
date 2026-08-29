@@ -73,6 +73,7 @@ def _lane_view(lane: dict) -> dict:
         "enabled": bool(lane["enabled"]),
         "createdAt": lane["created_at"],
         "deliveryMode": mode,
+        "replyMode": db.get_lane_state(lane["slug"], "reply_mode") or "auto",
         "webhookUrl": runtime.webhook_url(lane["slug"]) if mode == "webhook" else None,
         "polling": runtime.polling(lane["slug"]),
         "storedMessages": db.count_messages(lane["slug"]),
@@ -111,6 +112,7 @@ class LaneUpdate(BaseModel):
     bot_token: str | None = Field(default=None, alias="botToken")
     default_chat_id: str | None = Field(default=None, alias="defaultChatId")
     enabled: bool | None = None
+    reply_mode: str | None = Field(default=None, alias="replyMode")
 
     model_config = {"populate_by_name": True}
 
@@ -175,6 +177,8 @@ async def lanes_update(slug: str, req: LaneUpdate, hub_session: str | None = Coo
         fields["default_chat_id"] = req.default_chat_id.strip()
     if req.enabled is not None:
         fields["enabled"] = int(req.enabled)
+    if req.reply_mode is not None:
+        db.set_lane_state(slug, "reply_mode", "confirm" if req.reply_mode == "confirm" else "auto")
     if req.bot_token is not None:
         token = req.bot_token.strip()
         try:
@@ -252,6 +256,8 @@ class SettingsUpdate(BaseModel):
     smtp_tls: bool | None = Field(default=None, alias="smtpTls")
     budget_5h_usd: float | None = Field(default=None, alias="budget5hUsd")
     budget_week_usd: float | None = Field(default=None, alias="budgetWeekUsd")
+    operator_chat_id: str | None = Field(default=None, alias="operatorChatId")
+    operator_console_slug: str | None = Field(default=None, alias="operatorConsoleSlug")
 
     model_config = {"populate_by_name": True}
 
@@ -299,6 +305,8 @@ async def settings_get(hub_session: str | None = Cookie(default=None)) -> dict:
         "loginUrl": login_url(),
         "budget5hUsd": caps["h5Usd"],
         "budgetWeekUsd": caps["weekUsd"],
+        "operatorChatId": db.get_hub_state("operator_chat_id") or "",
+        "operatorConsoleSlug": db.get_hub_state("operator_console_slug") or "",
         "smtpConfigured": cfg.source != "none",
         # password itself is never echoed back — only whether one is stored
         "smtp": {
@@ -336,6 +344,10 @@ async def settings_update(req: SettingsUpdate, hub_session: str | None = Cookie(
         db.set_hub_state("budget_5h_usd", str(max(0.0, req.budget_5h_usd)))
     if req.budget_week_usd is not None:
         db.set_hub_state("budget_week_usd", str(max(0.0, req.budget_week_usd)))
+    if req.operator_chat_id is not None:
+        db.set_hub_state("operator_chat_id", req.operator_chat_id.strip())
+    if req.operator_console_slug is not None:
+        db.set_hub_state("operator_console_slug", req.operator_console_slug.strip())
     return await settings_get(hub_session)
 
 

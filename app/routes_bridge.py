@@ -17,7 +17,7 @@ import time
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from . import db, telegram
+from . import db, operator, telegram
 from .config import settings
 from .runtime import ingest_update, runtime
 
@@ -172,6 +172,7 @@ async def wake(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
             "text": mention.get("text"),
             "chatId": mention.get("chatId"),
             "sessionId": session_id,
+            "mode": operator.lane_mode(lane_slug),
         }
     # No mention in this window: advance past the incoming messages we scanned
     # (never past outgoing high-namespace ids) so we don't rescan them.
@@ -214,6 +215,53 @@ async def lane_log(lane_slug: str, req: LogEntry, x_bridge_token: str = Header(d
     return {"ok": True}
 
 
+class DraftSubmit(BaseModel):
+    wake_id: int = Field(alias="wakeId")
+    text: str = Field(min_length=1, max_length=8000)
+    cost_usd: float | None = Field(default=None, alias="costUsd")
+
+    model_config = {"populate_by_name": True}
+
+
+@router.post("/{lane_slug}/draft")
+async def submit_draft(lane_slug: str, req: DraftSubmit, x_bridge_token: str = Header(default="")) -> dict:
+    """Confirm-mode: the watcher submits the bot's draft reply. The hub posts a
+    preview with Approve/Reject to the operator chat and holds it pending. If no
+    operator console is configured, returns posted=False so the watcher can fall
+    back to sending directly."""
+    _auth_lane(lane_slug, x_bridge_token)
+    posted = await operator.post_preview(lane_slug, req.wake_id, req.text)
+    now = int(time.time())
+    if not posted:
+        return {"ok": True, "posted": False}
+    op_chat, op_msg = posted
+    db.create_approval(lane_slug, req.wake_id, req.text, req.cost_usd or 0.0, op_chat, op_msg, now)
+    # cost is already logged on the watcher's run-summary line; keep this one cost-free
+    db.add_lane_log(lane_slug, "info", "draft awaiting operator approval", now, 0.0)
+    return {"ok": True, "posted": True}
+
+
+@router.get("/{lane_slug}/draft")
+async def draft_status(lane_slug: str, wakeId: int = Query(...), x_bridge_token: str = Header(default="")) -> dict:
+    """Poll a submitted draft's decision: pending | approved | rejected | none."""
+    _auth_lane(lane_slug, x_bridge_token)
+    ap = db.get_approval(lane_slug, wakeId)
+    return {"status": (ap or {}).get("status", "none")}
+
+
+class OperatorNotice(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+
+    model_config = {"populate_by_name": True}
+
+
+@router.post("/{lane_slug}/operator")
+async def operator_notice(lane_slug: str, req: OperatorNotice, x_bridge_token: str = Header(default="")) -> dict:
+    """Post a start/finish/status notice to the operator chat via the console bot."""
+    _auth_lane(lane_slug, x_bridge_token)
+    return {"ok": await operator.notify(req.text)}
+
+
 @router.get("/{lane_slug}/info")
 async def info(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict:
     lane = _auth_lane(lane_slug, x_bridge_token)
@@ -247,6 +295,83 @@ async def info(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
     }
 
 
+async def _handle_callback(update: dict) -> None:
+    """Operator tapped Approve/Reject under a draft preview. callback_data is
+    'ap:<slug>:<wakeId>' or 'rj:<slug>:<wakeId>'. Approve posts the draft to the
+    team chat as the originating lane's bot; both edit the preview to show the
+    outcome. The console bot is the one that posted the buttons and gets the tap."""
+    cq = update.get("callback_query") or {}
+    cb_id = cq.get("id")
+    console = operator.console_lane()
+    if not console:
+        return
+    bot = console["bot_token"]
+    parts = (cq.get("data") or "").split(":")
+    if len(parts) != 3:
+        await telegram.answer_callback(bot, cb_id)
+        return
+    action, slug, wake_s = parts
+    try:
+        wake_id = int(wake_s)
+    except ValueError:
+        await telegram.answer_callback(bot, cb_id)
+        return
+    ap = db.get_approval(slug, wake_id)
+    if not ap or ap["status"] != "pending":
+        await telegram.answer_callback(bot, cb_id, "уже обработано")
+        return
+    now = int(time.time())
+    op_chat, op_msg = ap.get("op_chat_id"), ap.get("op_message_id")
+    draft = ap["draft"]
+    if action == "ap":
+        lane = _lane_or_404(slug)
+        try:
+            await perform_send(lane, draft, None)
+        except Exception:
+            await telegram.answer_callback(bot, cb_id, "ошибка отправки")
+            return
+        db.resolve_approval(slug, wake_id, "approved", now)
+        db.add_lane_log(slug, "info", "operator approved → sent to chat", now)
+        if op_msg:
+            await telegram.edit_message(bot, op_chat, op_msg, f"✅ [{slug}] отправлено в чат:\n\n{draft[:3500]}")
+        await telegram.answer_callback(bot, cb_id, "Отправлено")
+    elif action == "rj":
+        db.resolve_approval(slug, wake_id, "rejected", now)
+        db.add_lane_log(slug, "info", "operator rejected draft", now)
+        if op_msg:
+            await telegram.edit_message(bot, op_chat, op_msg, f"✗ [{slug}] отклонено:\n\n{draft[:3500]}")
+        await telegram.answer_callback(bot, cb_id, "Отклонено")
+    else:
+        await telegram.answer_callback(bot, cb_id)
+
+
+async def _handle_operator_command(update: dict) -> bool:
+    """`/status` typed in the operator chat -> the console bot replies with a
+    per-lane spend + mode + pending-approval summary. Returns True if handled."""
+    msg = update.get("message") or {}
+    text = (msg.get("text") or "").strip()
+    if not text.startswith("/status"):
+        return False
+    cfg = operator.operator_config()
+    console = operator.console_lane()
+    if not console or str((msg.get("chat") or {}).get("id") or "") != cfg["chat_id"]:
+        return False
+    now = int(time.time())
+    pend = {p["lane_slug"] for p in db.pending_approvals()}
+    lines = ["📊 LaneHub — статус"]
+    for l in db.list_lanes():
+        if not l["enabled"]:
+            continue
+        w = db.spend_windows(l["slug"], now)
+        flag = " ⏳ждёт апрув" if l["slug"] in pend else ""
+        lines.append(f"• {l['slug']} [{operator.lane_mode(l['slug'])}] — "
+                     f"5ч ${w['h5']['usd']:.2f}/{w['h5']['requests']} · 7д ${w['week']['usd']:.2f}{flag}")
+    allw = db.spend_windows(None, now)
+    lines.append(f"Σ все боты: 5ч ${allw['h5']['usd']:.2f} ({allw['h5']['requests']}) · 7д ${allw['week']['usd']:.2f}")
+    await telegram.send_message(console["bot_token"], cfg["chat_id"], "\n".join(lines))
+    return True
+
+
 @router.post("/{lane_slug}/webhook")
 async def webhook(
     lane_slug: str,
@@ -259,6 +384,13 @@ async def webhook(
     if not pysecrets.compare_digest(x_telegram_bot_api_secret_token, lane["webhook_secret"]):
         raise HTTPException(status_code=403, detail="bad secret token")
     update = await request.json()
-    if isinstance(update, dict) and "update_id" in update:
+    if not isinstance(update, dict):
+        return {"ok": True}
+    if "callback_query" in update:
+        await _handle_callback(update)
+        return {"ok": True}
+    if await _handle_operator_command(update):
+        return {"ok": True}
+    if "update_id" in update:
         ingest_update(lane_slug, update)
     return {"ok": True}
