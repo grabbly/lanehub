@@ -203,8 +203,16 @@ def _run_claude(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[
     mu = result.get("modelUsage") or {}
     if mu:
         primary = max(mu, key=lambda k: (mu[k].get("input_tokens", 0) + mu[k].get("output_tokens", 0)) if isinstance(mu[k], dict) else 0)
-        LOG.info("[%s] replied via %s", lane.name, primary)
-        hub_log(lane, "info", f"replied via {primary}")
+        u = result.get("usage") or {}
+        ctx = u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
+        out = u.get("output_tokens", 0)
+        dur_s = (result.get("duration_ms") or 0) / 1000.0
+        cost = result.get("total_cost_usd") or 0
+        # ctx / 10000 == ctx as a percentage of a 1M-token window
+        summary = (f"replied via {primary} · {dur_s:.1f}s · ctx {ctx // 1000}k "
+                   f"({ctx / 10000:.1f}% of 1M) · out {out} tok · ${cost:.3f}")
+        LOG.info("[%s] %s", lane.name, summary)
+        hub_log(lane, "info", summary)
     return result.get("session_id") or session_id, ""
 
 
