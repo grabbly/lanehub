@@ -184,10 +184,16 @@ def _run_claude(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[
         return None, stderr
     try:
         result = json.loads(proc.stdout)
-        return result.get("session_id") or session_id, ""
     except json.JSONDecodeError:
         LOG.warning("[%s] could not parse claude json output; keeping session id", lane.name)
         return session_id, ""
+    # Surface which model actually answered (the one that did the most work this
+    # turn) — a resumed session keeps its ORIGINAL model unless --model overrides.
+    mu = result.get("modelUsage") or {}
+    if mu:
+        primary = max(mu, key=lambda k: (mu[k].get("input_tokens", 0) + mu[k].get("output_tokens", 0)) if isinstance(mu[k], dict) else 0)
+        LOG.info("[%s] replied via %s", lane.name, primary)
+    return result.get("session_id") or session_id, ""
 
 
 def resume_session(cfg: Config, lane: Lane, session_id: str, prompt: str) -> str | None:
