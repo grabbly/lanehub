@@ -197,6 +197,7 @@ class LogEntry(BaseModel):
     level: str = Field(default="info", max_length=16)
     message: str = Field(min_length=1, max_length=2000)
     ts: int | None = None
+    cost_usd: float | None = Field(default=None, alias="costUsd")
 
     model_config = {"populate_by_name": True}
 
@@ -206,9 +207,10 @@ async def lane_log(lane_slug: str, req: LogEntry, x_bridge_token: str = Header(d
     """Append one watcher-activity line for this lane (rolling buffer, newest
     kept). The watcher self-reports with its own lane key; the admin panel reads
     every lane and the lane's owner reads their own — nobody reaches into a
-    watcher, each pushes here."""
+    watcher, each pushes here. `costUsd` (on reply lines) feeds the 5h/weekly
+    spend windows."""
     _auth_lane(lane_slug, x_bridge_token)
-    db.add_lane_log(lane_slug, req.level, req.message, req.ts or int(time.time()))
+    db.add_lane_log(lane_slug, req.level, req.message, req.ts or int(time.time()), req.cost_usd or 0.0)
     return {"ok": True}
 
 

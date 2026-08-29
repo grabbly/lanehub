@@ -250,6 +250,8 @@ class SettingsUpdate(BaseModel):
     smtp_password: str | None = Field(default=None, alias="smtpPassword")
     smtp_from: str | None = Field(default=None, alias="smtpFrom")
     smtp_tls: bool | None = Field(default=None, alias="smtpTls")
+    budget_5h_usd: float | None = Field(default=None, alias="budget5hUsd")
+    budget_week_usd: float | None = Field(default=None, alias="budgetWeekUsd")
 
     model_config = {"populate_by_name": True}
 
@@ -263,21 +265,40 @@ class TestEmail(BaseModel):
     to: str
 
 
+def budget_caps() -> dict:
+    """Admin-set spend budgets (USD) for the 5h and weekly windows; 0 = unset."""
+    return {
+        "h5Usd": float(db.get_hub_state("budget_5h_usd") or 0),
+        "weekUsd": float(db.get_hub_state("budget_week_usd") or 0),
+    }
+
+
 @router.get("/lanes/{slug}/logs")
 async def lanes_logs(slug: str, hub_session: str | None = Cookie(default=None)) -> dict:
     require_admin(hub_session)
     if not db.get_lane(slug):
         raise HTTPException(status_code=404, detail="unknown lane")
-    return {"slug": slug, "logs": db.query_lane_logs(slug)}
+    now = int(time.time())
+    return {
+        "slug": slug,
+        "logs": db.query_lane_logs(slug),
+        # this lane's spend, plus the account-wide total (the 5h/weekly limit is
+        # shared by every bot on the same claude login) that the caps apply to
+        "windows": {"lane": db.spend_windows(slug, now), "all": db.spend_windows(None, now)},
+        "caps": budget_caps(),
+    }
 
 
 @router.get("/settings")
 async def settings_get(hub_session: str | None = Cookie(default=None)) -> dict:
     require_admin(hub_session)
     cfg = mailer.smtp_config()
+    caps = budget_caps()
     return {
         "projectChatId": db.get_hub_state("project_chat_id") or "",
         "loginUrl": login_url(),
+        "budget5hUsd": caps["h5Usd"],
+        "budgetWeekUsd": caps["weekUsd"],
         "smtpConfigured": cfg.source != "none",
         # password itself is never echoed back — only whether one is stored
         "smtp": {
@@ -311,6 +332,10 @@ async def settings_update(req: SettingsUpdate, hub_session: str | None = Cookie(
         db.set_hub_state("smtp_from", req.smtp_from.strip())
     if req.smtp_tls is not None:
         db.set_hub_state("smtp_tls", "1" if req.smtp_tls else "0")
+    if req.budget_5h_usd is not None:
+        db.set_hub_state("budget_5h_usd", str(max(0.0, req.budget_5h_usd)))
+    if req.budget_week_usd is not None:
+        db.set_hub_state("budget_week_usd", str(max(0.0, req.budget_week_usd)))
     return await settings_get(hub_session)
 
 

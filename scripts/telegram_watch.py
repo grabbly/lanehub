@@ -164,12 +164,15 @@ def http_json(url: str, key: str, method: str = "GET", body: dict | None = None)
         return json.loads(resp.read().decode("utf-8"))
 
 
-def hub_log(lane: "Lane", level: str, message: str) -> None:
+def hub_log(lane: "Lane", level: str, message: str, cost_usd: float | None = None) -> None:
     """Best-effort: mirror a watcher event to the hub (POST /{lane}/log) so it
-    shows in the web UI. Never let logging break the watch loop."""
+    shows in the web UI. `cost_usd` (on reply lines) feeds the 5h/weekly spend
+    windows. Never let logging break the watch loop."""
+    body = {"level": level, "message": message}
+    if cost_usd is not None:
+        body["costUsd"] = cost_usd
     try:
-        http_json(f"{lane.base}/log", lane.key, method="POST",
-                  body={"level": level, "message": message})
+        http_json(f"{lane.base}/log", lane.key, method="POST", body=body)
     except Exception:
         pass
 
@@ -212,7 +215,7 @@ def _run_claude(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[
         summary = (f"replied via {primary} · {dur_s:.1f}s · ctx {ctx // 1000}k "
                    f"({ctx / 10000:.1f}% of 1M) · out {out} tok · ${cost:.3f}")
         LOG.info("[%s] %s", lane.name, summary)
-        hub_log(lane, "info", summary)
+        hub_log(lane, "info", summary, cost_usd=cost)
     return result.get("session_id") or session_id, ""
 
 

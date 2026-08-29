@@ -90,7 +90,16 @@ def connect() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
+    _ensure_columns(conn)
     return conn
+
+
+def _ensure_columns(conn: sqlite3.Connection) -> None:
+    """Idempotent column adds for tables that predate a field (SQLite has no
+    ADD COLUMN IF NOT EXISTS)."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(lane_logs)")}
+    if "cost_usd" not in cols:
+        conn.execute("ALTER TABLE lane_logs ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0")
 
 
 def new_api_key() -> str:
@@ -277,12 +286,12 @@ def set_lane_state(slug: str, key: str, value: str) -> None:
 # --- lane logs (watcher activity, rolling per lane) ----------------------
 
 
-def add_lane_log(slug: str, level: str, message: str, ts: int) -> None:
+def add_lane_log(slug: str, level: str, message: str, ts: int, cost_usd: float = 0.0) -> None:
     """Append one watcher log line for a lane and trim to the last LANE_LOG_CAP."""
     with connect() as conn:
         conn.execute(
-            "INSERT INTO lane_logs(lane_slug, ts, level, message) VALUES(?, ?, ?, ?)",
-            (slug, ts, (level or "info")[:16], message[:2000]),
+            "INSERT INTO lane_logs(lane_slug, ts, level, message, cost_usd) VALUES(?, ?, ?, ?, ?)",
+            (slug, ts, (level or "info")[:16], message[:2000], float(cost_usd or 0)),
         )
         conn.execute(
             "DELETE FROM lane_logs WHERE lane_slug = ? AND id NOT IN "
@@ -295,11 +304,30 @@ def query_lane_logs(slug: str, limit: int = 200) -> list[dict]:
     """Most-recent-first log lines for a lane."""
     with connect() as conn:
         rows = conn.execute(
-            "SELECT ts, level, message FROM lane_logs WHERE lane_slug = ? "
+            "SELECT ts, level, message, cost_usd FROM lane_logs WHERE lane_slug = ? "
             "ORDER BY id DESC LIMIT ?",
             (slug, max(1, min(limit, LANE_LOG_CAP))),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def spend_windows(slug: str | None, now: int) -> dict:
+    """Rolling cost + request count over the last 5h and 7d. `slug=None` sums
+    across ALL lanes (the account-wide view — the 5h/weekly limit is shared by
+    every bot that runs on the same claude login). Only rows carrying a cost are
+    counted as requests, so pure 'mention'/'reset' lines don't inflate the count."""
+    h5, week = now - 5 * 3600, now - 7 * 86400
+    where = "cost_usd > 0" + ("" if slug is None else " AND lane_slug = ?")
+    args_h5 = ([h5] if slug is None else [h5, slug])
+    args_wk = ([week] if slug is None else [week, slug])
+    with connect() as conn:
+        def agg(since_args, since_sql):
+            r = conn.execute(
+                f"SELECT COALESCE(SUM(cost_usd),0) AS usd, COUNT(*) AS n "
+                f"FROM lane_logs WHERE ts >= ? AND {where}", since_args,
+            ).fetchone()
+            return {"usd": round(r["usd"], 4), "requests": r["n"]}
+        return {"h5": agg(args_h5, h5), "week": agg(args_wk, week)}
 
 
 # --- messages ------------------------------------------------------------

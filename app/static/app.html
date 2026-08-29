@@ -198,6 +198,12 @@
       </div>
       <p class="hint">Set the <b>project chat</b> once — every new lane (including ones members create
         themselves) inherits it, so freshly onboarded bots post to the team chat with zero config.</p>
+      <div class="kv"><span class="k">Spend budgets ($)</span>
+        <input id="budget-5h" type="number" step="0.5" min="0" style="max-width:110px;" placeholder="5h, $">
+        <input id="budget-week" type="number" step="1" min="0" style="max-width:110px;" placeholder="7 days, $">
+        <button class="small" id="budget-save">save</button>
+      </div>
+      <p class="hint">Your own 5h / weekly $ caps for what the bots spend (0 = off). Shown as "spent / left" in each bot's session log. Note: Anthropic's real 5h/weekly limits aren't exposed to headless Claude — this tracks the watcher's own cost.</p>
       <details id="smtp-details" style="margin-top:8px;">
         <summary>📧 Email (SMTP) for invitation emails</summary>
         <p class="hint" id="smtp-status" style="margin:8px 0 4px;"></p>
@@ -384,15 +390,54 @@ async function showLogDialog(title, path) {
           <button class="small" data-auto>auto-refresh: on</button>
         </span>
       </h2>
-      <p class="hint" style="margin:0 0 10px;">What the watcher reported for this bot — newest first. Each @mention: who called it, the model that answered, resets and errors.</p>
-      <div data-body style="max-height:58vh; overflow:auto; border:1px solid var(--border,#dde3ea); border-radius:8px;"></div>
+      <p class="hint" style="margin:0 0 10px;">What the watcher reported for this bot — newest first. Each @mention: who called it, the model that answered, duration, context size, cost, resets and errors.</p>
+      <div data-windows style="margin:0 0 12px;"></div>
+      <div data-body style="max-height:52vh; overflow:auto; border:1px solid var(--border,#dde3ea); border-radius:8px;"></div>
       <div class="actions" style="justify-content:flex-end; margin-top:12px;"><button data-close>Close</button></div>
     </div>`;
   const body = dlg.querySelector('[data-body]');
+  const winBox = dlg.querySelector('[data-windows]');
   let timer = null;
+  const money = (v) => '$' + (Number(v) || 0).toFixed(2);
+  const windowCard = (label, w, capUsd) => {
+    const spent = (w && w.usd) || 0, n = (w && w.requests) || 0;
+    let bar = '', rem = '';
+    if (capUsd > 0) {
+      const pct = Math.min(100, Math.round(spent / capUsd * 100));
+      const over = spent > capUsd;
+      const col = over ? 'var(--danger,#c0392b)' : pct >= 80 ? 'var(--warn,#a86a12)' : 'var(--accent,#0d7c88)';
+      rem = `<span style="color:${over ? 'var(--danger,#c0392b)' : 'var(--muted,#667)'};">${over ? 'over by ' + money(spent - capUsd) : money(capUsd - spent) + ' left'}</span>`;
+      bar = `<div style="height:5px; border-radius:3px; background:var(--border,#e4e8ee); margin-top:6px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:${col};"></div></div>`;
+    }
+    return `<div style="flex:1; min-width:160px; border:1px solid var(--border,#dde3ea); border-radius:9px; padding:10px 12px;">
+      <div style="font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted,#889); font-family:'IBM Plex Mono',monospace;">${esc(label)}</div>
+      <div style="font-size:16px; font-weight:600; margin-top:2px; font-variant-numeric:tabular-nums;">${money(spent)}${capUsd > 0 ? ' <span style="color:var(--muted,#99a); font-weight:400; font-size:13px;">/ ' + money(capUsd) + '</span>' : ''}</div>
+      <div style="font-size:11.5px; color:var(--muted,#889); margin-top:1px;">${n} ${n === 1 ? 'request' : 'requests'}${rem ? ' · ' + rem : ''}</div>
+      ${bar}
+    </div>`;
+  };
+  const renderWindows = (d) => {
+    const caps = d.caps || {}, W = d.windows || {};
+    const scope = W.all || W.lane;   // admin: account-wide total the caps apply to; member: own lane
+    if (!scope) { winBox.innerHTML = ''; return; }
+    const scopeLabel = W.all ? 'all bots · 5h' : 'this bot · 5h';
+    let html = `<div style="display:flex; gap:10px; flex-wrap:wrap;">
+      ${windowCard(scopeLabel, scope.h5, caps.h5Usd)}
+      ${windowCard(W.all ? 'all bots · 7 days' : 'this bot · 7 days', scope.week, caps.weekUsd)}
+    </div>`;
+    if (W.all && W.lane) {
+      html += `<div style="margin-top:8px; font-size:11.5px; color:var(--muted,#889); font-family:'IBM Plex Mono',monospace;">this lane only — 5h ${money(W.lane.h5.usd)} (${W.lane.h5.requests}) · 7d ${money(W.lane.week.usd)} (${W.lane.week.requests})</div>`;
+    }
+    if (!caps.h5Usd && !caps.weekUsd) {
+      html += `<p class="hint" style="margin:8px 0 0;">Set 5h / weekly $ budgets in <b>Settings</b> to see "left". Real Anthropic 5h/weekly limits aren't exposed to headless Claude — this sums the watcher's own spend.</p>`;
+    }
+    winBox.innerHTML = html;
+  };
   const load = async () => {
     try {
-      const logs = (await api(path)).logs || [];
+      const d = await api(path);
+      renderWindows(d);
+      const logs = d.logs || [];
       if (!logs.length) {
         body.innerHTML = '<p class="hint" style="padding:16px;">No activity yet — this fills in when the bot is @-mentioned in the chat.</p>';
         return;
@@ -723,6 +768,8 @@ $('onboarding-btn').onclick = showOnboarding;
 async function loadTeam() {
   const [st, ms] = await Promise.all([api('/admin/api/settings'), api('/admin/api/members')]);
   $('project-chat').value = st.projectChatId || '';
+  $('budget-5h').value = st.budget5hUsd || '';
+  $('budget-week').value = st.budgetWeekUsd || '';
   $('team-meta').textContent = `sign-in: ${st.loginUrl} · email: ${st.smtpConfigured ? 'SMTP configured' : 'not configured (copy-paste invites)'}`;
   const s = st.smtp || {};
   $('smtp-status').textContent = s.source === 'panel'
@@ -808,6 +855,14 @@ $('invite-btn').onclick = async () => {
 
 $('project-chat-save').onclick = async () => {
   await api('/admin/api/settings', { method: 'PATCH', body: JSON.stringify({ projectChatId: $('project-chat').value.trim() }) });
+  await loadTeam();
+};
+
+$('budget-save').onclick = async () => {
+  await api('/admin/api/settings', { method: 'PATCH', body: JSON.stringify({
+    budget5hUsd: parseFloat($('budget-5h').value) || 0,
+    budgetWeekUsd: parseFloat($('budget-week').value) || 0,
+  }) });
   await loadTeam();
 };
 

@@ -11,13 +11,14 @@ endpoints authenticate via the shared `hub_session` cookie.
 from __future__ import annotations
 
 import asyncio
+import time
 
 from fastapi import APIRouter, Cookie, HTTPException
 from pydantic import BaseModel, Field
 
 from . import db, telegram
 from .config import settings
-from .routes_admin import derive_slug, token_subject
+from .routes_admin import budget_caps, derive_slug, token_subject
 from .runtime import runtime
 
 router = APIRouter(prefix="/portal/api")
@@ -84,7 +85,13 @@ async def logs(hub_session: str | None = Cookie(default=None)) -> dict:
     slug = member["lane_slug"]
     if not slug or not db.get_lane(slug):
         return {"logs": []}
-    return {"slug": slug, "logs": db.query_lane_logs(slug)}
+    now = int(time.time())
+    return {
+        "slug": slug,
+        "logs": db.query_lane_logs(slug),
+        "windows": {"lane": db.spend_windows(slug, now)},
+        "caps": budget_caps(),
+    }
 
 
 @router.post("/lane", status_code=201)
