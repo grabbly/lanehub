@@ -273,11 +273,21 @@ def build_operator_prompt(sender: str, text: str) -> str:
     return (
         f"PRIVATE operator back-channel (NOT the team Telegram chat). The operator "
         f"{sender} says to you:\n\n{text}\n\n"
-        "If this answers a question you asked or tells you to proceed, carry on "
-        "with the task now — including replying in the TEAM chat via ./tg-report.sh "
-        "if that's what the task needs. If it's just a question about your work, "
-        "answer it here. Whatever you output is shown to the operator in this "
-        "private channel; keep it short."
+        "This is a private conversation with the operator ONLY. Reply by simply "
+        "OUTPUTTING your answer as text — it is delivered to the operator for you. "
+        "Do NOT run ./tg-report.sh and do NOT post anything to the team chat under "
+        "any circumstances. Keep it short."
+    )
+
+
+def build_continue_prompt(sender: str, text: str) -> str:
+    """The operator is ANSWERING a question the bot itself asked — so it may now
+    finish the original task, including posting to the team chat."""
+    return (
+        f"The operator {sender} answered the question you asked:\n\n{text}\n\n"
+        "Now finish the original team-chat task with this decision — post the "
+        "result to the TEAM chat via ./tg-report.sh \"your reply\" if that's what "
+        "the task needs. Keep it short."
     )
 
 
@@ -293,9 +303,10 @@ def handle_operator_inbox(cfg: Config, lane: Lane) -> None:
     msg_id = m["id"]
     sender = m.get("from") or "operator"
     text = m.get("text") or ""
-    LOG.info("[%s] operator asks: %s", lane.name, text[:120])
-    new_id, result = resume_session(cfg, lane, m.get("sessionId") or "",
-                                    build_operator_prompt(sender, text))
+    LOG.info("[%s] operator says: %s", lane.name, text[:120])
+    prompt = (build_continue_prompt(sender, text) if m.get("awaiting")
+              else build_operator_prompt(sender, text))
+    new_id, result = resume_session(cfg, lane, m.get("sessionId") or "", prompt)
     answer = ((result or {}).get("result") or "").strip() if new_id else ""
     hub_notify(lane, answer if answer else "⚠️ не смог ответить на сообщение оператора")
     ack = {"id": msg_id}

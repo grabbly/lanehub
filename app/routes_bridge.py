@@ -237,6 +237,7 @@ async def submit_draft(lane_slug: str, req: DraftSubmit, x_bridge_token: str = H
     if text[:9].upper() == "QUESTION:" or text.startswith("❓"):
         q = text[9:].strip() if text[:9].upper() == "QUESTION:" else text.lstrip("❓ ").strip()
         await operator.notify(lane_slug, f"❓ вопрос от бота:\n\n{q}\n\n(ответь сообщением — передам в его сессию)")
+        db.set_lane_state(lane_slug, "awaiting_answer", "1")
         db.add_lane_log(lane_slug, "info", "bot asked the operator a question", now)
         # posted=True so the watcher does NOT fall back to sending this to the team
         return {"ok": True, "posted": True, "question": True}
@@ -270,6 +271,19 @@ async def operator_notice(lane_slug: str, req: OperatorNotice, x_bridge_token: s
     return {"ok": await operator.notify(lane_slug, req.text)}
 
 
+@router.post("/{lane_slug}/ask")
+async def operator_ask(lane_slug: str, req: OperatorNotice, x_bridge_token: str = Header(default="")) -> dict:
+    """The bot asks the operator a clarifying question (./ask-operator.sh). Posts
+    it to the operator chat AND arms 'awaiting_answer', so the operator's next
+    message is treated as an answer that lets the bot FINISH its task (and post to
+    the team chat) — unlike a plain question, which stays in the operator chat."""
+    _auth_lane(lane_slug, x_bridge_token)
+    ok = await operator.notify(lane_slug, f"❓ {req.text}")
+    if ok:
+        db.set_lane_state(lane_slug, "awaiting_answer", "1")
+    return {"ok": ok}
+
+
 @router.get("/{lane_slug}/operator-inbox")
 async def operator_inbox(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict:
     """Oldest unhandled operator message for this lane (the private two-way
@@ -286,6 +300,10 @@ async def operator_inbox(lane_slug: str, x_bridge_token: str = Header(default=""
         "text": m["text"],
         "from": m["from_user"],
         "sessionId": db.get_lane_state(lane_slug, "claude_session_id"),
+        # True only when this message answers a question the bot itself asked, so
+        # the bot may finish the task and post to the team chat. Otherwise the
+        # reply stays strictly in the operator chat.
+        "awaiting": db.get_lane_state(lane_slug, "awaiting_answer") == "1",
     }
 
 
@@ -301,6 +319,7 @@ async def operator_inbox_ack(lane_slug: str, req: InboxAck, x_bridge_token: str 
     """Mark one operator message handled and record the (possibly forked) session id."""
     _auth_lane(lane_slug, x_bridge_token)
     db.mark_operator_done(lane_slug, req.id)
+    db.set_lane_state(lane_slug, "awaiting_answer", "0")  # consumed
     if req.session_id:
         db.set_lane_state(lane_slug, "claude_session_id", req.session_id)
     return {"ok": True}
