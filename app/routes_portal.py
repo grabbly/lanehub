@@ -61,7 +61,6 @@ def _lane_view(member: dict) -> dict | None:
         "defaultChatId": lane["default_chat_id"],
         "enabled": bool(lane["enabled"]),
         "deliveryMode": mode,
-        "replyMode": db.get_lane_state(lane["slug"], "reply_mode") or "auto",
         "operatorChatId": db.get_lane_state(lane["slug"], "operator_chat_id") or "",
         "storedMessages": db.count_messages(lane["slug"]),
         "seenChats": db.seen_chats(lane["slug"]),
@@ -93,22 +92,19 @@ async def logs(hub_session: str | None = Cookie(default=None)) -> dict:
 
 class OperatorConfig(BaseModel):
     operator_chat_id: str | None = Field(default=None, alias="operatorChatId")
-    reply_mode: str | None = Field(default=None, alias="replyMode")
 
     model_config = {"populate_by_name": True}
 
 
 @router.post("/lane/operator")
 async def set_operator(req: OperatorConfig, hub_session: str | None = Cookie(default=None)) -> dict:
-    """Member sets THEIR OWN lane's operator chat + reply mode (nobody else's)."""
+    """Member sets THEIR OWN lane's operator chat (nobody else's)."""
     member = require_member(hub_session)
     slug = member["lane_slug"]
     if not slug or not db.get_lane(slug):
         raise HTTPException(status_code=404, detail="no lane yet")
     if req.operator_chat_id is not None:
         db.set_lane_state(slug, "operator_chat_id", req.operator_chat_id.strip())
-    if req.reply_mode is not None:
-        db.set_lane_state(slug, "reply_mode", "confirm" if req.reply_mode == "confirm" else "auto")
     return {"lane": _lane_view(member)}
 
 

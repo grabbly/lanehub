@@ -78,18 +78,6 @@ CREATE TABLE IF NOT EXISTS lane_logs (
     message TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_lane_logs ON lane_logs(lane_slug, id);
-CREATE TABLE IF NOT EXISTS approvals (
-    lane_slug TEXT NOT NULL,
-    wake_id INTEGER NOT NULL,
-    draft TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    op_chat_id TEXT,
-    op_message_id INTEGER,
-    cost_usd REAL NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    decided_at INTEGER,
-    PRIMARY KEY (lane_slug, wake_id)
-);
 CREATE TABLE IF NOT EXISTS operator_inbox (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     lane_slug TEXT NOT NULL,
@@ -349,46 +337,6 @@ def spend_windows(slug: str | None, now: int) -> dict:
             ).fetchone()
             return {"usd": round(r["usd"], 4), "requests": r["n"]}
         return {"h5": agg(args_h5, h5), "week": agg(args_wk, week)}
-
-
-# --- approvals (human-in-the-loop draft gating) --------------------------
-
-
-def create_approval(lane_slug: str, wake_id: int, draft: str, cost_usd: float,
-                    op_chat_id: str, op_message_id: int, ts: int) -> None:
-    with connect() as conn:
-        conn.execute(
-            "INSERT INTO approvals(lane_slug, wake_id, draft, status, op_chat_id, "
-            "op_message_id, cost_usd, created_at) VALUES(?, ?, ?, 'pending', ?, ?, ?, ?) "
-            "ON CONFLICT(lane_slug, wake_id) DO UPDATE SET draft=excluded.draft, "
-            "status='pending', op_chat_id=excluded.op_chat_id, op_message_id=excluded.op_message_id, "
-            "cost_usd=excluded.cost_usd, created_at=excluded.created_at, decided_at=NULL",
-            (lane_slug, wake_id, draft, op_chat_id, op_message_id, float(cost_usd or 0), ts),
-        )
-
-
-def get_approval(lane_slug: str, wake_id: int) -> dict | None:
-    with connect() as conn:
-        r = conn.execute(
-            "SELECT * FROM approvals WHERE lane_slug = ? AND wake_id = ?", (lane_slug, wake_id)
-        ).fetchone()
-    return dict(r) if r else None
-
-
-def resolve_approval(lane_slug: str, wake_id: int, status: str, ts: int) -> None:
-    with connect() as conn:
-        conn.execute(
-            "UPDATE approvals SET status = ?, decided_at = ? WHERE lane_slug = ? AND wake_id = ?",
-            (status, ts, lane_slug, wake_id),
-        )
-
-
-def pending_approvals() -> list[dict]:
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT lane_slug, wake_id, created_at FROM approvals WHERE status = 'pending'"
-        ).fetchall()
-    return [dict(r) for r in rows]
 
 
 # --- operator inbox (operator -> bot session, private two-way channel) ----

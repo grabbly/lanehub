@@ -73,7 +73,6 @@ def _lane_view(lane: dict) -> dict:
         "enabled": bool(lane["enabled"]),
         "createdAt": lane["created_at"],
         "deliveryMode": mode,
-        "replyMode": db.get_lane_state(lane["slug"], "reply_mode") or "auto",
         "operatorChatId": db.get_lane_state(lane["slug"], "operator_chat_id") or "",
         "webhookUrl": runtime.webhook_url(lane["slug"]) if mode == "webhook" else None,
         "polling": runtime.polling(lane["slug"]),
@@ -113,7 +112,6 @@ class LaneUpdate(BaseModel):
     bot_token: str | None = Field(default=None, alias="botToken")
     default_chat_id: str | None = Field(default=None, alias="defaultChatId")
     enabled: bool | None = None
-    reply_mode: str | None = Field(default=None, alias="replyMode")
     operator_chat_id: str | None = Field(default=None, alias="operatorChatId")
 
     model_config = {"populate_by_name": True}
@@ -179,8 +177,6 @@ async def lanes_update(slug: str, req: LaneUpdate, hub_session: str | None = Coo
         fields["default_chat_id"] = req.default_chat_id.strip()
     if req.enabled is not None:
         fields["enabled"] = int(req.enabled)
-    if req.reply_mode is not None:
-        db.set_lane_state(slug, "reply_mode", "confirm" if req.reply_mode == "confirm" else "auto")
     if req.operator_chat_id is not None:
         db.set_lane_state(slug, "operator_chat_id", req.operator_chat_id.strip())
     if req.bot_token is not None:

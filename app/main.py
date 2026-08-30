@@ -10,7 +10,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
 
 from . import db
@@ -24,7 +24,15 @@ from .runtime import runtime
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 STATIC_DIR = Path(__file__).parent / "static"
-WATCHER_FILE = Path(__file__).parent.parent / "scripts" / "telegram_watch.py"
+SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
+WATCHER_FILE = SCRIPTS_DIR / "telegram_watch.py"
+# Helper scripts served from the hub so a teammate gets the exact versions that
+# match this hub (onboarding curls them into their project dir).
+HELPERS = {
+    "tg-fetch.sh": "read the team chat",
+    "tg-report.sh": "post to the team chat",
+    "ask-operator.sh": "ask your operator a clarifying question",
+}
 
 
 @asynccontextmanager
@@ -67,6 +75,15 @@ def create_app() -> FastAPI:
         """The @mention watcher, served straight from the hub so onboarding can
         `curl {hub}/watcher.py` and always get the version matching this hub."""
         return FileResponse(WATCHER_FILE, media_type="text/x-python", filename="telegram_watch.py")
+
+    @app.get("/{name}.sh", include_in_schema=False)
+    async def helper_script(name: str) -> FileResponse:
+        """Serve a lane helper (tg-fetch / tg-report / ask-operator) so onboarding
+        can `curl {hub}/tg-report.sh` and get the version matching this hub."""
+        fname = f"{name}.sh"
+        if fname not in HELPERS:
+            raise HTTPException(status_code=404, detail="unknown helper")
+        return FileResponse(SCRIPTS_DIR / fname, media_type="text/x-shellscript", filename=fname)
 
     app.include_router(auth_router)
     app.include_router(admin_router)

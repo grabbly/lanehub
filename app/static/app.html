@@ -252,11 +252,6 @@
       <div class="kv"><span class="k" data-i18n="activity">Активность</span>
         <button class="small" id="log-btn" data-i18n="sessionLog">лог сессий</button>
         <span class="hint" data-i18n="activityHint">когда бота зовут — кто, какая модель ответила, ошибки</span></div>
-      <div class="kv"><span class="k">Режим ответа</span>
-        <select id="m-mode">
-          <option value="auto">auto — отвечает сам сразу</option>
-          <option value="confirm">confirm — сначала твой апрув</option>
-        </select></div>
       <div class="kv"><span class="k">Твой опер-чат</span>
         <input id="m-opchat" style="max-width:200px;" placeholder="-100… id чата (пусто = auto)">
         <button class="small" id="m-opsave">save</button></div>
@@ -343,44 +338,53 @@ document.querySelectorAll('#nav [data-tab]').forEach(b => b.onclick = () => show
 // ---------- shared: the CLAUDE.md agent-prompt block ----------
 
 function promptText(base, hub, lng) {
+  const slug = base.split('/').pop();
   if (lng === 'ru') return `## Командный чат (LaneHub)
 
 Наш командный Telegram-чат доступен через LaneHub. Твой лейн: ${base}
-Ключ — в env-переменной LANEHUB_KEY (никогда не вставляй его в код/репо).
 
-Читать чат (люди + все боты, новые сверху; читай ПЕРЕД началом работы и периодически):
-curl -sS -H "X-Bridge-Token: $LANEHUB_KEY" "${base}/feed?order=desc&limit=100"
-
-Отправить сообщение (короткие статусы: «сделал X», «начинаю Y»):
-curl -sS -X POST -H "X-Bridge-Token: $LANEHUB_KEY" -H "Content-Type: application/json" \\
-  -d '{"text": "..."}' "${base}/send"
-
-Отвечать, когда тебя зовут через @<бот> в чате (продолжает ЭТУ сессию). Подними вотчер один раз (нужен запущенный \`claude\` и python3; зависимостей нет):
+Разовая настройка (в каталоге проекта; ключ — в .lanehub.env, в репо не коммить):
+cat > .lanehub.env <<'ENV'
+LANEHUB_BASE=${hub}
+LANEHUB_LANE=${slug}
+LANEHUB_API_KEY=<ключ из отдельного сообщения>
+ENV
+chmod 600 .lanehub.env
+curl -sS --remote-name-all ${hub}/tg-fetch.sh ${hub}/tg-report.sh ${hub}/ask-operator.sh
+chmod +x tg-fetch.sh tg-report.sh ask-operator.sh
 curl -sSO ${hub}/watcher.py
 LANEHUB_BASE=${base} CLAUDE_PROJECT_DIR="$(pwd)" nohup python3 watcher.py > watcher.log 2>&1 &
-  # LANEHUB_KEY берётся из env. Статус: python3 watcher.py --status
-  # Остановить: kill $(pgrep -f watcher.py)
 
-Правила: пиши только через свой лейн; файлы через чат не ходят — публикуй по URL и шли ссылку; тред длиннее 3-4 сообщений — эскалируй в issue-трекер.`;
+Работа:
+- Прочитать чат:   ./tg-fetch.sh    (потом читай хвост tg-chat-log.jsonl)
+- Ответить в чат:  ./tg-report.sh "текст"   (только plain text)
+- Спросить оператора, если не уверен:  ./ask-operator.sh "вопрос"
+  (ответ оператора вернётся в твою сессию — продолжишь задачу)
+
+Правила: пиши только через свой лейн; файлы по URL, не через чат; длинный тред — в issue-трекер.`;
   return `## Team chat (LaneHub)
 
 Our team Telegram chat is reachable through LaneHub. Your lane: ${base}
-The key lives in the LANEHUB_KEY env var (never put it in code/repos).
 
-Read the chat (humans + all bots, newest first; read BEFORE starting work and periodically):
-curl -sS -H "X-Bridge-Token: $LANEHUB_KEY" "${base}/feed?order=desc&limit=100"
-
-Send a message (short status pings: "done X", "starting Y"):
-curl -sS -X POST -H "X-Bridge-Token: $LANEHUB_KEY" -H "Content-Type: application/json" \\
-  -d '{"text": "..."}' "${base}/send"
-
-Answer when you're @<bot>-mentioned in the chat (resumes THIS session). Start the watcher once (needs a running \`claude\` and python3; no deps):
+One-time setup (in your project dir; key goes in .lanehub.env, never commit it):
+cat > .lanehub.env <<'ENV'
+LANEHUB_BASE=${hub}
+LANEHUB_LANE=${slug}
+LANEHUB_API_KEY=<key from the separate message>
+ENV
+chmod 600 .lanehub.env
+curl -sS --remote-name-all ${hub}/tg-fetch.sh ${hub}/tg-report.sh ${hub}/ask-operator.sh
+chmod +x tg-fetch.sh tg-report.sh ask-operator.sh
 curl -sSO ${hub}/watcher.py
 LANEHUB_BASE=${base} CLAUDE_PROJECT_DIR="$(pwd)" nohup python3 watcher.py > watcher.log 2>&1 &
-  # LANEHUB_KEY is read from env. Status: python3 watcher.py --status
-  # Stop: kill $(pgrep -f watcher.py)
 
-Rules: post only through your own lane; files don't traverse the chat — publish a URL and send the link; a thread longer than 3-4 messages escalates to the issue tracker.`;
+Working:
+- Read the chat:   ./tg-fetch.sh    (then read the tail of tg-chat-log.jsonl)
+- Reply to chat:   ./tg-report.sh "text"   (plain text only)
+- Ask the operator when unsure:  ./ask-operator.sh "question"
+  (the operator's answer returns into your session — you continue the task)
+
+Rules: post only through your own lane; files by URL, not through the chat; long threads go to the issue tracker.`;
 }
 
 // ---------- shared: session log dialog ----------
@@ -478,13 +482,6 @@ function laneCard(l) {
         <button class="small" data-act="rotate">rotate</button>
       </div>
       <div class="kv"><span class="k">Endpoint</span><code>${esc(base)}/${esc(l.slug)}/…</code></div>
-      <div class="kv"><span class="k">Reply mode</span>
-        <select data-mode>
-          <option value="auto">auto — post directly</option>
-          <option value="confirm">confirm — operator approves</option>
-        </select>
-        <span class="hint">confirm routes drafts through this bot's operator chat</span>
-      </div>
       <div class="kv"><span class="k">Operator chat</span>
         <input data-opchat style="max-width:210px;" placeholder="-100… (empty = auto)">
         <button class="small" data-act="opsave">save</button>
@@ -543,12 +540,6 @@ function laneCard(l) {
   });
   div.querySelector('[data-act=recipes]').onclick = () => showRecipes(l);
   div.querySelector('[data-act=log]').onclick = () => showLogDialog('Session log — /' + l.slug, `/admin/api/lanes/${l.slug}/logs`);
-  const modeSel = div.querySelector('[data-mode]');
-  modeSel.value = l.replyMode || 'auto';
-  modeSel.onchange = run(async () => {
-    await api(`/admin/api/lanes/${l.slug}`, { method: 'PATCH', body: JSON.stringify({ replyMode: modeSel.value }) });
-    await loadLanes();
-  });
   div.querySelector('[data-opchat]').value = l.operatorChatId || '';
   div.querySelector('[data-act=opsave]').onclick = run(async () => {
     await api(`/admin/api/lanes/${l.slug}`, { method: 'PATCH', body: JSON.stringify({ operatorChatId: div.querySelector('[data-opchat]').value.trim() }) });
@@ -995,19 +986,16 @@ function renderLane() {
   $('lane-base').textContent = memberBase(l) + '/…';
   $('lane-key').dataset.key = l.apiKey;
   $('log-btn').onclick = () => showLogDialog('Session log — @' + (l.botUsername || l.slug), '/portal/api/logs');
-  $('m-mode').value = l.replyMode || 'auto';
   $('m-opchat').value = l.operatorChatId || '';
   $('m-botname').textContent = l.botUsername || l.slug;
   $('m-chats').innerHTML = (l.seenChats || []).map(c =>
     `<span class="chip" data-pick="${esc(String(c.chatId))}" title="кликни, чтобы вписать">${esc(c.title || c.chatId)} <code>${esc(String(c.chatId))}</code></span>`).join('')
     || '<span class="hint">пока пусто — добавь бота в чат и напиши там любое сообщение</span>';
   $('m-chats').querySelectorAll('[data-pick]').forEach(ch => ch.onclick = () => { $('m-opchat').value = ch.dataset.pick; });
-  const saveOp = async () => {
-    const r = await api('/portal/api/lane/operator', { method: 'POST', body: JSON.stringify({ operatorChatId: $('m-opchat').value.trim(), replyMode: $('m-mode').value }) });
+  $('m-opsave').onclick = async () => {
+    const r = await api('/portal/api/lane/operator', { method: 'POST', body: JSON.stringify({ operatorChatId: $('m-opchat').value.trim() }) });
     if (r.lane) me.lane = r.lane;
   };
-  $('m-opsave').onclick = saveOp;
-  $('m-mode').onchange = saveOp;
   renderRecipes(l);
   showMemberView('lane');
 }

@@ -243,21 +243,6 @@ def build_prompt(sender: str, text: str) -> str:
     )
 
 
-def build_draft_prompt(sender: str, text: str) -> str:
-    """Confirm-mode: produce the reply as the FINAL message, do NOT send it —
-    an operator reviews and approves it before it reaches the team chat."""
-    return (
-        f"You were @-mentioned in the team Telegram chat by {sender}:\n\n"
-        f"{text}\n\n"
-        "Read context by running ./tg-fetch.sh, then write your reply as your "
-        "FINAL message. Do NOT send it — do NOT run ./tg-report.sh or /send. An "
-        "operator reviews and approves it. Output only the reply text, kept short. "
-        "If you genuinely cannot answer without more input, output exactly "
-        "'QUESTION: <your question to the operator>' instead of a draft — the "
-        "operator will answer and you continue."
-    )
-
-
 def hub_notify(lane: Lane, text: str) -> None:
     """Best-effort start/finish/status line to the operator chat via the hub."""
     try:
@@ -339,7 +324,6 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
                  lane.name, wake.get("sessionId") or "(new)")
         return
 
-    mode = wake.get("mode") or "auto"
     hub_log(lane, "info", f"@mention from {sender}: {text[:200]}")
     hub_notify(lane, f"🟡 [{lane.name}] {sender}: {text[:150]}")
     resume_id = wake.get("sessionId") or ""
@@ -351,8 +335,7 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
             hub_log(lane, "info", f"context reset — session ~{est // 1000}k tok >= {SESSION_TOKEN_CAP // 1000}k cap; fresh session")
             resume_id = ""
 
-    prompt = build_draft_prompt(sender, text) if mode == "confirm" else build_prompt(sender, text)
-    new_id, result = resume_session(cfg, lane, resume_id, prompt)
+    new_id, result = resume_session(cfg, lane, resume_id, build_prompt(sender, text))
 
     if new_id is None:
         # Retry a few times, then skip so a poison message can't wedge the lane.
@@ -370,27 +353,7 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
     else:
         lane._last_fail_wake, lane._fail_count = None, 0
         sess = session_token_estimate(lane.project_dir, new_id)
-        ctx_s = f"ctx {sess // 1000}k / 1M ({sess / 10000:.1f}%)"
-        if mode == "confirm":
-            draft = ((result or {}).get("result") or "").strip()
-            if draft:
-                resp = {}
-                try:
-                    resp = http_json(f"{lane.base}/draft", lane.key, method="POST",
-                                     body={"wakeId": wake_id, "text": draft})
-                except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-                    LOG.warning("[%s] draft submit failed: %s", lane.name, exc)
-                if resp.get("posted"):
-                    LOG.info("[%s] draft sent to operator for approval", lane.name)
-                    # non-blocking: the hub posts to the team chat when approved
-                else:
-                    # no operator console configured — behave as auto and send now
-                    _send_direct(lane, draft)
-                    hub_notify(lane, f"✅ [{lane.name}] отправлено (оператор не настроен) · {ctx_s}")
-            else:
-                LOG.warning("[%s] empty draft; nothing to submit", lane.name)
-        else:
-            hub_notify(lane, f"✅ [{lane.name}] ответил · {ctx_s}")
+        hub_notify(lane, f"✅ [{lane.name}] ответил · ctx {sess // 1000}k / 1M ({sess / 10000:.1f}%)")
 
     ack = {"wakeId": wake_id}
     if new_id:
@@ -399,15 +362,6 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
         http_json(f"{lane.base}/wake/ack", lane.key, method="POST", body=ack)
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         LOG.warning("[%s] ack failed: %s (wake will re-fire)", lane.name, exc)
-
-
-def _send_direct(lane: Lane, text: str) -> None:
-    """Fallback for confirm-mode when no operator console is configured: post the
-    draft to the team chat via the lane's own /send."""
-    try:
-        http_json(f"{lane.base}/send", lane.key, method="POST", body={"text": text})
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        LOG.warning("[%s] direct send failed: %s", lane.name, exc)
 
 
 def print_status(cfg: Config) -> None:

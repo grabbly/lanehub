@@ -172,7 +172,6 @@ async def wake(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
             "text": mention.get("text"),
             "chatId": mention.get("chatId"),
             "sessionId": session_id,
-            "mode": operator.lane_mode(lane_slug),
         }
     # No mention in this window: advance past the incoming messages we scanned
     # (never past outgoing high-namespace ids) so we don't rescan them.
@@ -214,48 +213,6 @@ async def lane_log(lane_slug: str, req: LogEntry, x_bridge_token: str = Header(d
     if req.ctx_tokens is not None:
         db.set_lane_state(lane_slug, "last_ctx_tokens", str(int(req.ctx_tokens)))
     return {"ok": True}
-
-
-class DraftSubmit(BaseModel):
-    wake_id: int = Field(alias="wakeId")
-    text: str = Field(min_length=1, max_length=8000)
-
-    model_config = {"populate_by_name": True}
-
-
-@router.post("/{lane_slug}/draft")
-async def submit_draft(lane_slug: str, req: DraftSubmit, x_bridge_token: str = Header(default="")) -> dict:
-    """Confirm-mode: the watcher submits the bot's draft reply. The hub posts a
-    preview with Approve/Reject to the operator chat and holds it pending. If no
-    operator console is configured, returns posted=False so the watcher can fall
-    back to sending directly."""
-    _auth_lane(lane_slug, x_bridge_token)
-    now = int(time.time())
-    text = req.text.strip()
-    # bot-initiated clarifying question: no approve/reject buttons — just ask the
-    # operator, whose reply flows back through the operator inbox into the session
-    if text[:9].upper() == "QUESTION:" or text.startswith("❓"):
-        q = text[9:].strip() if text[:9].upper() == "QUESTION:" else text.lstrip("❓ ").strip()
-        await operator.notify(lane_slug, f"❓ вопрос от бота:\n\n{q}\n\n(ответь сообщением — передам в его сессию)")
-        db.set_lane_state(lane_slug, "awaiting_answer", "1")
-        db.add_lane_log(lane_slug, "info", "bot asked the operator a question", now)
-        # posted=True so the watcher does NOT fall back to sending this to the team
-        return {"ok": True, "posted": True, "question": True}
-    posted = await operator.post_preview(lane_slug, req.wake_id, text)
-    if not posted:
-        return {"ok": True, "posted": False}
-    op_chat, op_msg = posted
-    db.create_approval(lane_slug, req.wake_id, text, 0.0, op_chat, op_msg, now)
-    db.add_lane_log(lane_slug, "info", "draft awaiting operator approval", now)
-    return {"ok": True, "posted": True}
-
-
-@router.get("/{lane_slug}/draft")
-async def draft_status(lane_slug: str, wakeId: int = Query(...), x_bridge_token: str = Header(default="")) -> dict:
-    """Poll a submitted draft's decision: pending | approved | rejected | none."""
-    _auth_lane(lane_slug, x_bridge_token)
-    ap = db.get_approval(lane_slug, wakeId)
-    return {"status": (ap or {}).get("status", "none")}
 
 
 class OperatorNotice(BaseModel):
@@ -358,56 +315,10 @@ async def info(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
     }
 
 
-async def _handle_callback(lane_slug: str, lane: dict, update: dict) -> None:
-    """Operator tapped Approve/Reject under a draft preview. The tap arrives on
-    THIS lane's own bot (it posted the buttons in this lane's operator chat), so
-    everything here uses this lane's bot. callback_data is 'ap|rj:<slug>:<wakeId>'.
-    Approve posts the draft to the team chat as this bot."""
-    cq = update.get("callback_query") or {}
-    cb_id = cq.get("id")
-    bot = lane["bot_token"]
-    parts = (cq.get("data") or "").split(":")
-    if len(parts) != 3 or parts[1] != lane_slug:
-        await telegram.answer_callback(bot, cb_id)
-        return
-    action, slug, wake_s = parts
-    try:
-        wake_id = int(wake_s)
-    except ValueError:
-        await telegram.answer_callback(bot, cb_id)
-        return
-    ap = db.get_approval(slug, wake_id)
-    if not ap or ap["status"] != "pending":
-        await telegram.answer_callback(bot, cb_id, "уже обработано")
-        return
-    now = int(time.time())
-    op_chat, op_msg = ap.get("op_chat_id"), ap.get("op_message_id")
-    draft = ap["draft"]
-    if action == "ap":
-        try:
-            await perform_send(lane, draft, None)
-        except Exception:
-            await telegram.answer_callback(bot, cb_id, "ошибка отправки")
-            return
-        db.resolve_approval(slug, wake_id, "approved", now)
-        db.add_lane_log(slug, "info", "operator approved → sent to chat", now)
-        if op_msg:
-            await telegram.edit_message(bot, op_chat, op_msg, f"✅ отправлено в чат:\n\n{draft[:3500]}")
-        await telegram.answer_callback(bot, cb_id, "Отправлено")
-    elif action == "rj":
-        db.resolve_approval(slug, wake_id, "rejected", now)
-        db.add_lane_log(slug, "info", "operator rejected draft", now)
-        if op_msg:
-            await telegram.edit_message(bot, op_chat, op_msg, f"✗ отклонено:\n\n{draft[:3500]}")
-        await telegram.answer_callback(bot, cb_id, "Отклонено")
-    else:
-        await telegram.answer_callback(bot, cb_id)
-
-
 async def _handle_operator_chat(lane_slug: str, lane: dict, update: dict) -> bool:
     """Everything that happens in THIS lane's operator chat. Returns True if the
     update belongs to the operator chat (so it is NOT stored in the team feed):
-      * `/status`  -> reply with this lane's mode / context / pending
+      * `/status`  -> reply with this lane's context occupancy
       * the bot's own posts -> ignored
       * any other plain message -> queued for the bot's session (the private
         two-way channel: the watcher resumes the session with it and replies
@@ -426,12 +337,11 @@ async def _handle_operator_chat(lane_slug: str, lane: dict, update: dict) -> boo
     if text.startswith("/status"):
         ctx = int(db.get_lane_state(lane_slug, "last_ctx_tokens") or 0)
         ctx_s = f"ctx {ctx // 1000}k / 1M ({ctx / 10000:.1f}%)" if ctx else "ctx — (ещё не отвечал)"
-        pending = any(p["lane_slug"] == lane_slug for p in db.pending_approvals())
+        awaiting = db.get_lane_state(lane_slug, "awaiting_answer") == "1"
         lines = [
             f"📊 {lane_slug} — статус",
-            f"режим: {operator.lane_mode(lane_slug)}",
             f"контекст: {ctx_s}",
-            f"ждёт апрув: {'да ⏳' if pending else 'нет'}",
+            f"ждёт твой ответ на вопрос: {'да ⏳' if awaiting else 'нет'}",
         ]
         await telegram.send_message(lane["bot_token"], op_chat, "\n".join(lines))
         return True
@@ -459,9 +369,6 @@ async def webhook(
         raise HTTPException(status_code=403, detail="bad secret token")
     update = await request.json()
     if not isinstance(update, dict):
-        return {"ok": True}
-    if "callback_query" in update:
-        await _handle_callback(lane_slug, lane, update)
         return {"ok": True}
     if await _handle_operator_chat(lane_slug, lane, update):
         return {"ok": True}
