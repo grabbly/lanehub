@@ -284,15 +284,8 @@ async def lanes_logs(slug: str, hub_session: str | None = Cookie(default=None)) 
     require_admin(hub_session)
     if not db.get_lane(slug):
         raise HTTPException(status_code=404, detail="unknown lane")
-    now = int(time.time())
-    return {
-        "slug": slug,
-        "logs": db.query_lane_logs(slug),
-        # this lane's spend, plus the account-wide total (the 5h/weekly limit is
-        # shared by every bot on the same claude login) that the caps apply to
-        "windows": {"lane": db.spend_windows(slug, now), "all": db.spend_windows(None, now)},
-        "caps": budget_caps(),
-    }
+    ctx = int(db.get_lane_state(slug, "last_ctx_tokens") or 0)
+    return {"slug": slug, "logs": db.query_lane_logs(slug), "ctxTokens": ctx}
 
 
 @router.get("/settings")

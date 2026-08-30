@@ -85,13 +85,8 @@ async def logs(hub_session: str | None = Cookie(default=None)) -> dict:
     slug = member["lane_slug"]
     if not slug or not db.get_lane(slug):
         return {"logs": []}
-    now = int(time.time())
-    return {
-        "slug": slug,
-        "logs": db.query_lane_logs(slug),
-        "windows": {"lane": db.spend_windows(slug, now)},
-        "caps": budget_caps(),
-    }
+    ctx = int(db.get_lane_state(slug, "last_ctx_tokens") or 0)
+    return {"slug": slug, "logs": db.query_lane_logs(slug), "ctxTokens": ctx}
 
 
 @router.post("/lane", status_code=201)

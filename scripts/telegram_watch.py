@@ -164,13 +164,13 @@ def http_json(url: str, key: str, method: str = "GET", body: dict | None = None)
         return json.loads(resp.read().decode("utf-8"))
 
 
-def hub_log(lane: "Lane", level: str, message: str, cost_usd: float | None = None) -> None:
+def hub_log(lane: "Lane", level: str, message: str, ctx_tokens: int | None = None) -> None:
     """Best-effort: mirror a watcher event to the hub (POST /{lane}/log) so it
-    shows in the web UI. `cost_usd` (on reply lines) feeds the 5h/weekly spend
-    windows. Never let logging break the watch loop."""
+    shows in the web UI. `ctx_tokens` (on reply lines) records the session's
+    current context-window occupancy. Never let logging break the watch loop."""
     body = {"level": level, "message": message}
-    if cost_usd is not None:
-        body["costUsd"] = cost_usd
+    if ctx_tokens is not None:
+        body["ctxTokens"] = ctx_tokens
     try:
         http_json(f"{lane.base}/log", lane.key, method="POST", body=body)
     except Exception:
@@ -206,18 +206,15 @@ def _run_claude(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[
     mu = result.get("modelUsage") or {}
     if mu:
         primary = max(mu, key=lambda k: (mu[k].get("input_tokens", 0) + mu[k].get("output_tokens", 0)) if isinstance(mu[k], dict) else 0)
-        u = result.get("usage") or {}
-        out = u.get("output_tokens", 0)
         dur_s = (result.get("duration_ms") or 0) / 1000.0
-        cost = result.get("total_cost_usd") or 0
-        # Session size = what actually reloads on resume (the transcript on disk),
-        # NOT the per-run usage sum — that double-counts across tool iterations and
-        # can read far above the window (e.g. "281% of 1M") on a long agentic run.
+        # Context occupancy = what actually reloads on resume (the transcript on
+        # disk), NOT the per-run usage sum — that double-counts across tool
+        # iterations and can read far above the window on a long agentic run.
         sess = session_token_estimate(lane.project_dir, result.get("session_id") or session_id)
-        summary = (f"replied via {primary} · {dur_s:.1f}s · session {sess // 1000}k "
-                   f"({sess / 10000:.1f}% of 1M) · out {out} tok · ${cost:.3f}")
+        summary = (f"replied via {primary} · ctx {sess // 1000}k / 1M "
+                   f"({sess / 10000:.1f}%) · {dur_s:.1f}s")
         LOG.info("[%s] %s", lane.name, summary)
-        hub_log(lane, "info", summary, cost_usd=cost)
+        hub_log(lane, "info", summary, ctx_tokens=sess)
     return result.get("session_id") or session_id, "", result
 
 
@@ -314,14 +311,15 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
         # fall through to ack so the poison wake is consumed
     else:
         lane._last_fail_wake, lane._fail_count = None, 0
-        cost = (result or {}).get("total_cost_usd") or 0
+        sess = session_token_estimate(lane.project_dir, new_id)
+        ctx_s = f"ctx {sess // 1000}k / 1M ({sess / 10000:.1f}%)"
         if mode == "confirm":
             draft = ((result or {}).get("result") or "").strip()
             if draft:
                 resp = {}
                 try:
                     resp = http_json(f"{lane.base}/draft", lane.key, method="POST",
-                                     body={"wakeId": wake_id, "text": draft, "costUsd": cost})
+                                     body={"wakeId": wake_id, "text": draft})
                 except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
                     LOG.warning("[%s] draft submit failed: %s", lane.name, exc)
                 if resp.get("posted"):
@@ -330,11 +328,11 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
                 else:
                     # no operator console configured — behave as auto and send now
                     _send_direct(lane, draft)
-                    hub_notify(lane, f"✅ [{lane.name}] отправлено (оператор не настроен) · ${cost:.3f}")
+                    hub_notify(lane, f"✅ [{lane.name}] отправлено (оператор не настроен) · {ctx_s}")
             else:
                 LOG.warning("[%s] empty draft; nothing to submit", lane.name)
         else:
-            hub_notify(lane, f"✅ [{lane.name}] ответил · ${cost:.3f}")
+            hub_notify(lane, f"✅ [{lane.name}] ответил · {ctx_s}")
 
     ack = {"wakeId": wake_id}
     if new_id:

@@ -198,7 +198,7 @@ class LogEntry(BaseModel):
     level: str = Field(default="info", max_length=16)
     message: str = Field(min_length=1, max_length=2000)
     ts: int | None = None
-    cost_usd: float | None = Field(default=None, alias="costUsd")
+    ctx_tokens: int | None = Field(default=None, alias="ctxTokens")
 
     model_config = {"populate_by_name": True}
 
@@ -207,18 +207,18 @@ class LogEntry(BaseModel):
 async def lane_log(lane_slug: str, req: LogEntry, x_bridge_token: str = Header(default="")) -> dict:
     """Append one watcher-activity line for this lane (rolling buffer, newest
     kept). The watcher self-reports with its own lane key; the admin panel reads
-    every lane and the lane's owner reads their own — nobody reaches into a
-    watcher, each pushes here. `costUsd` (on reply lines) feeds the 5h/weekly
-    spend windows."""
+    every lane and the lane's owner reads their own. `ctxTokens` (on reply lines)
+    records the session's current context-window occupancy."""
     _auth_lane(lane_slug, x_bridge_token)
-    db.add_lane_log(lane_slug, req.level, req.message, req.ts or int(time.time()), req.cost_usd or 0.0)
+    db.add_lane_log(lane_slug, req.level, req.message, req.ts or int(time.time()))
+    if req.ctx_tokens is not None:
+        db.set_lane_state(lane_slug, "last_ctx_tokens", str(int(req.ctx_tokens)))
     return {"ok": True}
 
 
 class DraftSubmit(BaseModel):
     wake_id: int = Field(alias="wakeId")
     text: str = Field(min_length=1, max_length=8000)
-    cost_usd: float | None = Field(default=None, alias="costUsd")
 
     model_config = {"populate_by_name": True}
 
@@ -235,9 +235,8 @@ async def submit_draft(lane_slug: str, req: DraftSubmit, x_bridge_token: str = H
     if not posted:
         return {"ok": True, "posted": False}
     op_chat, op_msg = posted
-    db.create_approval(lane_slug, req.wake_id, req.text, req.cost_usd or 0.0, op_chat, op_msg, now)
-    # cost is already logged on the watcher's run-summary line; keep this one cost-free
-    db.add_lane_log(lane_slug, "info", "draft awaiting operator approval", now, 0.0)
+    db.create_approval(lane_slug, req.wake_id, req.text, 0.0, op_chat, op_msg, now)
+    db.add_lane_log(lane_slug, "info", "draft awaiting operator approval", now)
     return {"ok": True, "posted": True}
 
 
@@ -356,18 +355,15 @@ async def _handle_operator_command(update: dict) -> bool:
     console = operator.console_lane()
     if not console or str((msg.get("chat") or {}).get("id") or "") != cfg["chat_id"]:
         return False
-    now = int(time.time())
     pend = {p["lane_slug"] for p in db.pending_approvals()}
     lines = ["📊 LaneHub — статус"]
     for l in db.list_lanes():
         if not l["enabled"]:
             continue
-        w = db.spend_windows(l["slug"], now)
+        ctx = int(db.get_lane_state(l["slug"], "last_ctx_tokens") or 0)
+        ctx_s = f"ctx {ctx // 1000}k / 1M ({ctx / 10000:.1f}%)" if ctx else "ctx —"
         flag = " ⏳ждёт апрув" if l["slug"] in pend else ""
-        lines.append(f"• {l['slug']} [{operator.lane_mode(l['slug'])}] — "
-                     f"5ч ${w['h5']['usd']:.2f}/{w['h5']['requests']} · 7д ${w['week']['usd']:.2f}{flag}")
-    allw = db.spend_windows(None, now)
-    lines.append(f"Σ все боты: 5ч ${allw['h5']['usd']:.2f} ({allw['h5']['requests']}) · 7д ${allw['week']['usd']:.2f}")
+        lines.append(f"• {l['slug']} [{operator.lane_mode(l['slug'])}] — {ctx_s}{flag}")
     await telegram.send_message(console["bot_token"], cfg["chat_id"], "\n".join(lines))
     return True
 
