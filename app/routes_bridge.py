@@ -230,12 +230,21 @@ async def submit_draft(lane_slug: str, req: DraftSubmit, x_bridge_token: str = H
     operator console is configured, returns posted=False so the watcher can fall
     back to sending directly."""
     _auth_lane(lane_slug, x_bridge_token)
-    posted = await operator.post_preview(lane_slug, req.wake_id, req.text)
     now = int(time.time())
+    text = req.text.strip()
+    # bot-initiated clarifying question: no approve/reject buttons — just ask the
+    # operator, whose reply flows back through the operator inbox into the session
+    if text[:9].upper() == "QUESTION:" or text.startswith("❓"):
+        q = text[9:].strip() if text[:9].upper() == "QUESTION:" else text.lstrip("❓ ").strip()
+        await operator.notify(lane_slug, f"❓ вопрос от бота:\n\n{q}\n\n(ответь сообщением — передам в его сессию)")
+        db.add_lane_log(lane_slug, "info", "bot asked the operator a question", now)
+        # posted=True so the watcher does NOT fall back to sending this to the team
+        return {"ok": True, "posted": True, "question": True}
+    posted = await operator.post_preview(lane_slug, req.wake_id, text)
     if not posted:
         return {"ok": True, "posted": False}
     op_chat, op_msg = posted
-    db.create_approval(lane_slug, req.wake_id, req.text, 0.0, op_chat, op_msg, now)
+    db.create_approval(lane_slug, req.wake_id, text, 0.0, op_chat, op_msg, now)
     db.add_lane_log(lane_slug, "info", "draft awaiting operator approval", now)
     return {"ok": True, "posted": True}
 
@@ -259,6 +268,42 @@ async def operator_notice(lane_slug: str, req: OperatorNotice, x_bridge_token: s
     """Post a start/finish/status notice to the operator chat via the console bot."""
     _auth_lane(lane_slug, x_bridge_token)
     return {"ok": await operator.notify(lane_slug, req.text)}
+
+
+@router.get("/{lane_slug}/operator-inbox")
+async def operator_inbox(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict:
+    """Oldest unhandled operator message for this lane (the private two-way
+    channel). The watcher resumes the session with it and replies to the
+    operator chat, then acks. Returns the lane's current Claude session id so the
+    reply continues the SAME session the operator is asking about."""
+    _auth_lane(lane_slug, x_bridge_token)
+    m = db.next_operator_msg(lane_slug)
+    if not m:
+        return {"msg": False}
+    return {
+        "msg": True,
+        "id": m["id"],
+        "text": m["text"],
+        "from": m["from_user"],
+        "sessionId": db.get_lane_state(lane_slug, "claude_session_id"),
+    }
+
+
+class InboxAck(BaseModel):
+    id: int
+    session_id: str | None = Field(default=None, alias="sessionId")
+
+    model_config = {"populate_by_name": True}
+
+
+@router.post("/{lane_slug}/operator-inbox/ack")
+async def operator_inbox_ack(lane_slug: str, req: InboxAck, x_bridge_token: str = Header(default="")) -> dict:
+    """Mark one operator message handled and record the (possibly forked) session id."""
+    _auth_lane(lane_slug, x_bridge_token)
+    db.mark_operator_done(lane_slug, req.id)
+    if req.session_id:
+        db.set_lane_state(lane_slug, "claude_session_id", req.session_id)
+    return {"ok": True}
 
 
 @router.get("/{lane_slug}/info")
@@ -340,27 +385,45 @@ async def _handle_callback(lane_slug: str, lane: dict, update: dict) -> None:
         await telegram.answer_callback(bot, cb_id)
 
 
-async def _handle_operator_command(lane_slug: str, lane: dict, update: dict) -> bool:
-    """`/status` typed in THIS lane's operator chat -> this bot replies with only
-    THIS lane's mode, context occupancy and pending approval. Returns True if
-    handled (so it isn't also stored as a chat message)."""
+async def _handle_operator_chat(lane_slug: str, lane: dict, update: dict) -> bool:
+    """Everything that happens in THIS lane's operator chat. Returns True if the
+    update belongs to the operator chat (so it is NOT stored in the team feed):
+      * `/status`  -> reply with this lane's mode / context / pending
+      * the bot's own posts -> ignored
+      * any other plain message -> queued for the bot's session (the private
+        two-way channel: the watcher resumes the session with it and replies
+        back here). Other `/commands` are ignored."""
     msg = update.get("message") or {}
-    text = (msg.get("text") or "").strip()
-    if not text.startswith("/status"):
-        return False
     op_chat = operator.lane_operator_chat(lane_slug)
-    if not op_chat or str((msg.get("chat") or {}).get("id") or "") != op_chat:
-        return False
-    ctx = int(db.get_lane_state(lane_slug, "last_ctx_tokens") or 0)
-    ctx_s = f"ctx {ctx // 1000}k / 1M ({ctx / 10000:.1f}%)" if ctx else "ctx — (ещё не отвечал)"
-    pending = any(p["lane_slug"] == lane_slug for p in db.pending_approvals())
-    lines = [
-        f"📊 {lane_slug} — статус",
-        f"режим: {operator.lane_mode(lane_slug)}",
-        f"контекст: {ctx_s}",
-        f"ждёт апрув: {'да ⏳' if pending else 'нет'}",
-    ]
-    await telegram.send_message(lane["bot_token"], op_chat, "\n".join(lines))
+    chat_id = str((msg.get("chat") or {}).get("id") or "")
+    if not op_chat or chat_id != op_chat:
+        return False  # not the operator chat -> let normal ingest handle it
+    frm = msg.get("from") or {}
+    if frm.get("is_bot"):
+        return True  # the console bot's own messages -> consumed, never queued
+    text = (msg.get("text") or "").strip()
+    if not text:
+        return True
+    if text.startswith("/status"):
+        ctx = int(db.get_lane_state(lane_slug, "last_ctx_tokens") or 0)
+        ctx_s = f"ctx {ctx // 1000}k / 1M ({ctx / 10000:.1f}%)" if ctx else "ctx — (ещё не отвечал)"
+        pending = any(p["lane_slug"] == lane_slug for p in db.pending_approvals())
+        lines = [
+            f"📊 {lane_slug} — статус",
+            f"режим: {operator.lane_mode(lane_slug)}",
+            f"контекст: {ctx_s}",
+            f"ждёт апрув: {'да ⏳' if pending else 'нет'}",
+        ]
+        await telegram.send_message(lane["bot_token"], op_chat, "\n".join(lines))
+        return True
+    if text.startswith("/"):
+        return True  # unknown slash command -> ignore
+    # plain operator message -> queue it for the bot's session (private channel)
+    db.add_operator_msg(lane_slug, text, frm.get("username") or frm.get("first_name") or "operator", int(time.time()))
+    try:
+        await telegram.send_message(lane["bot_token"], op_chat, "🕓 принял, думаю…")
+    except telegram.TelegramError:
+        pass
     return True
 
 
@@ -381,7 +444,7 @@ async def webhook(
     if "callback_query" in update:
         await _handle_callback(lane_slug, lane, update)
         return {"ok": True}
-    if await _handle_operator_command(lane_slug, lane, update):
+    if await _handle_operator_chat(lane_slug, lane, update):
         return {"ok": True}
     if "update_id" in update:
         ingest_update(lane_slug, update)

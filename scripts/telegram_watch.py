@@ -245,10 +245,12 @@ def build_draft_prompt(sender: str, text: str) -> str:
     return (
         f"You were @-mentioned in the team Telegram chat by {sender}:\n\n"
         f"{text}\n\n"
-        "Read the chat via ./tg-fetch.sh (or /feed) for context, then write your "
-        "reply as your FINAL message. Do NOT send it — do NOT run ./tg-report.sh "
-        "or /send. An operator will review and approve it. Output only the reply "
-        "text, kept short."
+        "Read context by running ./tg-fetch.sh, then write your reply as your "
+        "FINAL message. Do NOT send it — do NOT run ./tg-report.sh or /send. An "
+        "operator reviews and approves it. Output only the reply text, kept short. "
+        "If you genuinely cannot answer without more input, output exactly "
+        "'QUESTION: <your question to the operator>' instead of a draft — the "
+        "operator will answer and you continue."
     )
 
 
@@ -258,6 +260,45 @@ def hub_notify(lane: Lane, text: str) -> None:
         http_json(f"{lane.base}/operator", lane.key, method="POST", body={"text": text})
     except Exception:
         pass
+
+
+def build_operator_prompt(sender: str, text: str) -> str:
+    """A message from the operator's PRIVATE channel — the operator asking the
+    bot about its own work, or answering a question the bot raised. The answer
+    goes back to the operator chat, never the team chat."""
+    return (
+        f"PRIVATE operator back-channel (NOT the team Telegram chat). The operator "
+        f"{sender} says to you:\n\n{text}\n\n"
+        "Answer them directly and concisely about your own work/session. Do NOT "
+        "post to the team chat — do NOT run ./tg-report.sh or /send. Output only "
+        "your answer to the operator."
+    )
+
+
+def handle_operator_inbox(cfg: Config, lane: Lane) -> None:
+    """Second channel: an operator message from the lane's private operator chat.
+    Resume the SAME session and reply back into the operator chat."""
+    try:
+        m = http_json(f"{lane.base}/operator-inbox", lane.key)
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        return
+    if not m.get("msg"):
+        return
+    msg_id = m["id"]
+    sender = m.get("from") or "operator"
+    text = m.get("text") or ""
+    LOG.info("[%s] operator asks: %s", lane.name, text[:120])
+    new_id, result = resume_session(cfg, lane, m.get("sessionId") or "",
+                                    build_operator_prompt(sender, text))
+    answer = ((result or {}).get("result") or "").strip() if new_id else ""
+    hub_notify(lane, answer if answer else "⚠️ не смог ответить на сообщение оператора")
+    ack = {"id": msg_id}
+    if new_id:
+        ack["sessionId"] = new_id
+    try:
+        http_json(f"{lane.base}/operator-inbox/ack", lane.key, method="POST", body=ack)
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        LOG.warning("[%s] operator-inbox ack failed: %s", lane.name, exc)
 
 
 def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
@@ -400,6 +441,8 @@ def main() -> None:
     while True:
         for lane in cfg.lanes:
             handle_lane(cfg, lane, dry_run=args.dry_run)
+            if not args.dry_run:
+                handle_operator_inbox(cfg, lane)
         if args.once:
             return
         time.sleep(cfg.poll_interval)

@@ -90,6 +90,15 @@ CREATE TABLE IF NOT EXISTS approvals (
     decided_at INTEGER,
     PRIMARY KEY (lane_slug, wake_id)
 );
+CREATE TABLE IF NOT EXISTS operator_inbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lane_slug TEXT NOT NULL,
+    text TEXT NOT NULL,
+    from_user TEXT,
+    ts INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+);
+CREATE INDEX IF NOT EXISTS idx_operator_inbox ON operator_inbox(lane_slug, status, id);
 """
 
 # Keep at most this many log lines per lane (a rolling watcher-activity buffer).
@@ -380,6 +389,36 @@ def pending_approvals() -> list[dict]:
             "SELECT lane_slug, wake_id, created_at FROM approvals WHERE status = 'pending'"
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# --- operator inbox (operator -> bot session, private two-way channel) ----
+
+
+def add_operator_msg(lane_slug: str, text: str, from_user: str, ts: int) -> None:
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO operator_inbox(lane_slug, text, from_user, ts) VALUES(?, ?, ?, ?)",
+            (lane_slug, text[:4000], from_user or "operator", ts),
+        )
+
+
+def next_operator_msg(lane_slug: str) -> dict | None:
+    """Oldest unhandled operator message for a lane."""
+    with connect() as conn:
+        r = conn.execute(
+            "SELECT id, text, from_user, ts FROM operator_inbox "
+            "WHERE lane_slug = ? AND status = 'pending' ORDER BY id LIMIT 1",
+            (lane_slug,),
+        ).fetchone()
+    return dict(r) if r else None
+
+
+def mark_operator_done(lane_slug: str, msg_id: int) -> None:
+    with connect() as conn:
+        conn.execute(
+            "UPDATE operator_inbox SET status = 'done' WHERE lane_slug = ? AND id = ?",
+            (lane_slug, msg_id),
+        )
 
 
 # --- messages ------------------------------------------------------------
