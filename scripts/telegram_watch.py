@@ -233,9 +233,13 @@ def build_prompt(sender: str, text: str) -> str:
     return (
         f"You were @-mentioned in the team Telegram chat by {sender}:\n\n"
         f"{text}\n\n"
-        "Read context by running ./tg-fetch.sh (then read the tail of "
-        "tg-chat-log.jsonl), and reply by running ./tg-report.sh \"your reply\". "
-        "Use only those helper scripts to read and post. Keep it short."
+        "You work autonomously. Read context with ./tg-fetch.sh (then the tail of "
+        "tg-chat-log.jsonl), do the task, and reply in the team chat with "
+        "./tg-report.sh \"your reply\". Keep it short.\n"
+        "If — and only if — you genuinely need a clarifying decision from the "
+        "operator before you can proceed correctly, run ./ask-operator.sh \"your "
+        "question\" and then STOP without replying: the operator will answer and "
+        "you'll be resumed to finish. Don't ask trivial questions; just proceed."
     )
 
 
@@ -269,9 +273,11 @@ def build_operator_prompt(sender: str, text: str) -> str:
     return (
         f"PRIVATE operator back-channel (NOT the team Telegram chat). The operator "
         f"{sender} says to you:\n\n{text}\n\n"
-        "Answer them directly and concisely about your own work/session. Do NOT "
-        "post to the team chat — do NOT run ./tg-report.sh or /send. Output only "
-        "your answer to the operator."
+        "If this answers a question you asked or tells you to proceed, carry on "
+        "with the task now — including replying in the TEAM chat via ./tg-report.sh "
+        "if that's what the task needs. If it's just a question about your work, "
+        "answer it here. Whatever you output is shown to the operator in this "
+        "private channel; keep it short."
     )
 
 
