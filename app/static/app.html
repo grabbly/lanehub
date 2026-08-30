@@ -198,12 +198,7 @@
       </div>
       <p class="hint">Set the <b>project chat</b> once — every new lane (including ones members create
         themselves) inherits it, so freshly onboarded bots post to the team chat with zero config.</p>
-      <div class="kv"><span class="k">Operator console</span>
-        <input id="op-chat" style="max-width:200px;" placeholder="-100… operator chat id">
-        <select id="op-console"><option value="">— console bot —</option></select>
-        <button class="small" id="op-save">save</button>
-      </div>
-      <p class="hint">Human-in-the-loop console in a separate Telegram chat: draft previews with approve/reject, start/finish + context usage, and <code>/status</code>. Set the operator chat id and pick which bot speaks there (it must be a member of that chat). Then switch a lane's <b>Reply mode</b> to <b>confirm</b>. Leave empty = every lane posts directly (auto).</p>
+      <p class="hint">Operator console is <b>per bot</b> now — each lane has its own operator chat, set on the lane below (or by the member in their portal). An operator only ever sees their own bot.</p>
       <details id="smtp-details" style="margin-top:8px;">
         <summary>📧 Email (SMTP) for invitation emails</summary>
         <p class="hint" id="smtp-status" style="margin:8px 0 4px;"></p>
@@ -257,6 +252,16 @@
       <div class="kv"><span class="k" data-i18n="activity">Активность</span>
         <button class="small" id="log-btn" data-i18n="sessionLog">лог сессий</button>
         <span class="hint" data-i18n="activityHint">когда бота зовут — кто, какая модель ответила, ошибки</span></div>
+      <div class="kv"><span class="k">Режим ответа</span>
+        <select id="m-mode">
+          <option value="auto">auto — отвечает сам сразу</option>
+          <option value="confirm">confirm — сначала твой апрув</option>
+        </select></div>
+      <div class="kv"><span class="k">Твой опер-чат</span>
+        <input id="m-opchat" style="max-width:200px;" placeholder="-100… id чата (пусто = auto)">
+        <button class="small" id="m-opsave">save</button></div>
+      <p class="hint">Заведи <b>отдельный</b> Telegram-чат для себя, добавь туда своего бота (@<span id="m-botname"></span>) и напиши там любое сообщение — id появится ниже в «Мои чаты». Впиши его сюда: превью ответов (✓/✗), старт/финиш, <code>/status</code> будут приходить только по <b>твоему</b> боту.</p>
+      <div class="kv"><span class="k">Мои чаты</span><span class="chats" id="m-chats"></span></div>
       <div class="kv"><span class="k">API key</span>
         <code class="key-hidden" id="lane-key" data-shown="0">••••••••••••••••</code>
         <button class="small" id="key-toggle" data-i18n="show">показать</button>
@@ -478,7 +483,12 @@ function laneCard(l) {
           <option value="auto">auto — post directly</option>
           <option value="confirm">confirm — operator approves</option>
         </select>
-        <span class="hint">confirm routes drafts through the operator chat</span>
+        <span class="hint">confirm routes drafts through this bot's operator chat</span>
+      </div>
+      <div class="kv"><span class="k">Operator chat</span>
+        <input data-opchat style="max-width:210px;" placeholder="-100… (empty = auto)">
+        <button class="small" data-act="opsave">save</button>
+        <span class="hint">this bot's own dev chat — previews, /status</span>
       </div>
       <div class="kv"><span class="k">Default chat</span>
         <input data-chat-input value="${esc(l.defaultChatId || '')}" placeholder="-100… or @channelname" style="max-width:240px;">
@@ -537,6 +547,11 @@ function laneCard(l) {
   modeSel.value = l.replyMode || 'auto';
   modeSel.onchange = run(async () => {
     await api(`/admin/api/lanes/${l.slug}`, { method: 'PATCH', body: JSON.stringify({ replyMode: modeSel.value }) });
+    await loadLanes();
+  });
+  div.querySelector('[data-opchat]').value = l.operatorChatId || '';
+  div.querySelector('[data-act=opsave]').onclick = run(async () => {
+    await api(`/admin/api/lanes/${l.slug}`, { method: 'PATCH', body: JSON.stringify({ operatorChatId: div.querySelector('[data-opchat]').value.trim() }) });
     await loadLanes();
   });
   div.querySelector('[data-act=delete]').onclick = run(async () => {
@@ -756,12 +771,8 @@ $('onboarding-btn').onclick = showOnboarding;
 // ---------- admin: team + settings ----------
 
 async function loadTeam() {
-  const [st, ms, ln] = await Promise.all([api('/admin/api/settings'), api('/admin/api/members'), api('/admin/api/lanes')]);
+  const [st, ms] = await Promise.all([api('/admin/api/settings'), api('/admin/api/members')]);
   $('project-chat').value = st.projectChatId || '';
-  $('op-chat').value = st.operatorChatId || '';
-  $('op-console').innerHTML = '<option value="">— console bot —</option>' +
-    (ln.lanes || []).map(l => `<option value="${esc(l.slug)}">${esc(l.slug)}${l.botUsername ? ' (@' + esc(l.botUsername) + ')' : ''}</option>`).join('');
-  $('op-console').value = st.operatorConsoleSlug || '';
   $('team-meta').textContent = `sign-in: ${st.loginUrl} · email: ${st.smtpConfigured ? 'SMTP configured' : 'not configured (copy-paste invites)'}`;
   const s = st.smtp || {};
   $('smtp-status').textContent = s.source === 'panel'
@@ -847,14 +858,6 @@ $('invite-btn').onclick = async () => {
 
 $('project-chat-save').onclick = async () => {
   await api('/admin/api/settings', { method: 'PATCH', body: JSON.stringify({ projectChatId: $('project-chat').value.trim() }) });
-  await loadTeam();
-};
-
-$('op-save').onclick = async () => {
-  await api('/admin/api/settings', { method: 'PATCH', body: JSON.stringify({
-    operatorChatId: $('op-chat').value.trim(),
-    operatorConsoleSlug: $('op-console').value,
-  }) });
   await loadTeam();
 };
 
@@ -992,6 +995,19 @@ function renderLane() {
   $('lane-base').textContent = memberBase(l) + '/…';
   $('lane-key').dataset.key = l.apiKey;
   $('log-btn').onclick = () => showLogDialog('Session log — @' + (l.botUsername || l.slug), '/portal/api/logs');
+  $('m-mode').value = l.replyMode || 'auto';
+  $('m-opchat').value = l.operatorChatId || '';
+  $('m-botname').textContent = l.botUsername || l.slug;
+  $('m-chats').innerHTML = (l.seenChats || []).map(c =>
+    `<span class="chip" data-pick="${esc(String(c.chatId))}" title="кликни, чтобы вписать">${esc(c.title || c.chatId)} <code>${esc(String(c.chatId))}</code></span>`).join('')
+    || '<span class="hint">пока пусто — добавь бота в чат и напиши там любое сообщение</span>';
+  $('m-chats').querySelectorAll('[data-pick]').forEach(ch => ch.onclick = () => { $('m-opchat').value = ch.dataset.pick; });
+  const saveOp = async () => {
+    const r = await api('/portal/api/lane/operator', { method: 'POST', body: JSON.stringify({ operatorChatId: $('m-opchat').value.trim(), replyMode: $('m-mode').value }) });
+    if (r.lane) me.lane = r.lane;
+  };
+  $('m-opsave').onclick = saveOp;
+  $('m-mode').onchange = saveOp;
   renderRecipes(l);
   showMemberView('lane');
 }

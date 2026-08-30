@@ -258,7 +258,7 @@ class OperatorNotice(BaseModel):
 async def operator_notice(lane_slug: str, req: OperatorNotice, x_bridge_token: str = Header(default="")) -> dict:
     """Post a start/finish/status notice to the operator chat via the console bot."""
     _auth_lane(lane_slug, x_bridge_token)
-    return {"ok": await operator.notify(req.text)}
+    return {"ok": await operator.notify(lane_slug, req.text)}
 
 
 @router.get("/{lane_slug}/info")
@@ -294,19 +294,16 @@ async def info(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
     }
 
 
-async def _handle_callback(update: dict) -> None:
-    """Operator tapped Approve/Reject under a draft preview. callback_data is
-    'ap:<slug>:<wakeId>' or 'rj:<slug>:<wakeId>'. Approve posts the draft to the
-    team chat as the originating lane's bot; both edit the preview to show the
-    outcome. The console bot is the one that posted the buttons and gets the tap."""
+async def _handle_callback(lane_slug: str, lane: dict, update: dict) -> None:
+    """Operator tapped Approve/Reject under a draft preview. The tap arrives on
+    THIS lane's own bot (it posted the buttons in this lane's operator chat), so
+    everything here uses this lane's bot. callback_data is 'ap|rj:<slug>:<wakeId>'.
+    Approve posts the draft to the team chat as this bot."""
     cq = update.get("callback_query") or {}
     cb_id = cq.get("id")
-    console = operator.console_lane()
-    if not console:
-        return
-    bot = console["bot_token"]
+    bot = lane["bot_token"]
     parts = (cq.get("data") or "").split(":")
-    if len(parts) != 3:
+    if len(parts) != 3 or parts[1] != lane_slug:
         await telegram.answer_callback(bot, cb_id)
         return
     action, slug, wake_s = parts
@@ -323,7 +320,6 @@ async def _handle_callback(update: dict) -> None:
     op_chat, op_msg = ap.get("op_chat_id"), ap.get("op_message_id")
     draft = ap["draft"]
     if action == "ap":
-        lane = _lane_or_404(slug)
         try:
             await perform_send(lane, draft, None)
         except Exception:
@@ -332,39 +328,39 @@ async def _handle_callback(update: dict) -> None:
         db.resolve_approval(slug, wake_id, "approved", now)
         db.add_lane_log(slug, "info", "operator approved → sent to chat", now)
         if op_msg:
-            await telegram.edit_message(bot, op_chat, op_msg, f"✅ [{slug}] отправлено в чат:\n\n{draft[:3500]}")
+            await telegram.edit_message(bot, op_chat, op_msg, f"✅ отправлено в чат:\n\n{draft[:3500]}")
         await telegram.answer_callback(bot, cb_id, "Отправлено")
     elif action == "rj":
         db.resolve_approval(slug, wake_id, "rejected", now)
         db.add_lane_log(slug, "info", "operator rejected draft", now)
         if op_msg:
-            await telegram.edit_message(bot, op_chat, op_msg, f"✗ [{slug}] отклонено:\n\n{draft[:3500]}")
+            await telegram.edit_message(bot, op_chat, op_msg, f"✗ отклонено:\n\n{draft[:3500]}")
         await telegram.answer_callback(bot, cb_id, "Отклонено")
     else:
         await telegram.answer_callback(bot, cb_id)
 
 
-async def _handle_operator_command(update: dict) -> bool:
-    """`/status` typed in the operator chat -> the console bot replies with a
-    per-lane spend + mode + pending-approval summary. Returns True if handled."""
+async def _handle_operator_command(lane_slug: str, lane: dict, update: dict) -> bool:
+    """`/status` typed in THIS lane's operator chat -> this bot replies with only
+    THIS lane's mode, context occupancy and pending approval. Returns True if
+    handled (so it isn't also stored as a chat message)."""
     msg = update.get("message") or {}
     text = (msg.get("text") or "").strip()
     if not text.startswith("/status"):
         return False
-    cfg = operator.operator_config()
-    console = operator.console_lane()
-    if not console or str((msg.get("chat") or {}).get("id") or "") != cfg["chat_id"]:
+    op_chat = operator.lane_operator_chat(lane_slug)
+    if not op_chat or str((msg.get("chat") or {}).get("id") or "") != op_chat:
         return False
-    pend = {p["lane_slug"] for p in db.pending_approvals()}
-    lines = ["📊 LaneHub — статус"]
-    for l in db.list_lanes():
-        if not l["enabled"]:
-            continue
-        ctx = int(db.get_lane_state(l["slug"], "last_ctx_tokens") or 0)
-        ctx_s = f"ctx {ctx // 1000}k / 1M ({ctx / 10000:.1f}%)" if ctx else "ctx —"
-        flag = " ⏳ждёт апрув" if l["slug"] in pend else ""
-        lines.append(f"• {l['slug']} [{operator.lane_mode(l['slug'])}] — {ctx_s}{flag}")
-    await telegram.send_message(console["bot_token"], cfg["chat_id"], "\n".join(lines))
+    ctx = int(db.get_lane_state(lane_slug, "last_ctx_tokens") or 0)
+    ctx_s = f"ctx {ctx // 1000}k / 1M ({ctx / 10000:.1f}%)" if ctx else "ctx — (ещё не отвечал)"
+    pending = any(p["lane_slug"] == lane_slug for p in db.pending_approvals())
+    lines = [
+        f"📊 {lane_slug} — статус",
+        f"режим: {operator.lane_mode(lane_slug)}",
+        f"контекст: {ctx_s}",
+        f"ждёт апрув: {'да ⏳' if pending else 'нет'}",
+    ]
+    await telegram.send_message(lane["bot_token"], op_chat, "\n".join(lines))
     return True
 
 
@@ -383,9 +379,9 @@ async def webhook(
     if not isinstance(update, dict):
         return {"ok": True}
     if "callback_query" in update:
-        await _handle_callback(update)
+        await _handle_callback(lane_slug, lane, update)
         return {"ok": True}
-    if await _handle_operator_command(update):
+    if await _handle_operator_command(lane_slug, lane, update):
         return {"ok": True}
     if "update_id" in update:
         ingest_update(lane_slug, update)
