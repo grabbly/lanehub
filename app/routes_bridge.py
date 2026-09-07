@@ -3,6 +3,7 @@
     POST /{lane}/send      — send a message as this lane's bot
     GET  /{lane}/messages  — this lane's history (humans + own sends)
     GET  /{lane}/feed      — the WHOLE chat merged across all lanes
+    GET  /{lane}/file/{id} — download a chat attachment (photo, document…)
     GET  /{lane}/info      — lane diagnostics
     POST /{lane}/webhook   — Telegram push receiver (secret-token auth)
 
@@ -15,6 +16,7 @@ import secrets as pysecrets
 import time
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from . import db, operator, telegram
@@ -118,8 +120,35 @@ async def feed(
     x_bridge_token: str = Header(default=""),
 ) -> dict:
     _auth_lane(lane_slug, x_bridge_token)
-    rows = db.query_feed(since_date, limit, order, chat_id)
+    rows = db.query_feed(since_date, limit, order, chat_id, prefer_lane=lane_slug)
     return {"messages": rows, "count": len(rows)}
+
+
+@router.get("/{lane_slug}/file/{file_id}")
+async def get_file(lane_slug: str, file_id: str, x_bridge_token: str = Header(default="")) -> Response:
+    """Download an attachment from the chat (the `media.fileId` of a feed row).
+
+    Bot API lets a bot fetch any file it received (up to 20 MB); the hub does
+    getFile + download with the lane's bot token and streams the bytes back.
+    file_ids are per-bot, so an id copied from another lane's feed row is
+    first mapped onto this lane's own copy of the same message."""
+    lane = _auth_lane(lane_slug, x_bridge_token)
+    own_id = db.resolve_media_file(lane_slug, file_id)
+    try:
+        info = await telegram.get_file(lane["bot_token"], own_id)
+        file_path = info.get("file_path")
+        if not file_path:
+            raise telegram.TelegramError("telegram returned no file_path")
+        data, ctype = await telegram.download_file(lane["bot_token"], file_path)
+    except telegram.TelegramError as exc:
+        status = 404 if "not found" in exc.description.lower() or "wrong" in exc.description.lower() else 502
+        raise HTTPException(status_code=status, detail=f"telegram: {exc.description}") from exc
+    name = file_path.rsplit("/", 1)[-1]
+    return Response(
+        content=data,
+        media_type=ctype,
+        headers={"Content-Disposition": f'inline; filename="{name}"', "Cache-Control": "private, max-age=3600"},
+    )
 
 
 class WakeAck(BaseModel):

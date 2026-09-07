@@ -8,6 +8,7 @@ other's way.
 """
 from __future__ import annotations
 
+import json
 import secrets
 import sqlite3
 import time
@@ -42,6 +43,7 @@ CREATE TABLE IF NOT EXISTS messages (
     text TEXT,
     date INTEGER NOT NULL DEFAULT 0,
     is_outgoing INTEGER NOT NULL DEFAULT 0,
+    media TEXT,
     PRIMARY KEY (lane_slug, update_id)
 );
 CREATE INDEX IF NOT EXISTS idx_messages_date ON messages(date);
@@ -109,6 +111,10 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(lane_logs)")}
     if "cost_usd" not in cols:
         conn.execute("ALTER TABLE lane_logs ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0")
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(messages)")}
+    if "media" not in cols:
+        # JSON attachment descriptor (see telegram.extract_media); NULL for text.
+        conn.execute("ALTER TABLE messages ADD COLUMN media TEXT")
 
 
 def new_api_key() -> str:
@@ -382,13 +388,15 @@ def store_message(
     text: str,
     date: int,
     is_outgoing: bool = False,
+    media: dict | None = None,
 ) -> None:
     with connect() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO messages "
-            "(lane_slug, update_id, message_id, chat_id, chat_title, from_user, text, date, is_outgoing) "
-            "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (lane_slug, update_id, message_id, chat_id, chat_title, from_user, text, date, int(is_outgoing)),
+            "(lane_slug, update_id, message_id, chat_id, chat_title, from_user, text, date, is_outgoing, media) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (lane_slug, update_id, message_id, chat_id, chat_title, from_user, text, date, int(is_outgoing),
+             json.dumps(media, ensure_ascii=False) if media else None),
         )
         if chat_id is not None:
             conn.execute(
@@ -434,6 +442,7 @@ def _msg_to_dict(r: sqlite3.Row) -> dict:
         "text": r["text"],
         "date": r["date"],
         "outgoing": bool(r["is_outgoing"]),
+        "media": json.loads(r["media"]) if r["media"] else None,
     }
 
 
@@ -448,13 +457,19 @@ def query_messages(lane_slug: str, since: int, limit: int, order: str) -> list[d
         return [_msg_to_dict(r) for r in rows]
 
 
-def query_feed(since_date: int, limit: int, order: str, chat_id: int | None = None) -> list[dict]:
+def query_feed(
+    since_date: int, limit: int, order: str, chat_id: int | None = None, prefer_lane: str | None = None
+) -> list[dict]:
     """Whole-chat merged feed across every lane.
 
     Human messages are captured by every bot in the chat (each under its own
     update_id), so rows are deduped by (chat_id, message_id). Each bot's own
     outgoing rows exist only in its lane and survive the merge. Sorted by date
     (update_ids are per-bot and not comparable across lanes).
+
+    `prefer_lane` picks the requesting lane's copy of a duplicated message:
+    Telegram file_ids are per-bot, so that copy's `media.fileId` is the one
+    the lane's own /file endpoint can download.
     """
     where = "date > ?"
     params: list = [since_date]
@@ -470,12 +485,42 @@ def query_feed(since_date: int, limit: int, order: str, chat_id: int | None = No
         key = (r["chat_id"], r["message_id"]) if r["message_id"] is not None else (
             r["lane_slug"], r["update_id"], None
         )
-        if key not in picked:
+        if key not in picked or (prefer_lane and r["lane_slug"] == prefer_lane
+                                 and picked[key]["lane_slug"] != prefer_lane):
             picked[key] = r
     merged = list(picked.values())
     if order == "desc":
         merged.reverse()
     return [_msg_to_dict(r) for r in merged[:limit]]
+
+
+def resolve_media_file(lane_slug: str, file_id: str) -> str:
+    """Map a file_id seen in the feed onto one this lane's bot can download.
+
+    A file_id is only valid for the bot that received the update. The merged
+    feed may hand the agent another lane's copy of the same message, so when
+    `file_id` isn't ours, find our own row for the same (chat, message) and
+    return its file_id. Falls back to `file_id` unchanged."""
+    with connect() as conn:
+        own = conn.execute(
+            "SELECT 1 FROM messages WHERE lane_slug = ? AND media LIKE ?",
+            (lane_slug, f'%"fileId": "{file_id}"%'),
+        ).fetchone()
+        if own:
+            return file_id
+        other = conn.execute(
+            "SELECT chat_id, message_id FROM messages WHERE media LIKE ? AND message_id IS NOT NULL",
+            (f'%"fileId": "{file_id}"%',),
+        ).fetchone()
+        if not other:
+            return file_id
+        mine = conn.execute(
+            "SELECT media FROM messages WHERE lane_slug = ? AND chat_id = ? AND message_id = ? AND media IS NOT NULL",
+            (lane_slug, other["chat_id"], other["message_id"]),
+        ).fetchone()
+        if not mine:
+            return file_id
+        return json.loads(mine["media"]).get("fileId") or file_id
 
 
 def count_messages(lane_slug: str | None = None) -> int:

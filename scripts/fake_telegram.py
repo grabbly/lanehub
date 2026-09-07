@@ -28,6 +28,7 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, Request
+from fastapi.responses import Response
 
 app = FastAPI(title="Fake Telegram Bot API")
 
@@ -92,7 +93,18 @@ async def bot_api(token: str, method: str, request: Request) -> dict:
         _pending[token] = []
         return {"ok": True, "result": updates}
 
+    if method == "getFile":
+        fid = payload.get("file_id", "")
+        return {"ok": True, "result": {"file_id": fid, "file_unique_id": fid[:8],
+                                       "file_size": 3, "file_path": f"photos/{fid}.jpg"}}
+
     return {"ok": False, "description": f"fake server: method {method} not implemented"}
+
+
+@app.get("/file/bot{token}/{file_path:path}")
+async def file_download(token: str, file_path: str) -> Response:
+    """Stand-in for api.telegram.org/file/… — a tiny fake JPEG for any path."""
+    return Response(content=b"\xff\xd8\xff", media_type="image/jpeg")
 
 
 @app.post("/_push")

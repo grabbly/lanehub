@@ -350,18 +350,19 @@ LANEHUB_LANE=${slug}
 LANEHUB_API_KEY=<ключ из отдельного сообщения>
 ENV
 chmod 600 .lanehub.env
-curl -sS --remote-name-all ${hub}/tg-fetch.sh ${hub}/tg-report.sh ${hub}/ask-operator.sh
-chmod +x tg-fetch.sh tg-report.sh ask-operator.sh
+curl -sS --remote-name-all ${hub}/tg-fetch.sh ${hub}/tg-report.sh ${hub}/tg-file.sh ${hub}/ask-operator.sh
+chmod +x tg-fetch.sh tg-report.sh tg-file.sh ask-operator.sh
 curl -sSO ${hub}/watcher.py
 LANEHUB_BASE=${base} CLAUDE_PROJECT_DIR="$(pwd)" nohup python3 watcher.py > watcher.log 2>&1 &
 
 Работа:
 - Прочитать чат:   ./tg-fetch.sh    (потом читай хвост tg-chat-log.jsonl)
 - Ответить в чат:  ./tg-report.sh "текст"   (только plain text)
+- Скачать фото/файл из чата:  ./tg-file.sh <fileId>   (fileId — в поле media строки лога; потом Read файла)
 - Спросить оператора, если не уверен:  ./ask-operator.sh "вопрос"
   (ответ оператора вернётся в твою сессию — продолжишь задачу)
 
-Правила: пиши только через свой лейн; файлы по URL, не через чат; длинный тред — в issue-трекер.`;
+Правила: пиши только через свой лейн; свои файлы отдавай по URL (бот не может слать файлы в чат); длинный тред — в issue-трекер.`;
   return `## Team chat (LaneHub)
 
 Our team Telegram chat is reachable through LaneHub. Your lane: ${base}
@@ -373,18 +374,19 @@ LANEHUB_LANE=${slug}
 LANEHUB_API_KEY=<key from the separate message>
 ENV
 chmod 600 .lanehub.env
-curl -sS --remote-name-all ${hub}/tg-fetch.sh ${hub}/tg-report.sh ${hub}/ask-operator.sh
-chmod +x tg-fetch.sh tg-report.sh ask-operator.sh
+curl -sS --remote-name-all ${hub}/tg-fetch.sh ${hub}/tg-report.sh ${hub}/tg-file.sh ${hub}/ask-operator.sh
+chmod +x tg-fetch.sh tg-report.sh tg-file.sh ask-operator.sh
 curl -sSO ${hub}/watcher.py
 LANEHUB_BASE=${base} CLAUDE_PROJECT_DIR="$(pwd)" nohup python3 watcher.py > watcher.log 2>&1 &
 
 Working:
 - Read the chat:   ./tg-fetch.sh    (then read the tail of tg-chat-log.jsonl)
 - Reply to chat:   ./tg-report.sh "text"   (plain text only)
+- Download a photo/file from the chat:  ./tg-file.sh <fileId>   (fileId is in the log row's media field; then Read the file)
 - Ask the operator when unsure:  ./ask-operator.sh "question"
   (the operator's answer returns into your session — you continue the task)
 
-Rules: post only through your own lane; files by URL, not through the chat; long threads go to the issue tracker.`;
+Rules: post only through your own lane; share your own files by URL (the bot can't upload to the chat); long threads go to the issue tracker.`;
 }
 
 // ---------- shared: session log dialog ----------

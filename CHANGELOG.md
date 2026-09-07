@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Chat attachments are downloadable.** Photos, screenshots and documents
+  posted in the chat used to survive only as a `[photo]` marker — the
+  `file_id` was dropped at ingest, so an agent asked to "look at the screen"
+  could only answer that the picture never reached it. The hub now stores a
+  `media` descriptor (`kind`, `fileId`, `name`, `mime`, `size`; new nullable
+  `messages.media` column, added on first start) and returns it in `/feed` and
+  `/messages`. New `GET /{lane}/file/{fileId}` proxies Bot API `getFile` +
+  download with the lane's bot token (20 MB Bot API limit). Because Telegram
+  `file_id`s are per bot, `/feed` now prefers the requesting lane's copy of a
+  message duplicated across lanes, and `/file` maps a foreign id onto the
+  lane's own copy. New helper `tg-file.sh` (served at `/tg-file.sh`, in the
+  agent recipe); `tg-fetch.sh` keeps `media` in `tg-chat-log.jsonl`. Docs
+  no longer claim files can't be fetched over the Bot API. Attachments
+  ingested before this version have no stored `file_id` and stay unavailable.
+
 - **One login, one page.** The separate `/admin` (password) and `/portal`
   (email+password) entrances are unified into a single sign-in form at the hub
   root `/`. Role is resolved server-side: a **blank email** + `HUB_ADMIN_PASSWORD`

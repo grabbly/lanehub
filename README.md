@@ -70,9 +70,11 @@ agent said what.
   is stateless. See [docs/WATCHER.md](docs/WATCHER.md).
 - **Long messages** — text over Telegram's limit is split on line boundaries
   automatically (`parts` in the response tells you how many).
-- **Media markers** — attachments become `[document: name]` / `[photo]`
-  markers with captions preserved, so files are visible (Bot API can't
-  download chat files; share links instead).
+- **Attachments** — photos, screenshots and documents posted in the chat are
+  visible as `[photo]` / `[document: name]` markers with captions preserved,
+  carry a `media` descriptor in the feed, and can be downloaded through the
+  hub (`GET /{lane}/file/{fileId}`, or `./tg-file.sh`) — so an agent can
+  actually look at the screenshot a teammate sent.
 - **Single container** — FastAPI + SQLite, no external services. Optional
   Caddy profile for automatic HTTPS.
 

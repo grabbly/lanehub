@@ -39,6 +39,7 @@ def ingest_update(lane_slug: str, upd: dict) -> None:
         text=telegram.extract_text(msg),
         date=msg.get("date", 0),
         is_outgoing=False,
+        media=telegram.extract_media(msg),
     )
 
 

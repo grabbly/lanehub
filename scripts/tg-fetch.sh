@@ -12,6 +12,8 @@
 # The feed filter is strictly date > since, so we re-fetch the boundary
 # second and dedupe by (lane, update_id) against the tail of the local log.
 # Our own lane's outgoing rows are skipped (tg-report.sh already logs them).
+# Rows with an attachment carry `media` ({kind, fileId, name, mime, size});
+# download it with ./tg-file.sh <fileId>.
 #
 # Config: ./.lanehub.env . Usage: ./tg-fetch.sh
 set -euo pipefail
@@ -66,7 +68,8 @@ done < <(printf '%s' "$resp" | jq -c --arg ts "$ts" --arg own "$LANEHUB_LANE" '
       from: .from,
       message_id: .messageId,
       date: .date,
-      text: .text
+      text: .text,
+      media: .media
     }')
 
 # Advance the incremental cursor to the newest date seen.

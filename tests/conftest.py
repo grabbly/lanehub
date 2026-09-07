@@ -40,6 +40,12 @@ class FakeTG:
             return {"url": "", "pending_update_count": 0}
         if method == "getUpdates":
             return []
+        if method == "getFile":
+            fid = payload["file_id"]
+            if fid.startswith("bad"):
+                from app.telegram import TelegramError
+                raise TelegramError("Bad Request: wrong file_id or the file is temporarily unavailable")
+            return {"file_id": fid, "file_unique_id": fid[:6], "file_size": 3, "file_path": f"photos/{fid}.jpg"}
         raise AssertionError(f"unexpected Bot API method {method}")
 
 
@@ -54,6 +60,12 @@ def client(tmp_path, monkeypatch):
 
     fake = FakeTG()
     monkeypatch.setattr("app.telegram.tg_call", fake)
+
+    async def fake_download(bot_token, file_path, timeout=60):
+        fake.calls.append((bot_token, "download", {"file_path": file_path}))
+        return b"\xff\xd8\xff", "image/jpeg"
+
+    monkeypatch.setattr("app.telegram.download_file", fake_download)
 
     from app.main import create_app
 

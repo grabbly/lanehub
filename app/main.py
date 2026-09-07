@@ -31,6 +31,7 @@ WATCHER_FILE = SCRIPTS_DIR / "telegram_watch.py"
 HELPERS = {
     "tg-fetch.sh": "read the team chat",
     "tg-report.sh": "post to the team chat",
+    "tg-file.sh": "download a photo/file someone posted in the chat",
     "ask-operator.sh": "ask your operator a clarifying question",
 }
 

@@ -26,7 +26,8 @@ disabled lane / bad webhook secret, 404 unknown lane, 502 Telegram rejected,
   "from": "alice",
   "text": "hello",
   "date": 1785061261,
-  "outgoing": false
+  "outgoing": false,
+  "media": null
 }
 ```
 
@@ -35,8 +36,17 @@ disabled lane / bad webhook secret, 404 unknown lane, 502 Telegram rejected,
   synthetic `updateId >= 10^15`, so they sort after all real updates.
 - `date` — unix seconds (Telegram message date).
 - Media appear as `[document: name]` / `[photo]` / `[voice]`… markers plus the
-  caption, if any. Files themselves cannot be fetched over the Bot API — share
-  a link instead.
+  caption, if any, in `text`, and the attachment itself is described in
+  `media` (`null` for plain text):
+
+  ```json
+  "media": {"kind": "photo", "fileId": "AgACAgIAAx…", "fileUniqueId": "AQAD…",
+            "size": 91234, "mime": "image/jpeg", "name": "AQAD….jpg"}
+  ```
+
+  `kind` is one of `photo` (largest rendition), `document`, `video`,
+  `video_note`, `voice`, `audio`, `sticker`, `animation`. Download it with
+  `GET /{lane}/file/{fileId}` (below) or `./tg-file.sh <fileId>`.
 
 ## `GET /{lane}/feed` — the whole chat (USE THIS to read)
 
@@ -54,6 +64,28 @@ see the *other* bots' messages (Telegram's bot isolation rule).
 Incremental reading: remember the max `date` you've seen, poll with
 `sinceDate=<that>&order=asc`. (`updateId` is NOT a valid cursor here — ids
 from different bots are not comparable.)
+
+## `GET /{lane}/file/{fileId}` — download an attachment
+
+Fetches the file behind a feed row's `media.fileId` (photo, document, voice…)
+and returns the raw bytes with the upstream `Content-Type` and a
+`Content-Disposition: inline; filename=…`. Bot API allows a bot to download any
+file it received, up to **20 MB**; the hub does `getFile` + download with the
+lane's bot token, so the agent never needs the token.
+
+```bash
+curl -sS -o shot.jpg "$LANEHUB_BASE/$LANEHUB_LANE/file/$FILE_ID" -H "X-Bridge-Token: $KEY"
+```
+
+- Telegram `file_id`s are **per bot**: the id another lane's bot got for the
+  same photo is useless to yours. `/feed` therefore always hands you *your own*
+  lane's copy of a duplicated message, and `/file` maps a foreign id onto your
+  lane's copy of the same `(chatId, messageId)` when it has one.
+- `404` — Telegram doesn't know the id (foreign bot, or an attachment ingested
+  before the hub stored `media`); `502` — Telegram refused (e.g. file over
+  20 MB) or is unreachable. The `detail` carries Telegram's description.
+- Helper: `./tg-file.sh <fileId>` saves to `./tg-files/<name>` and prints the
+  path (`--last` takes the newest attachment in `tg-chat-log.jsonl`).
 
 ## `GET /{lane}/messages` — this lane only
 
@@ -160,9 +192,9 @@ Both use the same `X-Bridge-Token` auth as the rest of the lane API.
    membership), so compare `seenChats.lastDate` against other lanes — if
    yours went stale while the others keep receiving, the bot is out of the
    group and a human has to re-add it.
-6. **Files don't traverse the bridge.** Bot API can't download chat
-   attachments. Publish the artifact somewhere (repo, pastebin, your docs
-   host) and send the URL as a one-liner.
+6. **Files flow one way.** You can *read* chat attachments (`/file`), but a
+   lane can't *upload* — `/send` is text only. Publish your artifact somewhere
+   (repo, pastebin, your docs host) and send the URL as a one-liner.
 7. **Bot-to-bot isolation is a Telegram platform rule**, not a hub setting.
    A lane's `/messages` will never contain another bot's messages, no matter
    what. The hub's `/feed` exists precisely to undo this by merging lanes

@@ -259,3 +259,120 @@ def test_info_shows_wake_state(client):
     assert info["wake"]["pendingMention"] is None
     assert info["wake"]["claudeSessionId"] == "sess-x"
     assert info["wake"]["cursor"] == 30
+
+
+def _push_photo(client, slug, *, update_id, message_id, caption, file_id, chat_id=-100500, date=1_700_000_300):
+    resp = client.post(
+        f"/{slug}/webhook",
+        json={
+            "update_id": update_id,
+            "message": {
+                "message_id": message_id,
+                "from": {"id": 42, "is_bot": False, "username": "alice"},
+                "chat": {"id": chat_id, "title": "Test chat", "type": "supergroup"},
+                "date": date,
+                "caption": caption,
+                "photo": [
+                    {"file_id": f"{file_id}-s", "file_unique_id": "u1", "width": 90, "height": 90, "file_size": 1000},
+                    {"file_id": file_id, "file_unique_id": "u1", "width": 1280, "height": 1280, "file_size": 90000},
+                ],
+            },
+        },
+        headers={"X-Telegram-Bot-Api-Secret-Token": _webhook_secret(slug)},
+    )
+    assert resp.status_code == 200, resp.text
+
+
+def test_photo_ingest_keeps_media_and_marker(client):
+    login(client)
+    lane = make_lane(client)
+    _push_photo(client, "backend", update_id=20, message_id=600, caption="вот скрин", file_id="AgACphoto1")
+
+    row = client.get("/backend/feed?limit=5", headers={"X-Bridge-Token": lane["apiKey"]}).json()["messages"][0]
+    assert row["text"] == "[photo] вот скрин"
+    assert row["media"]["kind"] == "photo"
+    assert row["media"]["fileId"] == "AgACphoto1"  # the largest rendition, not the thumbnail
+    assert row["media"]["mime"] == "image/jpeg"
+    assert row["media"]["name"].endswith(".jpg")
+
+    # plain text rows carry media: null
+    _push_human(client, "backend", update_id=21, message_id=601, text="just text")
+    rows = client.get("/backend/messages?order=desc&limit=1", headers={"X-Bridge-Token": lane["apiKey"]}).json()
+    assert rows["messages"][0]["media"] is None
+
+
+def test_document_media(client):
+    login(client)
+    lane = make_lane(client)
+    client.post(
+        "/backend/webhook",
+        json={"update_id": 30, "message": {
+            "message_id": 700, "from": {"id": 42, "username": "alice"},
+            "chat": {"id": -100500, "title": "Test chat", "type": "supergroup"}, "date": 1_700_000_400,
+            "document": {"file_id": "BQACdoc1", "file_unique_id": "d1", "file_name": "spec.pdf",
+                         "mime_type": "application/pdf", "file_size": 12345},
+        }},
+        headers={"X-Telegram-Bot-Api-Secret-Token": _webhook_secret("backend")},
+    )
+    row = client.get("/backend/feed?limit=1", headers={"X-Bridge-Token": lane["apiKey"]}).json()["messages"][0]
+    assert row["text"] == "[document: spec.pdf]"
+    assert row["media"] == {"kind": "document", "fileId": "BQACdoc1", "fileUniqueId": "d1",
+                            "size": 12345, "mime": "application/pdf", "name": "spec.pdf"}
+
+
+def test_file_download_proxies_with_lane_token(client):
+    login(client)
+    lane = make_lane(client)
+    _push_photo(client, "backend", update_id=20, message_id=600, caption="", file_id="AgACphoto1")
+
+    resp = client.get("/backend/file/AgACphoto1", headers={"X-Bridge-Token": lane["apiKey"]})
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"].startswith("image/jpeg")
+    assert resp.content == b"\xff\xd8\xff"
+    assert 'filename="AgACphoto1.jpg"' in resp.headers["content-disposition"]
+
+    tg = [c for c in client.fake_tg.calls if c[1] in ("getFile", "download")]
+    assert tg[0] == ("backend-token:abc", "getFile", {"file_id": "AgACphoto1"})
+    assert tg[1] == ("backend-token:abc", "download", {"file_path": "photos/AgACphoto1.jpg"})
+
+    # auth is the usual bridge token
+    assert client.get("/backend/file/AgACphoto1").status_code == 401
+    assert client.get("/backend/file/AgACphoto1", headers={"X-Bridge-Token": "nope"}).status_code == 401
+
+
+def test_file_download_unknown_id_is_404(client):
+    login(client)
+    lane = make_lane(client)
+    resp = client.get("/backend/file/bad-id", headers={"X-Bridge-Token": lane["apiKey"]})
+    assert resp.status_code == 404
+    assert "wrong file_id" in resp.json()["detail"]
+
+
+def test_feed_prefers_own_lane_copy_and_file_maps_foreign_id(client):
+    """The same photo is captured by both bots with DIFFERENT file_ids (they are
+    per-bot). The merged feed hands each lane its own copy, and /file maps a
+    foreign id onto the lane's own before calling Telegram."""
+    login(client)
+    back = make_lane(client, slug="back")
+    front = make_lane(client, slug="front")
+    _push_photo(client, "back", update_id=11, message_id=900, caption="pic", file_id="BACKfid")
+    _push_photo(client, "front", update_id=77, message_id=900, caption="pic", file_id="FRONTfid")
+
+    back_row = client.get("/back/feed?limit=1", headers={"X-Bridge-Token": back["apiKey"]}).json()["messages"][0]
+    front_row = client.get("/front/feed?limit=1", headers={"X-Bridge-Token": front["apiKey"]}).json()["messages"][0]
+    assert (back_row["lane"], back_row["media"]["fileId"]) == ("back", "BACKfid")
+    assert (front_row["lane"], front_row["media"]["fileId"]) == ("front", "FRONTfid")
+
+    # front asks for back's id (e.g. copied from a shared log) → resolved to its own
+    resp = client.get("/front/file/BACKfid", headers={"X-Bridge-Token": front["apiKey"]})
+    assert resp.status_code == 200
+    getfile = [c for c in client.fake_tg.calls if c[1] == "getFile"][-1]
+    assert getfile == ("front-token:abc", "getFile", {"file_id": "FRONTfid"})
+
+
+def test_helper_scripts_served(client):
+    for name in ("tg-fetch.sh", "tg-report.sh", "tg-file.sh", "ask-operator.sh"):
+        resp = client.get(f"/{name}")
+        assert resp.status_code == 200, name
+        assert resp.text.startswith("#!/usr/bin/env bash")
+    assert client.get("/nope.sh").status_code == 404

@@ -111,7 +111,8 @@ def extract_text(msg: dict) -> str:
 
     Media messages have no `text`; the user note lives in `caption`. A
     `[kind: name]` marker makes attachments visible to pollers instead of a
-    blank row (files themselves are not downloadable over the Bot API)."""
+    blank row. The file itself is described by extract_media() and can be
+    fetched through GET /{lane}/file/{fileId}."""
     text = (msg.get("text") or msg.get("caption") or "").strip()
     marker = ""
     if "document" in msg:
@@ -131,6 +132,76 @@ def extract_text(msg: dict) -> str:
     if marker:
         return f"{marker} {text}".strip()
     return text
+
+
+# Telegram message keys that carry a downloadable file, in extract_text's order.
+_MEDIA_KINDS = ("document", "photo", "video", "video_note", "voice", "audio", "sticker", "animation")
+
+
+def extract_media(msg: dict) -> dict | None:
+    """Describe the downloadable attachment of a message, or None.
+
+    Returns {kind, fileId, fileUniqueId, size, mime, name}. For photos the
+    largest rendition is picked (Telegram sends several sizes). `fileId` is
+    what GET /{lane}/file/{fileId} takes — it is only valid for the bot that
+    received the update, which is why the hub proxies the download."""
+    for kind in _MEDIA_KINDS:
+        obj = msg.get(kind)
+        if not obj:
+            continue
+        if kind == "photo":
+            if not isinstance(obj, list):
+                return None
+            best = max(obj, key=lambda p: (p.get("file_size") or 0, p.get("width") or 0))
+            return {
+                "kind": "photo",
+                "fileId": best.get("file_id"),
+                "fileUniqueId": best.get("file_unique_id"),
+                "size": best.get("file_size"),
+                "mime": "image/jpeg",
+                "name": f"{best.get('file_unique_id') or 'photo'}.jpg",
+            }
+        if not isinstance(obj, dict) or not obj.get("file_id"):
+            return None
+        mime = obj.get("mime_type") or {
+            "voice": "audio/ogg", "video_note": "video/mp4",
+            "sticker": "image/webp", "animation": "video/mp4",
+        }.get(kind)
+        return {
+            "kind": kind,
+            "fileId": obj["file_id"],
+            "fileUniqueId": obj.get("file_unique_id"),
+            "size": obj.get("file_size"),
+            "mime": mime,
+            "name": obj.get("file_name") or f"{obj.get('file_unique_id') or kind}{_ext_for(mime)}",
+        }
+    return None
+
+
+def _ext_for(mime: str | None) -> str:
+    return {
+        "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif",
+        "video/mp4": ".mp4", "audio/ogg": ".ogg", "audio/mpeg": ".mp3", "application/pdf": ".pdf",
+    }.get(mime or "", "")
+
+
+async def get_file(bot_token: str, file_id: str) -> dict:
+    """Resolve a file_id to a short-lived Telegram file_path (getFile). Raises
+    TelegramError for foreign/expired ids and for files over Bot API's 20 MB."""
+    return await tg_call(bot_token, "getFile", {"file_id": file_id})
+
+
+async def download_file(bot_token: str, file_path: str, timeout: float = 60) -> tuple[bytes, str]:
+    """Download a file resolved by get_file(). Returns (bytes, content-type)."""
+    url = f"{settings.telegram_api}/file/bot{bot_token}/{file_path}"
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, timeout=timeout)
+    except Exception as exc:
+        raise TelegramError(f"telegram unreachable: {exc}") from exc
+    if resp.status_code != 200:
+        raise TelegramError(f"telegram file download failed: HTTP {resp.status_code}")
+    return resp.content, resp.headers.get("content-type", "application/octet-stream")
 
 
 def extract_sender(msg: dict) -> str:
