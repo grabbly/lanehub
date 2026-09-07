@@ -345,7 +345,12 @@ def test_file_download_unknown_id_is_404(client):
     lane = make_lane(client)
     resp = client.get("/backend/file/bad-id", headers={"X-Bridge-Token": lane["apiKey"]})
     assert resp.status_code == 404
-    assert "wrong file_id" in resp.json()["detail"]
+    assert "invalid file_id" in resp.json()["detail"]
+
+    # Telegram refusing for another reason (e.g. >20 MB) is an upstream error, not a 404
+    resp = client.get("/backend/file/big-id", headers={"X-Bridge-Token": lane["apiKey"]})
+    assert resp.status_code == 502
+    assert "too big" in resp.json()["detail"]
 
 
 def test_feed_prefers_own_lane_copy_and_file_maps_foreign_id(client):

@@ -141,7 +141,9 @@ async def get_file(lane_slug: str, file_id: str, x_bridge_token: str = Header(de
             raise telegram.TelegramError("telegram returned no file_path")
         data, ctype = await telegram.download_file(lane["bot_token"], file_path)
     except telegram.TelegramError as exc:
-        status = 404 if "not found" in exc.description.lower() or "wrong" in exc.description.lower() else 502
+        # Telegram phrases an unknown id as "wrong file_id…", "invalid file_id" or "file not found".
+        desc = exc.description.lower()
+        status = 404 if any(w in desc for w in ("not found", "wrong file_id", "invalid file_id")) else 502
         raise HTTPException(status_code=status, detail=f"telegram: {exc.description}") from exc
     name = file_path.rsplit("/", 1)[-1]
     return Response(

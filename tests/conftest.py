@@ -44,7 +44,10 @@ class FakeTG:
             fid = payload["file_id"]
             if fid.startswith("bad"):
                 from app.telegram import TelegramError
-                raise TelegramError("Bad Request: wrong file_id or the file is temporarily unavailable")
+                raise TelegramError("Bad Request: invalid file_id")
+            if fid.startswith("big"):
+                from app.telegram import TelegramError
+                raise TelegramError("Bad Request: file is too big")
             return {"file_id": fid, "file_unique_id": fid[:6], "file_size": 3, "file_path": f"photos/{fid}.jpg"}
         raise AssertionError(f"unexpected Bot API method {method}")
 
