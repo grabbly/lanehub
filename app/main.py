@@ -18,7 +18,6 @@ from .config import VERSION, settings
 from .routes_admin import router as admin_router
 from .routes_auth import router as auth_router
 from .routes_bridge import router as bridge_router
-from .routes_portal import router as portal_router
 from .runtime import runtime
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -26,13 +25,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 STATIC_DIR = Path(__file__).parent / "static"
 SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
 WATCHER_FILE = SCRIPTS_DIR / "telegram_watch.py"
-# Helper scripts served from the hub so a teammate gets the exact versions that
-# match this hub (onboarding curls them into their project dir).
+# Helper scripts served from the hub so an agent gets the exact versions that
+# match this hub (the recipe curls them into the project dir).
 HELPERS = {
     "tg-fetch.sh": "read the team chat",
     "tg-report.sh": "post to the team chat",
     "tg-file.sh": "download a photo/file someone posted in the chat",
-    "ask-operator.sh": "ask your operator a clarifying question",
+    "ask-operator.sh": "ask the operator a clarifying question",
 }
 
 
@@ -62,13 +61,9 @@ def create_app() -> FastAPI:
         """The single web UI: one login, then role-based sections."""
         return FileResponse(STATIC_DIR / "app.html")
 
-    # Old split entrances redirect to the unified one (invite emails, docs, bookmarks).
+    # Old /admin entrance still redirects to the unified page (docs, bookmarks).
     @app.get("/admin", include_in_schema=False)
     async def admin_ui() -> RedirectResponse:
-        return RedirectResponse(url="/", status_code=307)
-
-    @app.get("/portal", include_in_schema=False)
-    async def portal_ui() -> RedirectResponse:
         return RedirectResponse(url="/", status_code=307)
 
     @app.get("/watcher.py", include_in_schema=False)
@@ -88,7 +83,6 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(admin_router)
-    app.include_router(portal_router)
     app.include_router(bridge_router)
     return app
 

@@ -17,7 +17,6 @@ def test_session_reflects_auth(client):
     login(client)
     st = client.get("/api/session").json()
     assert st["authenticated"] is True
-    assert st["role"] == "admin"
     assert st["adminPasswordSet"] is True
 
 

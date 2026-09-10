@@ -52,14 +52,26 @@ class SendRequest(BaseModel):
 async def perform_send(lane: dict, text: str, chat_id: str | None) -> dict:
     """Send text as the lane's bot (splitting long text into <=4000-char parts)
     and record each part as a synthetic outgoing row so other lanes' readers
-    see it in /feed (Telegram never delivers a bot's messages to other bots)."""
-    # fallback chain: explicit chatId → lane default → hub-wide project chat
-    target = (chat_id or lane["default_chat_id"] or db.get_hub_state("project_chat_id") or "").strip()
-    if not target:
+    see it in /feed (Telegram never delivers a bot's messages to other bots).
+
+    A lane is bound to exactly ONE chat (its `default_chat_id`) and can post
+    only there — no hub-wide fallback. This is what stops a bot whose account
+    sits in several chats from silently posting into the wrong one. An unbound
+    lane refuses to send (503); a request that names a different chat is a hard
+    403 (a loud signal that a key was pasted for the wrong lane)."""
+    bound = (lane["default_chat_id"] or "").strip()
+    if not bound:
         raise HTTPException(
             status_code=503,
-            detail="no chat_id configured; pass chatId in the body or set the lane's default chat",
+            detail="lane is not bound to a chat yet — bind it to a Telegram chat in the admin panel",
         )
+    requested = (chat_id or "").strip()
+    if requested and requested != bound:
+        raise HTTPException(
+            status_code=403,
+            detail=f"lane '{lane['slug']}' is bound to chat {bound} and cannot post to {requested}",
+        )
+    target = bound
     parts = telegram.chunk_text(text)
     first_result: dict | None = None
     for part in parts:

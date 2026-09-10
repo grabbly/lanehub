@@ -39,22 +39,16 @@ agent said what.
 
 ## Features
 
-- **One login, role-based UI** — everyone signs in at the hub root with the
-  same form. Blank email + `HUB_ADMIN_PASSWORD` → the superadmin panel (tabs:
-  Lanes / Team / Feed / Settings); an email + password → that member's own lane.
+- **Single-operator console** — one sign-in at the hub root with
+  `HUB_ADMIN_PASSWORD`, then a tabbed panel: Lanes / Feed / Settings. One person
+  (you) runs every agent's lane; teammates just hand you a bot token and you
+  wire it up.
 - **Web admin UI** — add a bot token, get a lane + generated API key; rotate
-  keys, enable/disable lanes, set default chats, watch the live feed, send as
+  keys, enable/disable lanes, bind each lane to its chat, watch the live feed, send as
   any lane. No config files to edit for day-to-day management.
-- **Member self-service + invitations** — the admin sets the project chat once
-  and invites teammates by email; each member signs in with generated
-  credentials, creates **their own** bot by pasting a BotFather token, and
-  gets back an API key, ready-to-run curl recipes, and a paste-into-CLAUDE.md
-  agent-prompt block. Members return any time to re-read settings or rotate
-  their key. Invitation emails go out via SMTP when configured; otherwise the
-  admin gets a copy-paste invite text.
-- **Teammate onboarding texts** — copy-paste messages (RU/EN) asking each
-  member to create their own bot (or hand over an existing one's token via
-  DM), for teams that skip the self-service flow.
+- **Chat-pinned agent recipe** — click **agent recipes** on a bound lane and
+  get a paste-into-CLAUDE.md block with the API key, full API address and the
+  bound chat id already filled in, plus ready-to-run curl commands.
 - **Lanes on the fly** — stored in SQLite, reconciled at runtime. No restarts,
   no docker-compose editing to add a teammate.
 - **Webhook or polling** — webhook mode (near-realtime) when you have a public
@@ -88,8 +82,8 @@ docker compose up -d
 ```
 
 Open `http://127.0.0.1:8080/` (or put it behind your TLS proxy — see
-[docs/INSTALL.md](docs/INSTALL.md)), sign in as admin (leave email blank, enter
-`HUB_ADMIN_PASSWORD`), and for each agent:
+[docs/INSTALL.md](docs/INSTALL.md)), sign in with `HUB_ADMIN_PASSWORD`, and for
+each agent:
 
 1. In [@BotFather](https://t.me/BotFather): `/newbot` → copy the token.
 2. Still in BotFather: `/setprivacy` → your bot → **Disable** (without this
@@ -98,12 +92,15 @@ Open `http://127.0.0.1:8080/` (or put it behind your TLS proxy — see
    (BotFather → `Bot Settings` → `Allow Groups?`). It is on by default for a
    fresh `/newbot`, but an older bot may have it switched off — then the bot
    simply cannot be added to a group.
-4. Add the bot to your Telegram group or channel.
+4. Add the bot to your Telegram group or channel and post a message there.
 5. In the LaneHub admin: **Add lane** → paste the token → **Create lane**.
-6. Post anything in the group; the chat appears under **seen chats** — click
-   it to set as the lane's default chat.
-7. Click **agent recipes** on the lane card and paste the ready-made `curl`
-   commands into your agent's instructions.
+6. The chat appears under **seen chats** — click it to **bind** the lane to it.
+   A lane is bound to exactly one chat and posts only there; until you bind it
+   the bot can't post (this is what stops a bot from writing into the wrong
+   chat).
+7. Click **agent recipes** on the lane card: the ready-made block already has
+   the API key, full API address and the bound chat id filled in — paste it
+   into your agent's instructions.
 
 Already running an older version? See [docs/UPDATE.md](docs/UPDATE.md) — it's
 `git pull` + `docker compose up -d --build`, with no database migration.
@@ -117,29 +114,28 @@ KEY=...                                   # the lane's API key
 # read the WHOLE chat (all bots + humans), newest first — the default read:
 curl -sS -H "X-Bridge-Token: $KEY" "$BASE/feed?order=desc&limit=100"
 
-# send a message as this lane's bot:
+# send a message as this lane's bot (a lane is bound to ONE chat and posts
+# only there — pass its chatId to be explicit; a different chat is a 403):
 curl -sS -X POST -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
-  -d '{"text": "deploy done"}' "$BASE/send"
+  -d '{"chatId": "-100123...", "text": "deploy done"}' "$BASE/send"
 ```
 
 Full endpoint reference, incremental-cursor patterns, and the pitfalls we
-learned the hard way: [docs/API.md](docs/API.md). Admin panel and member
-portal walkthrough (invitations, SMTP, project chat):
-[docs/ADMIN-GUIDE.md](docs/ADMIN-GUIDE.md). Russian overview:
-[docs/README.ru.md](docs/README.ru.md).
+learned the hard way: [docs/API.md](docs/API.md). Admin panel walkthrough
+(lanes, chat binding, feed): [docs/ADMIN-GUIDE.md](docs/ADMIN-GUIDE.md).
+Russian overview: [docs/README.ru.md](docs/README.ru.md).
 
 ## Configuration
 
 | Env var | Default | Meaning |
 |---|---|---|
-| `HUB_ADMIN_PASSWORD` | *(empty — admin locked)* | Superadmin password (sign in with a blank email) |
+| `HUB_ADMIN_PASSWORD` | *(empty — hub locked)* | Operator password (the only sign-in) |
 | `HUB_PUBLIC_BASE_URL` | *(empty)* | Public HTTPS origin, e.g. `https://hub.example.com`. Set → webhook mode |
 | `HUB_DELIVERY_MODE` | auto | Force `webhook` / `polling` / `off` |
 | `HUB_PORT` | `8080` | Host port docker publishes on 127.0.0.1 (compose only) |
 | `HUB_DB_PATH` | `./data/hub.db` (`/data/hub.db` in Docker) | SQLite location |
 | `HUB_POLL_INTERVAL` | `2` | Seconds between getUpdates rounds (polling mode) |
 | `HUB_TELEGRAM_API` | `https://api.telegram.org` | Bot API origin (override for tests) |
-| `HUB_SMTP_HOST/PORT/USER/PASSWORD/FROM/TLS` | *(unset)* | SMTP fallback for invitation emails; usually configured in the admin panel instead (Team → Email settings, panel wins) |
 
 ## Development
 
@@ -151,7 +147,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/uvicorn scripts.fake_telegram:app --port 8081 &
 HUB_ADMIN_PASSWORD=dev HUB_TELEGRAM_API=http://127.0.0.1:8081 \
   .venv/bin/uvicorn app.main:app --port 8090
-# → http://127.0.0.1:8090/ (sign in: blank email + password "dev"); simulate a human message:
+# → http://127.0.0.1:8090/ (sign in with password "dev"); simulate a human message:
 curl -X POST http://127.0.0.1:8081/_push -H 'Content-Type: application/json' \
   -d '{"token": "<lane bot token>", "from": "alice", "chat_id": -100500, "text": "hi"}'
 ```

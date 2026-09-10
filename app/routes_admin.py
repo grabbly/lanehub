@@ -1,4 +1,4 @@
-"""Superadmin API for the web UI.
+"""Operator API for the web UI (single-operator hub).
 
 Login/logout live in routes_auth (POST /api/login sets the shared `hub_session`
 cookie — an HMAC over an expiry + subject, secret persisted in the DB). This
@@ -16,7 +16,7 @@ import time
 from fastapi import APIRouter, Cookie, HTTPException
 from pydantic import BaseModel, Field
 
-from . import db, mailer, telegram
+from . import db, telegram
 from .config import settings
 from .routes_bridge import perform_send
 from .runtime import runtime
@@ -29,7 +29,7 @@ SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 
 
 def sign_token(subject: str, expiry: int) -> str:
-    """Signed session token carrying a subject: 'admin' or a member email."""
+    """Signed session token carrying the operator subject ('admin')."""
     mac = hmac.new(db.session_secret().encode(), f"{expiry}:{subject}".encode(), hashlib.sha256)
     return f"{expiry}.{mac.hexdigest()}.{subject}"
 
@@ -153,9 +153,12 @@ async def lanes_create(req: LaneCreate, hub_session: str | None = Cookie(default
         title=req.title.strip() or me.get("first_name", ""),
         bot_token=token,
         bot_username=me.get("username", ""),
-        # empty → inherit the hub-wide project chat, so freshly onboarded
-        # members' lanes post to the team chat with zero configuration
-        default_chat_id=req.default_chat_id.strip() or db.get_hub_state("project_chat_id") or "",
+        # A lane binds to exactly one chat and posts only there. It starts
+        # UNBOUND unless a chat is passed explicitly — the admin binds it by
+        # clicking the chat under "seen chats" once the bot has been added and
+        # a message posted. No silent inherit of a hub-wide chat (that was the
+        # footgun that sent bots into the wrong chat).
+        default_chat_id=req.default_chat_id.strip(),
     )
     warning = await runtime.sync_lane(lane_dict)
     view = _lane_view(lane_dict)
@@ -236,37 +239,15 @@ async def lanes_send(slug: str, req: AdminSend, hub_session: str | None = Cookie
     return await perform_send(lane, req.text, req.chat_id)
 
 
-# --- team: project chat + member invitations -------------------------------
-
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
-
-def login_url() -> str:
-    """The single sign-in entrance members log into."""
-    return settings.public_base_url or "/"
+# --- hub settings: project chat prefill + spend budgets --------------------
 
 
 class SettingsUpdate(BaseModel):
     project_chat_id: str | None = Field(default=None, alias="projectChatId")
-    smtp_host: str | None = Field(default=None, alias="smtpHost")
-    smtp_port: int | None = Field(default=None, alias="smtpPort")
-    smtp_user: str | None = Field(default=None, alias="smtpUser")
-    smtp_password: str | None = Field(default=None, alias="smtpPassword")
-    smtp_from: str | None = Field(default=None, alias="smtpFrom")
-    smtp_tls: bool | None = Field(default=None, alias="smtpTls")
     budget_5h_usd: float | None = Field(default=None, alias="budget5hUsd")
     budget_week_usd: float | None = Field(default=None, alias="budgetWeekUsd")
 
     model_config = {"populate_by_name": True}
-
-
-class MemberInvite(BaseModel):
-    email: str
-    name: str = ""
-
-
-class TestEmail(BaseModel):
-    to: str
 
 
 def budget_caps() -> dict:
@@ -289,24 +270,13 @@ async def lanes_logs(slug: str, hub_session: str | None = Cookie(default=None)) 
 @router.get("/settings")
 async def settings_get(hub_session: str | None = Cookie(default=None)) -> dict:
     require_admin(hub_session)
-    cfg = mailer.smtp_config()
     caps = budget_caps()
     return {
+        # `project_chat_id` no longer routes any message — each lane is bound to
+        # its own chat. It survives only as an optional prefill when binding.
         "projectChatId": db.get_hub_state("project_chat_id") or "",
-        "loginUrl": login_url(),
         "budget5hUsd": caps["h5Usd"],
         "budgetWeekUsd": caps["weekUsd"],
-        "smtpConfigured": cfg.source != "none",
-        # password itself is never echoed back — only whether one is stored
-        "smtp": {
-            "host": cfg.host,
-            "port": cfg.port,
-            "user": cfg.user,
-            "from": cfg.from_addr,
-            "tls": cfg.tls,
-            "passwordSet": bool(cfg.password),
-            "source": cfg.source,
-        },
     }
 
 
@@ -315,114 +285,11 @@ async def settings_update(req: SettingsUpdate, hub_session: str | None = Cookie(
     require_admin(hub_session)
     if req.project_chat_id is not None:
         db.set_hub_state("project_chat_id", req.project_chat_id.strip())
-    # SMTP fields: only provided keys are written; password omitted = unchanged,
-    # empty host = drop panel config (fall back to env / none)
-    if req.smtp_host is not None:
-        db.set_hub_state("smtp_host", req.smtp_host.strip())
-    if req.smtp_port is not None:
-        db.set_hub_state("smtp_port", str(req.smtp_port))
-    if req.smtp_user is not None:
-        db.set_hub_state("smtp_user", req.smtp_user.strip())
-    if req.smtp_password is not None:
-        db.set_hub_state("smtp_password", req.smtp_password)
-    if req.smtp_from is not None:
-        db.set_hub_state("smtp_from", req.smtp_from.strip())
-    if req.smtp_tls is not None:
-        db.set_hub_state("smtp_tls", "1" if req.smtp_tls else "0")
     if req.budget_5h_usd is not None:
         db.set_hub_state("budget_5h_usd", str(max(0.0, req.budget_5h_usd)))
     if req.budget_week_usd is not None:
         db.set_hub_state("budget_week_usd", str(max(0.0, req.budget_week_usd)))
     return await settings_get(hub_session)
-
-
-@router.post("/settings/test-email")
-async def settings_test_email(req: TestEmail, hub_session: str | None = Cookie(default=None)) -> dict:
-    require_admin(hub_session)
-    to = req.to.strip().lower()
-    if not EMAIL_RE.match(to):
-        raise HTTPException(status_code=422, detail="invalid email")
-    try:
-        sent = mailer.send_email(
-            to,
-            "LaneHub test email",
-            "SMTP settings work — this is a test email from your LaneHub admin panel.\n\n"
-            "SMTP настроен верно — это проверочное письмо из админ-панели LaneHub.",
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"send failed: {exc}")
-    if not sent:
-        raise HTTPException(status_code=400, detail="SMTP is not configured")
-    return {"ok": True}
-
-
-def _member_view(m: dict) -> dict:
-    return {
-        "email": m["email"],
-        "name": m["name"],
-        "laneSlug": m["lane_slug"] or None,
-        "createdAt": m["created_at"],
-        "lastLogin": m["last_login"] or None,
-    }
-
-
-def _invite_payload(email: str, name: str) -> dict:
-    """(Re)issue credentials for a member and try to email them."""
-    password = pysecrets.token_urlsafe(9)
-    if db.get_member(email):
-        db.update_member(email, {"password_hash": db.hash_password(password)})
-    else:
-        db.create_member(email, name, db.hash_password(password))
-    text = mailer.invite_text(email, password, login_url())
-    email_sent, email_error = False, None
-    try:
-        email_sent = mailer.send_invite(email, password, login_url())
-    except Exception as exc:
-        email_error = str(exc)
-    return {
-        "email": email,
-        "password": password,
-        "loginUrl": login_url(),
-        "inviteText": text,
-        "emailSent": email_sent,
-        "emailError": email_error,
-    }
-
-
-@router.get("/members")
-async def members_list(hub_session: str | None = Cookie(default=None)) -> dict:
-    require_admin(hub_session)
-    return {"members": [_member_view(m) for m in db.list_members()]}
-
-
-@router.post("/members", status_code=201)
-async def members_invite(req: MemberInvite, hub_session: str | None = Cookie(default=None)) -> dict:
-    require_admin(hub_session)
-    email = req.email.strip().lower()
-    if not EMAIL_RE.match(email):
-        raise HTTPException(status_code=422, detail="invalid email")
-    if db.get_member(email):
-        raise HTTPException(status_code=409, detail="member already invited (use reset-password to re-issue)")
-    return _invite_payload(email, req.name.strip())
-
-
-@router.post("/members/{email}/reset-password")
-async def members_reset_password(email: str, hub_session: str | None = Cookie(default=None)) -> dict:
-    require_admin(hub_session)
-    member = db.get_member(email.strip().lower())
-    if not member:
-        raise HTTPException(status_code=404, detail="unknown member")
-    return _invite_payload(member["email"], member["name"])
-
-
-@router.delete("/members/{email}")
-async def members_delete(email: str, hub_session: str | None = Cookie(default=None)) -> dict:
-    require_admin(hub_session)
-    member = db.get_member(email.strip().lower())
-    if not member:
-        raise HTTPException(status_code=404, detail="unknown member")
-    db.delete_member(member["email"])
-    return {"ok": True, "note": "member removed; their lane (if any) is untouched — manage it in Lanes"}
 
 
 @router.get("/feed")

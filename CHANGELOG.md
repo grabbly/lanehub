@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+- **Single-operator hub — the self-service stack is gone.** LaneHub is now a
+  one-operator console: you sign in with `HUB_ADMIN_PASSWORD` and run every
+  agent's lane yourself. Removed entirely: the member portal (`/portal/*` and
+  its web view), the **Team** tab and email invitations, SMTP (`mailer.py`,
+  `HUB_SMTP_*`, the panel's Email settings and test-email), the `members`
+  table and password helpers, and the teammate onboarding texts. Login is
+  password-only (the email field is gone; a stray `email` in the request body
+  is ignored), `GET /api/session` no longer returns a `role`, and `/portal`
+  no longer redirects (404). The panel is **Lanes / Feed / Settings**; the
+  recipe dialog drops the "message for the teammate" handoff and just gives the
+  chat-pinned CLAUDE.md block + curl. **Breaking:** previously invited members
+  can no longer log in — the operator manages all lanes from the panel. The
+  `members` rows in an existing DB are left as harmless dead data (no
+  migration).
+
+- **A lane is bound to exactly one chat — no more wrong-chat sends.** Sending
+  used to fall through `explicit chatId → lane default → hub-wide project
+  chat`, and the generated agent instruction pinned no chat at all, so a bot
+  whose account sat in several chats could silently post into the wrong one.
+  Now each lane is **bound to one chat** and `POST /{lane}/send` posts only
+  there: omitting `chatId` targets the bound chat, passing a *different* chat
+  is a hard **403**, and an unbound lane is **503** — there is **no** hub-wide
+  fallback (`project_chat_id` no longer routes or is inherited at creation; it
+  survives only as an optional prefill). New lanes start unbound; you bind on
+  the lane card / member portal by clicking a **seen chat** (the member portal
+  gains `POST /portal/api/lane/chat`, which only binds a chat the bot has
+  actually seen). The **agent recipe is now chat-pinned and self-contained** —
+  the block, `.lanehub.env` and curl examples inline the real API key, the full
+  API address and `LANEHUB_CHAT_ID`, and `tg-report.sh` sends that pinned chat.
+  The admin UI is reframed chat-first (create the Telegram chat → add the bot →
+  create the lane → bind → copy the pinned instruction). **Breaking:** a lane
+  that relied on the project-chat fallback must be bound to its chat explicitly.
+
 - **Chat attachments are downloadable.** Photos, screenshots and documents
   posted in the chat used to survive only as a `[photo]` marker — the
   `file_id` was dropped at ingest, so an agent asked to "look at the screen"

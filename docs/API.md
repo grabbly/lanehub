@@ -9,8 +9,8 @@ X-Bridge-Token: <lane API key>
 
 All responses are JSON with camelCase fields. Errors use FastAPI's
 `{"detail": ...}` envelope with meaningful HTTP codes (401 bad key, 403
-disabled lane / bad webhook secret, 404 unknown lane, 502 Telegram rejected,
-503 no chat configured).
+disabled lane / bad webhook secret / send to a chat the lane isn't bound to,
+404 unknown lane, 502 Telegram rejected, 503 lane not bound to a chat yet).
 
 ---
 
@@ -104,9 +104,14 @@ are **never** here — that's not a bug, it's Telegram (use `/feed`).
 {"text": "deploy done", "chatId": "-100123..."}
 ```
 
-- `chatId` optional — defaults to the lane's default chat (403/503 if neither
-  is set). Accepts `-100...` ids or `@channelusername`. `chat_id` (snake_case)
-  is accepted too.
+- A lane is **bound to exactly one chat** and posts only there. `chatId` is
+  optional: omit it and the message goes to the bound chat; pass it and it must
+  **equal** the bound chat. Passing a different chat is a hard **403** (a loud
+  signal that the key was pasted for the wrong lane), and a lane with no bound
+  chat yet is **503** ("bind it in the admin panel"). There is **no** hub-wide
+  fallback — this is what stops a bot whose account sits in several chats from
+  silently posting into the wrong one. Accepts `-100...` ids or
+  `@channelusername`; `chat_id` (snake_case) is accepted too.
 - Long text is split automatically on line/word boundaries into ≤4000-char
   Telegram messages.
 - Response: `{"ok": true, "messageId": 42, "chatId": -100..., "parts": 1}`.
@@ -150,16 +155,13 @@ Both use the same `X-Bridge-Token` auth as the rest of the lane API.
 
 - `GET /health` → `{"status": "ok"}` (no auth; for monitoring/healthchecks)
 - `GET /version` → name, version, delivery mode (no auth)
-- `/` — the single web UI (one login form). `GET /admin` and `GET /portal`
-  redirect here.
-- `/api/*` — unified auth: `POST /api/login` (`{email, password}`; blank email =
-  superadmin via `HUB_ADMIN_PASSWORD`, else member), `POST /api/logout`,
-  `GET /api/session` (`{authenticated, role}`). One cookie, `hub_session`.
-- `/admin/api/*` — superadmin API (lane CRUD, key rotation, hub settings,
-  member invitations, SMTP, merged feed, send-as-lane).
-- `/portal/api/*` — member self-service API (own lane, rotate own key, change
-  password). Both authenticate with the same `hub_session` cookie; the role in
-  the cookie decides access.
+- `/` — the single web UI (one login form). `GET /admin` redirects here.
+- `/api/*` — operator auth: `POST /api/login` (`{password}` — the
+  `HUB_ADMIN_PASSWORD`; a stray `email` in the body is ignored), `POST
+  /api/logout`, `GET /api/session` (`{authenticated}`). One cookie,
+  `hub_session`.
+- `/admin/api/*` — operator API (lane CRUD, key rotation, hub settings, merged
+  feed, send-as-lane), authenticated with the `hub_session` cookie.
 - Documented in [ADMIN-GUIDE.md](ADMIN-GUIDE.md); full endpoint schemas are in
   the interactive OpenAPI docs at `/docs`.
 

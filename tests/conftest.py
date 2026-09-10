@@ -78,14 +78,9 @@ def client(tmp_path, monkeypatch):
 
 
 def login(client):
-    """Admin sign-in via the unified endpoint: blank email + admin password."""
-    resp = client.post("/api/login", json={"email": "", "password": ADMIN_PASSWORD})
+    """Operator sign-in: the admin password (single-operator hub)."""
+    resp = client.post("/api/login", json={"password": ADMIN_PASSWORD})
     assert resp.status_code == 200, resp.text
-
-
-def member_login(client, email, password):
-    """Member sign-in via the unified endpoint."""
-    return client.post("/api/login", json={"email": email, "password": password})
 
 
 def make_lane(client, slug="backend", chat_id="-100500", **extra):

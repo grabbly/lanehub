@@ -13,7 +13,10 @@
 #   LANEHUB_BASE=https://lanehub.kiras.life
 #   LANEHUB_LANE=homeflow_assistant_devbot
 #   LANEHUB_API_KEY=...
-# Optional override: TG_CHAT_ID env var targets another chat for one send.
+#   LANEHUB_CHAT_ID=-100123…   # the chat this lane is bound to (pinned target)
+# The lane is bound to ONE chat server-side; sending LANEHUB_CHAT_ID makes the
+# target explicit — a wrong key gets a loud 403 instead of a silent misfire.
+# Optional one-off override: TG_CHAT_ID env var (must match the bound chat).
 #
 # Usage:
 #   ./tg-report.sh "Done X. Waiting on Y."
@@ -37,8 +40,9 @@ else
   MSG="$(cat)"
 fi
 
-# Optional per-send chat override (defaults to the lane's default chat).
-CHAT_OVERRIDE="${TG_CHAT_ID:-}"
+# Target chat: an explicit one-off TG_CHAT_ID wins, else the pinned
+# LANEHUB_CHAT_ID from .lanehub.env (the chat this lane is bound to).
+CHAT_OVERRIDE="${TG_CHAT_ID:-${LANEHUB_CHAT_ID:-}}"
 BODY="$(jq -cn --arg text "$MSG" --arg chat "$CHAT_OVERRIDE" \
   'if $chat == "" then {text:$text} else {text:$text, chatId:$chat} end')"
 

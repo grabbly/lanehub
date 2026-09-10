@@ -88,39 +88,12 @@ HUB_PUBLIC_BASE_URL=https://hub.example.com
 then `docker compose up -d` again. Verify per lane in the admin UI
 ("webhook status" button) — `url` should be set and `last_error` absent.
 
-## 3. Recommended: invite the team, let members onboard themselves
+## 3. Create a bot for each agent
 
-The lowest-effort flow for the admin — two actions total:
-
-1. In the admin UI (**Team** section) set the **project chat** — the group's
-   `-100…` id (create the Telegram group first; the id shows up under a
-   lane's "seen chats" once any lane exists, or use any @userinfobot-style
-   tool). Every new lane inherits this chat automatically.
-2. **Invite teammate** → enter their email. With SMTP configured the
-   invitation is emailed automatically; otherwise copy the generated invite
-   text (portal URL + login + one-time shown password) and DM it to them.
-   Configure SMTP right in the panel: **Settings → 📧 Email (SMTP)** — host,
-   port, user, password, from, STARTTLS + a "send test email" button
-   (`HUB_SMTP_*` env vars work as a fallback; the panel wins).
-
-The member then does everything themselves: they sign in at the hub root (`/`)
-with their **email** + password, follow the built-in 2-step guide (create a bot
-via @BotFather with `/setprivacy` → Disable, paste the token), and get back
-their lane's API key, ready-made curl recipes, and an agent-prompt block for
-CLAUDE.md. They add their bot to the group (or ask you). If they forget anything
-later, they sign back in — key, recipes and settings are always there.
-
-## 3b. Manual alternative: create bots/lanes yourself
-
-Team members should ideally **bring their own bots** (created under their own
-BotFather account — they keep control and can revoke the token themselves).
-The admin UI has ready-made copy-paste texts for this: **✉️ Teammate
-onboarding messages** (RU/EN) — a DM asking a member to create a bot (or send
-an existing one's token) and a group-chat announcement. Tokens must be sent
-to the admin via DM, never into the group.
-
-As a fallback the admin can create bots for everyone. Either way, for **each**
-agent/team member that needs its own identity:
+LaneHub is a single-operator console: you (the operator) create and wire up
+every lane. A teammate who wants their own agent just DMs you the bot token;
+you never need to share the panel. For **each** agent that needs its own
+identity:
 
 1. [@BotFather](https://t.me/BotFather) → `/newbot` → name it clearly (the
    name is what humans see in the chat) → copy the **token**.
@@ -130,23 +103,26 @@ agent/team member that needs its own identity:
    (same as BotFather → `Bot Settings` → `Allow Groups?`). A fresh `/newbot`
    has it on already, so this only bites bots repurposed from something else —
    with it off, Telegram refuses to add the bot to a group at all.
-4. Add the bot to your group (or channel, as an admin who can post).
+4. Add the bot to the Telegram chat it should live in (or a channel, as an
+   admin who can post) and post one message there.
 
 One group can host many bots; one hub can serve many groups/channels.
 
-## 4. Create lanes
+## 4. Create and bind lanes
 
-Open `https://hub.example.com/`, sign in as admin (blank email + `HUB_ADMIN_PASSWORD`),
-then on the **Lanes** tab → **Add lane**:
+Open `https://hub.example.com/`, sign in with `HUB_ADMIN_PASSWORD`, then on the
+**Lanes** tab → **Add lane**:
 
 - **slug** — the URL path (`backend`, `frontend`, `pm`, …)
 - **bot token** — from BotFather (validated via `getMe` on save)
-- **default chat** — leave empty; after anyone posts in the group, the chat
-  shows up under **seen chats** → click it.
+- **bound chat** — leave empty at creation; after the bot has posted in the
+  chat it shows up under **seen chats** → click it to **bind** the lane. A lane
+  is bound to exactly one chat and posts only there; until you bind it the bot
+  can't post.
 
 The lane card shows the generated **API key** (show/copy/rotate) and
-**agent recipes** — ready-made curl commands to paste into an agent's
-instructions (CLAUDE.md, system prompt, CI script...).
+**agent recipes** — a paste-ready CLAUDE.md block (key + full API address +
+bound chat id inlined) plus curl commands.
 
 ## 5. Wire an agent
 
@@ -185,7 +161,6 @@ curl -sS -X POST -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
 | `/send` → 502 "bot was kicked" / "bot is not a member" | re-add the bot to the chat; for channels it must be an admin |
 | `/send` → 503 no chat_id | set the lane's default chat / project chat, or pass `chatId` |
 | `/send` → 502 "chat not found" | usually the bot is **not in that chat** — never added, or removed from it. Telegram reports this as "chat not found" rather than as a membership error, so it looks like a bad id. Confirm with `GET /{lane}/info`: if the lane's `seenChats.lastDate` stopped updating while other lanes still receive messages, the bot was removed. A stored `defaultChatId` keeps working after removal — it is the hub's cache, not proof of membership. Less often: a chat id typed by hand without the `-100` prefix — click the "seen chats" chip instead |
-| Invitation email not arriving | Team → 📧 Email (SMTP): check settings with "Send test email"; without SMTP invites are copy-paste only |
 | Webhook lane silent | check "webhook status" in UI: `last_error` explains (cert, DNS, non-HTTPS URL) |
 | Chat looks empty to an agent | it read `/messages` without `order=desc` — see [API.md](API.md) pitfalls |
 | Admin UI says password not set | put `HUB_ADMIN_PASSWORD` in `.env`, restart |

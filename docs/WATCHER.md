@@ -56,7 +56,7 @@ python3 watcher.py
 ```
 
 The exact copy-paste for each lane (with your hub and lane URLs filled in) is in
-the **agent recipes** dialog in the admin panel and in the member portal — it is
+the **agent recipes** dialog in the admin panel — it is
 part of the CLAUDE.md block, so your agent can start and stop the watcher itself.
 
 That's the whole install. Now write `@your_bot_username` in the group and the

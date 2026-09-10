@@ -40,15 +40,6 @@ class Settings:
         default_factory=lambda: _env("HUB_TELEGRAM_API", "https://api.telegram.org").rstrip("/")
     )
 
-    # SMTP for invitation emails — optional. Without it, the invite dialog
-    # still generates credentials + a copy-paste invite text.
-    smtp_host: str = field(default_factory=lambda: _env("HUB_SMTP_HOST"))
-    smtp_port: int = field(default_factory=lambda: int(_env("HUB_SMTP_PORT", "587")))
-    smtp_user: str = field(default_factory=lambda: _env("HUB_SMTP_USER"))
-    smtp_password: str = field(default_factory=lambda: _env("HUB_SMTP_PASSWORD"))
-    smtp_from: str = field(default_factory=lambda: _env("HUB_SMTP_FROM"))
-    smtp_tls: bool = field(default_factory=lambda: _env("HUB_SMTP_TLS", "1").lower() in ("1", "true", "yes"))
-
     def resolved_delivery_mode(self) -> str:
         if self.delivery_mode in ("webhook", "polling", "off"):
             return self.delivery_mode

@@ -65,16 +65,29 @@ def test_send_without_chat_is_503(client):
     assert resp.status_code == 503
 
 
-def test_send_chat_override_and_snake_case_field(client):
+def test_send_accepts_matching_bound_chat_snake_case(client):
+    """Passing chat_id explicitly is allowed as long as it equals the bound chat."""
     login(client)
-    lane = make_lane(client)
+    lane = make_lane(client)  # bound to -100500
     resp = client.post(
         "/backend/send",
-        json={"text": "hi", "chat_id": "-200700"},
+        json={"text": "hi", "chat_id": "-100500"},
         headers={"X-Bridge-Token": lane["apiKey"]},
     )
     assert resp.status_code == 200
-    assert resp.json()["chatId"] == -200700
+    assert resp.json()["chatId"] == -100500
+
+
+def test_send_wrong_chat_is_403(client):
+    """A lane is bound to one chat and cannot post to any other — no silent misfire."""
+    login(client)
+    lane = make_lane(client)  # bound to -100500
+    resp = client.post(
+        "/backend/send",
+        json={"text": "hi", "chatId": "-200700"},
+        headers={"X-Bridge-Token": lane["apiKey"]},
+    )
+    assert resp.status_code == 403
 
 
 def test_long_text_is_chunked(client):

@@ -39,15 +39,17 @@ docker compose up -d --build
 
 ### Unified login + @mention watcher
 
-- **Login changed.** There is now **one sign-in form at `/`**. The admin signs
-  in with a **blank email** + `HUB_ADMIN_PASSWORD`; members use their email +
-  password. The old `/admin` and `/portal` URLs still work — they redirect to
-  `/`, so bookmarks and existing invitation emails keep functioning.
+- **Single-operator login.** There is **one sign-in form at `/`**: enter
+  `HUB_ADMIN_PASSWORD` (password only). The member portal, Team tab, email
+  invitations and SMTP were removed — previously invited members can no longer
+  log in, and the operator manages every lane from the panel. `/admin` still
+  redirects to `/`; `/portal` is gone (404).
 - **`HUB_ADMIN_PASSWORD` must be set** in `.env` (unchanged requirement — an
-  empty value locks admin sign-in).
+  empty value locks sign-in).
 - **No database migration.** New per-lane state (`wake_cursor`,
   `claude_session_id`) is written lazily into the existing `lane_state` table.
-  Existing lanes, API keys, members and message history are untouched.
+  Existing lanes, API keys and message history are untouched; the now-unused
+  `members` table is left in place as harmless dead data.
 - **@mention waking is opt-in and runs on agent machines, not the hub.** After
   updating, the hub serves the watcher at `GET /watcher.py` and each lane's
   CLAUDE.md agent-prompt block includes start/stop commands. Nothing on the hub
