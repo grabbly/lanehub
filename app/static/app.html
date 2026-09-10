@@ -42,6 +42,11 @@
   .grid.cols-2 { grid-template-columns: 1fr 1fr; }
   .grid.cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
   @media (max-width: 760px) { .grid.cols-2, .grid.cols-4 { grid-template-columns: 1fr; } }
+  .chat-block { margin: 0 0 22px; }
+  .chat-hd { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 0 0 10px; padding: 8px 12px; background: var(--chip); border-radius: 8px; }
+  .chat-hd .chat-title { font-weight: 700; font-size: 15px; }
+  .chat-hd code { color: var(--muted); }
+  .chat-block .lane { margin-left: 12px; }
   .lane { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
   .lane-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .lane-head .slug { font-family: var(--mono); font-weight: 700; font-size: 16px; }
@@ -98,7 +103,7 @@
 </header>
 
 <nav id="nav" class="tabs" hidden>
-  <button class="tab" data-tab="lanes">Lanes</button>
+  <button class="tab" data-tab="lanes">Chats</button>
   <button class="tab" data-tab="feed">Feed</button>
   <button class="tab" data-tab="settings">Settings</button>
 </nav>
@@ -123,31 +128,32 @@
   <!-- ============ OPERATOR CONSOLE (tabbed) ============ -->
   <div id="admin-view" hidden>
     <section data-tabpanel="lanes">
-      <h2>Lanes</h2>
-      <p class="hint">A lane = one Telegram bot + its own API key, <b>bound to exactly one chat</b>.
-        It posts only to that chat and nowhere else — that binding is what stops a bot
-        from writing into the wrong chat. Agents call
-        <code>/&lt;lane&gt;/send</code>, <code>/&lt;lane&gt;/messages</code> and <code>/&lt;lane&gt;/feed</code>
-        with header <code>X-Bridge-Token: &lt;lane API key&gt;</code>.</p>
+      <h2>Chats &amp; bots</h2>
+      <p class="hint">One block per <b>Telegram chat</b>; inside it the bots that post there.
+        Each bot is a <b>lane</b> (its own API key + endpoint) <b>bound to that one chat</b> — it
+        posts only there, which is what stops a bot from writing into the wrong chat. Agents call
+        <code>/&lt;lane&gt;/send</code> · <code>/feed</code> · <code>/messages</code>
+        with header <code>X-Bridge-Token: &lt;API key&gt;</code>. Add a bot to an existing chat from
+        inside its block; for a brand-new chat use the form below.</p>
       <div id="lanes"></div>
 
       <details id="add-lane">
-        <summary style="margin:6px 0;">➕ Add lane</summary>
+        <summary style="margin:6px 0;">➕ Add a bot for a NEW chat</summary>
         <ol class="hint" style="margin:8px 0 12px; padding-left:20px; line-height:1.7;">
-          <li><b>Create the Telegram chat</b> the agent should live in (a group or channel) — this is not a lane, just a normal Telegram chat.</li>
-          <li><b>Add your bot to it</b> and post one message, so the chat becomes visible to the hub. (In @BotFather: <code>/newbot</code>, then <code>/setprivacy → Disable</code> so the bot sees group messages; reusing an old bot? also <code>/setjoingroups → Enable</code>.)</li>
-          <li><b>Create the lane below</b> — paste the bot token.</li>
-          <li><b>Bind the lane to that chat</b> — it appears under “seen chats” on the lane card; click it. The bot now posts only there.</li>
-          <li><b>Copy the pinned instruction</b> — “agent recipes” gives a block with the key, full API address and chat id already filled in.</li>
+          <li><b>Create the Telegram chat</b> the agent should live in (a group or channel).</li>
+          <li><b>Add the bot to it</b> and post one message, so the chat becomes visible to the hub. (In @BotFather: <code>/newbot</code>, then <code>/setprivacy → Disable</code>; reusing an old bot? also <code>/setjoingroups → Enable</code>.)</li>
+          <li><b>Paste the bot token below</b> — the bot appears under “Bots without a chat”.</li>
+          <li><b>Bind it</b> — click the chat under “seen chats”. A new chat block appears, and from then on you add more bots straight into that block.</li>
+          <li><b>Copy the pinned instruction</b> from <b>agent recipes</b> (key + full API address + chat id inlined).</li>
         </ol>
         <div class="grid cols-4" style="margin-top:10px;">
           <div><label>Bot token (from @BotFather) — the only required field</label><input id="new-token" placeholder="123456:ABC-…"></div>
           <div><label>Title (optional)</label><input id="new-title" placeholder="Backend agent"></div>
           <div><label>Slug / URL path (optional)</label><input id="new-slug" placeholder="auto from bot username"></div>
-          <div><label>Bound chat ID (optional — bind after creating)</label><input id="new-chat" placeholder="-100123… or leave blank"></div>
+          <div><label>Chat ID (optional — bind now if you know it)</label><input id="new-chat" placeholder="-100123… or leave blank"></div>
         </div>
         <div class="actions">
-          <button class="primary" id="create-lane-btn">Create lane</button>
+          <button class="primary" id="create-lane-btn">Add bot</button>
         </div>
         <div class="error" id="create-error"></div>
       </details>
@@ -372,7 +378,8 @@ async function showLogDialog(title, path) {
 
 // ---------- admin: lanes ----------
 
-function laneCard(l) {
+function laneCard(l, opts = {}) {
+  const inChat = !!opts.inChat;  // rendered inside a chat block → hide chat-binding rows
   const div = document.createElement('div');
   div.className = 'lane';
   const base = location.origin;
@@ -403,13 +410,14 @@ function laneCard(l) {
         <button class="small" data-act="opsave">save</button>
         <span class="hint">this bot's own dev chat — previews, /status</span>
       </div>
+      ${inChat ? '' : `
       <div class="kv"><span class="k">Bound chat</span>
         <input data-chat-input value="${esc(l.defaultChatId || '')}" placeholder="-100… or @channelname" style="max-width:240px;">
         <button class="small" data-act="save-chat">save</button>
         <span class="hint">this bot posts ONLY here — pick it below or paste the id</span>
       </div>
       <div class="kv"><span class="k">Seen chats</span><span class="chats">${chats}</span></div>
-      ${bound ? '' : '<p class="error" style="margin:6px 0 0;">⚠️ Not bound to a chat — this bot cannot post yet. Add it to your Telegram chat, post a message, then click the chat under “seen chats” to bind it.</p>'}
+      ${bound ? '' : '<p class="error" style="margin:6px 0 0;">⚠️ Not bound to a chat — this bot cannot post yet. Add it to your Telegram chat, post a message, then click the chat under “seen chats” to bind it.</p>'}`}
     </div>
     <div class="actions">
       <button class="small" data-act="toggle">${l.enabled ? 'disable' : 'enable'}</button>
@@ -438,7 +446,8 @@ function laneCard(l) {
     await api(`/admin/api/lanes/${l.slug}/rotate-key`, { method: 'POST' });
     await loadLanes();
   });
-  div.querySelector('[data-act=save-chat]').onclick = run(async () => {
+  const saveChatBtn = div.querySelector('[data-act=save-chat]');
+  if (saveChatBtn) saveChatBtn.onclick = run(async () => {
     const v = div.querySelector('[data-chat-input]').value.trim();
     await api(`/admin/api/lanes/${l.slug}`, { method: 'PATCH', body: JSON.stringify({ defaultChatId: v }) });
     await loadLanes();
@@ -533,13 +542,81 @@ function showRecipes(l) {
   dlg.showModal();
 }
 
+// A chat block: its bots (lanes bound here) + a form to add another bot to it.
+function chatBlock(chatId, title, group) {
+  const sec = document.createElement('div');
+  sec.className = 'chat-block';
+  const head = document.createElement('div');
+  head.className = 'chat-hd';
+  head.innerHTML = `<span class="chat-title">💬 ${esc(title || 'chat')}</span>
+    <code>${esc(chatId)}</code>
+    <span class="badge">${group.length} bot${group.length > 1 ? 's' : ''}</span>`;
+  sec.appendChild(head);
+  group.forEach(l => sec.appendChild(laneCard(l, { inChat: true })));
+
+  const add = document.createElement('details');
+  add.style.marginLeft = '12px';
+  add.innerHTML = `<summary>➕ Add a bot to this chat</summary>
+    <div class="grid cols-2" style="margin-top:8px;">
+      <div><label>Bot token (from @BotFather)</label><input data-tok placeholder="123456:ABC-…"></div>
+      <div><label>Title (optional)</label><input data-title placeholder="Backend agent"></div>
+    </div>
+    <div class="actions"><button class="primary small" data-add>Add bot</button></div>
+    <p class="hint">Add this bot to the Telegram chat in Telegram too. Here it's bound to <code>${esc(chatId)}</code> and posts only there.</p>
+    <div class="error" data-e></div>`;
+  add.querySelector('[data-add]').onclick = async () => {
+    const e = add.querySelector('[data-e]'); e.textContent = '';
+    try {
+      const lane = await api('/admin/api/lanes', {
+        method: 'POST',
+        body: JSON.stringify({
+          botToken: add.querySelector('[data-tok]').value.trim(),
+          title: add.querySelector('[data-title]').value.trim(),
+          defaultChatId: chatId,
+        }),
+      });
+      if (lane.warning) { e.textContent = 'Added with a warning: ' + lane.warning; }
+      await loadLanes();
+    } catch (err) { e.textContent = err.message; }
+  };
+  sec.appendChild(add);
+  return sec;
+}
+
 async function loadLanes() {
   const data = await api('/admin/api/lanes');
   lanes = data.lanes;
   const box = $('lanes');
   box.innerHTML = '';
-  if (!lanes.length) box.innerHTML = '<p class="hint">No lanes yet — create the first one below.</p>';
-  lanes.forEach(l => box.appendChild(laneCard(l)));
+
+  // chat title lookup, gathered from every lane's seen chats
+  const titleOf = {};
+  lanes.forEach(l => (l.seenChats || []).forEach(c => { if (c.title) titleOf[String(c.chatId)] = c.title; }));
+
+  // group bots by the chat they're bound to; unbound bots go in their own block
+  const byChat = new Map();
+  const unbound = [];
+  lanes.forEach(l => {
+    const cid = (l.defaultChatId || '').trim();
+    if (!cid) { unbound.push(l); return; }
+    if (!byChat.has(cid)) byChat.set(cid, []);
+    byChat.get(cid).push(l);
+  });
+
+  if (!lanes.length) {
+    box.innerHTML = '<p class="hint">No bots yet — add the first one under “Add a bot for a new chat” below.</p>';
+  }
+  for (const [cid, group] of byChat) box.appendChild(chatBlock(cid, titleOf[cid], group));
+
+  if (unbound.length) {
+    const sec = document.createElement('div');
+    sec.className = 'chat-block';
+    sec.innerHTML = `<div class="chat-hd"><span class="chat-title">⚠️ Bots without a chat</span>
+      <span class="hint">can't post until you bind each to a chat (click a seen chat)</span></div>`;
+    unbound.forEach(l => sec.appendChild(laneCard(l)));  // full card, keeps the bind UI
+    box.appendChild(sec);
+  }
+
   const sel = $('send-lane');
   sel.innerHTML = lanes.filter(l => l.enabled)
     .map(l => `<option value="${esc(l.slug)}">${esc(l.slug)}${l.botUsername ? ' (@' + esc(l.botUsername) + ')' : ''}</option>`)
