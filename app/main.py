@@ -21,6 +21,9 @@ from .routes_bridge import router as bridge_router
 from .runtime import runtime
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+# httpx logs every request URL at INFO, and Bot API URLs carry the bot token
+# (https://api.telegram.org/bot<TOKEN>/...) — keep it out of `docker logs`.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 STATIC_DIR = Path(__file__).parent / "static"
 SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"

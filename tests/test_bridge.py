@@ -397,3 +397,15 @@ def test_helper_scripts_served(client):
         assert resp.status_code == 200, name
         assert resp.text.startswith("#!/usr/bin/env bash")
     assert client.get("/nope.sh").status_code == 404
+
+
+def test_httpx_logger_does_not_log_token_urls():
+    import logging
+    import app.main  # noqa: F401 — configures logging
+    assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
+
+
+def test_telegram_error_redacts_token():
+    from app.telegram import _redact
+    exc = Exception("boom https://api.telegram.org/bot123:SECRET/getMe")
+    assert "123:SECRET" not in _redact(exc, "123:SECRET")

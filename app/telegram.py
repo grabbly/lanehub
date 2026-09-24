@@ -33,6 +33,13 @@ class TelegramError(Exception):
         self.payload = payload or {}
 
 
+def _redact(exc: Exception, bot_token: str) -> str:
+    """Exception text without the bot token — httpx errors may embed the URL,
+    and these messages end up in logs and API error responses."""
+    text = str(exc)
+    return text.replace(bot_token, "<token>") if bot_token else text
+
+
 async def tg_call(bot_token: str, method: str, payload: dict | None = None, timeout: float = 15) -> Any:
     """Call one Bot API method; return the `result` field or raise TelegramError."""
     url = f"{settings.telegram_api}/bot{bot_token}/{method}"
@@ -41,7 +48,7 @@ async def tg_call(bot_token: str, method: str, payload: dict | None = None, time
             resp = await client.post(url, json=payload or {}, timeout=timeout)
         data = resp.json()
     except Exception as exc:  # network / JSON errors
-        raise TelegramError(f"telegram unreachable: {exc}") from exc
+        raise TelegramError(f"telegram unreachable: {_redact(exc, bot_token)}") from exc
     if not data.get("ok"):
         raise TelegramError(data.get("description", "telegram error"), data)
     return data.get("result")
@@ -198,7 +205,7 @@ async def download_file(bot_token: str, file_path: str, timeout: float = 60) -> 
         async with httpx.AsyncClient() as client:
             resp = await client.get(url, timeout=timeout)
     except Exception as exc:
-        raise TelegramError(f"telegram unreachable: {exc}") from exc
+        raise TelegramError(f"telegram unreachable: {_redact(exc, bot_token)}") from exc
     if resp.status_code != 200:
         raise TelegramError(f"telegram file download failed: HTTP {resp.status_code}")
     return resp.content, resp.headers.get("content-type", "application/octet-stream")

@@ -405,6 +405,11 @@ function laneCard(l, opts = {}) {
         <button class="small" data-act="rotate">rotate</button>
         <button class="small" data-act="copy-dm"${bound ? '' : ' disabled title="bind a chat first"'}>copy DM text</button>
       </div>
+      <div class="kv"><span class="k">Bot token</span>
+        <input data-newtok style="max-width:240px;" placeholder="new token from @BotFather" autocomplete="off">
+        <button class="small" data-act="tok-save">replace</button>
+        <span class="hint">after Revoke in @BotFather — the old token stops working</span>
+      </div>
       <div class="kv"><span class="k">Endpoint</span><code>${esc(base)}/${esc(l.slug)}/…</code></div>
       <div class="kv"><span class="k">Operator chat</span>
         <input data-opchat style="max-width:210px;" placeholder="-100… (empty = auto)">
@@ -441,6 +446,12 @@ function laneCard(l, opts = {}) {
   };
   div.querySelector('[data-act=copy]').onclick = run(async () => {
     await navigator.clipboard.writeText(l.apiKey);
+  });
+  div.querySelector('[data-act=tok-save]').onclick = run(async () => {
+    const v = div.querySelector('[data-newtok]').value.trim();
+    if (!v) throw new Error('paste the new bot token first');
+    await api(`/admin/api/lanes/${l.slug}`, { method: 'PATCH', body: JSON.stringify({ botToken: v }) });
+    await loadLanes();
   });
   div.querySelector('[data-act=copy-dm]').onclick = run(async () => {
     const btn = div.querySelector('[data-act=copy-dm]');

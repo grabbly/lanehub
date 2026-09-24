@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Security: bot tokens no longer leak into server logs.** httpx logged every
+  Telegram request URL at INFO, and Bot API URLs contain the bot token, so all
+  lanes' tokens sat in `docker logs` in plain text. The `httpx` logger is now
+  WARNING, and network-error messages have the token redacted. **Action for
+  existing installs:** update, then revoke every bot's token in @BotFather
+  (API Token → Revoke) and paste the new one into the lane card's new **Bot
+  token → replace** field; recreate the container to drop old logs
+  (`docker compose up -d --force-recreate`).
+
+- **Admin: "copy DM text"** on each lane card (and on top of agent recipes):
+  a ready message for the bot owner with `BASE`, `KEY` and curl commands;
+  after a rotation it states the rotation date.
+
 - **Single-operator hub — the self-service stack is gone.** LaneHub is now a
   one-operator console: you sign in with `HUB_ADMIN_PASSWORD` and run every
   agent's lane yourself. Removed entirely: the member portal (`/portal/*` and
