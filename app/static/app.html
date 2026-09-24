@@ -403,6 +403,7 @@ function laneCard(l, opts = {}) {
         <button class="small" data-act="reveal">show</button>
         <button class="small" data-act="copy">copy</button>
         <button class="small" data-act="rotate">rotate</button>
+        <button class="small" data-act="copy-dm"${bound ? '' : ' disabled title="bind a chat first"'}>copy DM text</button>
       </div>
       <div class="kv"><span class="k">Endpoint</span><code>${esc(base)}/${esc(l.slug)}/…</code></div>
       <div class="kv"><span class="k">Operator chat</span>
@@ -440,6 +441,12 @@ function laneCard(l, opts = {}) {
   };
   div.querySelector('[data-act=copy]').onclick = run(async () => {
     await navigator.clipboard.writeText(l.apiKey);
+  });
+  div.querySelector('[data-act=copy-dm]').onclick = run(async () => {
+    const btn = div.querySelector('[data-act=copy-dm]');
+    await navigator.clipboard.writeText(handoffText(l, 'ru'));
+    btn.textContent = 'copied ✓';
+    setTimeout(() => btn.textContent = 'copy DM text', 1500);
   });
   div.querySelector('[data-act=rotate]').onclick = run(async () => {
     if (!confirm(`Rotate the API key for /${l.slug}? The old key stops working immediately.`)) return;
@@ -485,6 +492,47 @@ function agentPrompt(l, lng) {
     { apiKey: l.apiKey, chatId: l.defaultChatId });
 }
 
+// Short handoff the admin pastes into a DM to whoever runs the bot's agent:
+// real key + lane URL inlined, raw curl commands with $BASE/$KEY. When the key
+// was rotated, the text says so (with the date) — "replace these two things".
+function handoffText(l, lng) {
+  const base = `${location.origin}/${l.slug}`;
+  const bot = l.botUsername ? '@' + l.botUsername : '/' + l.slug;
+  const rot = l.keyRotatedAt ? new Date(l.keyRotatedAt * 1000) : null;
+  const dd = rot && `${String(rot.getDate()).padStart(2, '0')}.${String(rot.getMonth() + 1).padStart(2, '0')}`;
+  const cmds = (ru) => `  ${ru ? 'Прочитать общий чат' : 'Read the shared chat'}:
+    curl -sS -H "X-Bridge-Token: $KEY" "$BASE/feed?order=desc&limit=100"
+  ${ru ? 'Отправить сообщение от имени бота (в командный чат, chatId не указывать)' : "Send a message as the bot (goes to the team chat, don't pass chatId)"}:
+    curl -sS -X POST -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \\
+      -d '{"text":"${ru ? 'привет' : 'hello'}"}' "$BASE/send"
+  ${ru ? 'Скачать файл/фото из чата' : 'Download a file/photo from the chat'}:
+    curl -sS -H "X-Bridge-Token: $KEY" "$BASE/file/<fileId>" -o file
+  ${ru ? 'Проверить подключение' : 'Check the connection'}:
+    curl -sS -H "X-Bridge-Token: $KEY" "$BASE/info"`;
+  if (lng === 'ru') return `LaneHub для бота ${bot}.${rot ? ` Ключ обновлён ${dd} (старый больше не работает).` : ''}
+
+${rot ? 'Замени у себя две вещи' : 'Подключение'}:
+  BASE = ${base}
+  KEY  = ${l.apiKey}
+
+${rot ? 'Всё остальное как раньше: те же эндпоинты и тот же заголовок.' : 'Эндпоинты (заголовок X-Bridge-Token во всех запросах):'}
+${cmds(true)}
+
+Важно: дорожка привязана к командному чату; chatId другого чата даст ошибку 403.
+Ключ секретный, не публикуй его в чате.`;
+  return `LaneHub for bot ${bot}.${rot ? ` Key rotated on ${dd} (the old one no longer works).` : ''}
+
+${rot ? 'Replace two things on your side' : 'Connection'}:
+  BASE = ${base}
+  KEY  = ${l.apiKey}
+
+${rot ? 'Everything else is unchanged: same endpoints, same header.' : 'Endpoints (X-Bridge-Token header on every request):'}
+${cmds(false)}
+
+Note: the lane is bound to the team chat; another chat's chatId returns 403.
+The key is secret — never post it in the chat.`;
+}
+
 function showRecipes(l) {
   const base = location.origin;
   const dlg = document.createElement('dialog');
@@ -500,7 +548,10 @@ function showRecipes(l) {
       ${l.defaultChatId
         ? `<p class="hint" style="margin-top:0;">Pinned to chat <code>${esc(String(l.defaultChatId))}</code> — the key, full API address and this chat id are already inlined in the block below. Paste it into the agent's CLAUDE.md / prompt.</p>`
         : `<p class="error" style="margin-top:0;">⚠️ This lane is not bound to a chat yet, so it cannot post. Close this, add the bot to your Telegram chat, post a message, then click the chat under “seen chats” to bind it — the instruction below fills in once bound.</p>`}
-      <label>Block for CLAUDE.md / agent prompt (key, API address and chat id inlined)</label>
+      <label>Message for a DM — send it to whoever runs this bot's agent (key and URL inlined)</label>
+      <textarea readonly rows="10" data-handoff></textarea>
+      <div class="actions"><button class="small" data-copy-handoff>copy</button></div>
+      <label style="margin-top:10px;">Block for CLAUDE.md / agent prompt (key, API address and chat id inlined)</label>
       <textarea readonly rows="14" data-prompt></textarea>
       <div class="actions"><button class="small" data-copy-prompt>copy</button></div>
       <p class="hint" style="margin-top:10px;">Raw commands (put the key in an env var, never in a repo; always
@@ -516,6 +567,7 @@ function showRecipes(l) {
     </div>`;
   const render = () => {
     dlg.querySelector('[data-prompt]').value = agentPrompt(l, lng);
+    dlg.querySelector('[data-handoff]').value = handoffText(l, lng);
     dlg.querySelectorAll('[data-lang]').forEach(b => b.classList.toggle('primary', b.dataset.lang === lng));
   };
   dlg.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => { lng = b.dataset.lang; render(); });
@@ -534,6 +586,7 @@ function showRecipes(l) {
       setTimeout(() => btn.textContent = idle, 1500);
     };
   };
+  wireCopy('[data-copy-handoff]', () => handoffText(l, lng), '[data-handoff]');
   wireCopy('[data-copy-prompt]', () => agentPrompt(l, lng), '[data-prompt]');
   dlg.querySelector('[data-close]').onclick = () => dlg.close();
   dlg.addEventListener('close', () => dlg.remove());

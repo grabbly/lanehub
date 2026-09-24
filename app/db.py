@@ -204,6 +204,7 @@ def rotate_lane_key(slug: str) -> str:
     key = new_api_key()
     with connect() as conn:
         conn.execute("UPDATE lanes SET api_key = ? WHERE slug = ?", (key, slug))
+    set_lane_state(slug, "key_rotated_at", str(int(time.time())))
     return key
 
 

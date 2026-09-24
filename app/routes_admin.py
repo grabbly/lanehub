@@ -72,6 +72,7 @@ def _lane_view(lane: dict) -> dict:
         "defaultChatId": lane["default_chat_id"],
         "enabled": bool(lane["enabled"]),
         "createdAt": lane["created_at"],
+        "keyRotatedAt": int(db.get_lane_state(lane["slug"], "key_rotated_at") or 0) or None,
         "deliveryMode": mode,
         "operatorChatId": db.get_lane_state(lane["slug"], "operator_chat_id") or "",
         "webhookUrl": runtime.webhook_url(lane["slug"]) if mode == "webhook" else None,

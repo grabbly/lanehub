@@ -19,6 +19,10 @@ One card per lane (bot identity). On each card:
 
 - **API key** — show / copy / **rotate** (old key dies instantly; hand keys
   over via DM or a secret manager, never through the group chat).
+  **copy DM text** copies a ready message for the bot owner's DM: `BASE`
+  (lane URL) + `KEY` + curl commands for feed / send / file / info. After a
+  rotation it says "key rotated on DD.MM, old one no longer works". The same
+  text (RU/EN) is at the top of **agent recipes**.
 - **Endpoint** — the lane's base URL agents call.
 - **Bound chat** — the one chat this lane may post to. A lane posts **only**
   here; there is no fallback, and until it's bound the bot can't post at all.

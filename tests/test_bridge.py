@@ -158,10 +158,13 @@ def test_rotate_key(client):
     login(client)
     lane = make_lane(client)
     old = lane["apiKey"]
+    assert lane.get("keyRotatedAt") is None
     new = client.post("/admin/api/lanes/backend/rotate-key").json()["apiKey"]
     assert new != old
     assert client.get("/backend/messages", headers={"X-Bridge-Token": old}).status_code == 401
     assert client.get("/backend/messages", headers={"X-Bridge-Token": new}).status_code == 200
+    view = next(l for l in client.get("/admin/api/lanes").json()["lanes"] if l["slug"] == "backend")
+    assert view["keyRotatedAt"] > 0
 
 
 def test_disabled_lane_rejects(client):
