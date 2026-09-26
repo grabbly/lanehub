@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Fix (0.5.2): lanes bound by `@channelname` saw an empty `/feed`.** The
+  0.5 visibility filter matches numeric chat ids, and older bindings could be
+  stored as the handle. Such bindings are now converted to the numeric id on
+  startup (retried on the lane's next `/feed` if Telegram was unreachable);
+  the handle is kept as an alias, so `/send` with `"chatId": "@channelname"`
+  still works. The same alias is kept when an operator binds by handle.
+- docs/UPDATE.md: notes for updating to 0.5 and for installs without Docker
+  (reinstall `requirements.txt` — 0.5 added `python-multipart`).
+
 - **Fix (0.5.1): the 0.5.0 upgrade left `/feed` showing one row.** On a
   database with existing messages, 0.5.0 added the `seq` column but its
   backfill was never committed (rolled back when the startup connection

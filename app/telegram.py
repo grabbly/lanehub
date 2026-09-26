@@ -136,6 +136,12 @@ def bot_id_from_token(bot_token: str) -> int | None:
     return int(head) if head.isdigit() else None
 
 
+def is_numeric_chat_id(value: str | None) -> bool:
+    """True for a numeric chat id ('-100123…', '4242'); False for '@name' / ''."""
+    v = (value or "").strip()
+    return v.lstrip("-").isdigit()
+
+
 async def resolve_chat(bot_token: str, raw: str) -> dict:
     """Validate a chat id (or @channelname) typed into the admin panel against
     Telegram and return getChat's answer — its `id` is the canonical one to store.

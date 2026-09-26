@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 from . import db, operator, telegram
 from .config import settings
-from .runtime import ingest_update, runtime
+from .runtime import canonicalize_binding, ingest_update, runtime
 
 router = APIRouter()
 
@@ -72,6 +72,9 @@ def bound_chat(lane: dict, chat_id: str | None) -> str:
             detail="lane is not bound to a chat yet — bind it to a Telegram chat in the admin panel",
         )
     requested = (chat_id or "").strip()
+    alias = (db.get_lane_state(lane["slug"], "chat_alias") or "").strip()
+    if alias and requested.lower() == alias.lower():
+        requested = bound  # the @handle this lane was bound by before it became numeric
     if requested and requested != bound:
         raise HTTPException(
             status_code=403,
@@ -227,6 +230,8 @@ async def feed(
     its own private chats — never another lane's DMs or chats it isn't bound
     to. Page with `after=<nextCursor>&order=asc`."""
     lane = _auth_lane(lane_slug, x_bridge_token)
+    if not telegram.is_numeric_chat_id(lane["default_chat_id"]):
+        lane = await canonicalize_binding(lane)  # an @name binding can't filter by chat id
     rows = db.query_feed(
         since_date, limit, order, chat_id, prefer_lane=lane_slug, after=after,
         visible_to=(lane_slug, lane["default_chat_id"]),

@@ -50,6 +50,27 @@ def ingest_update(lane_slug: str, upd: dict) -> None:
     )
 
 
+async def canonicalize_binding(lane: dict) -> dict:
+    """Turn a lane bound by @channelname (pre-0.5 bindings) into its numeric
+    chat id, which the /feed visibility filter and group-upgrade tracking need.
+    The handle is kept as `chat_alias`, so an agent that still sends
+    chatId="@name" isn't refused. Best effort: if Telegram can't be asked now
+    the lane is returned unchanged and the next call retries."""
+    bound = (lane.get("default_chat_id") or "").strip()
+    if not bound or telegram.is_numeric_chat_id(bound):
+        return lane
+    try:
+        chat = await telegram.resolve_chat(lane["bot_token"], bound)
+    except telegram.TelegramError as exc:
+        LOG.warning("lane %s: cannot resolve bound chat %s: %s", lane["slug"], bound, exc)
+        return lane
+    if chat.get("id") is None:
+        return lane
+    db.set_lane_state(lane["slug"], "chat_alias", bound)
+    LOG.info("lane %s: bound chat %s resolved to %s", lane["slug"], bound, chat["id"])
+    return db.update_lane(lane["slug"], {"default_chat_id": str(chat["id"])}) or lane
+
+
 class LaneRuntime:
     def __init__(self) -> None:
         self._pollers: dict[str, asyncio.Task] = {}
@@ -59,7 +80,7 @@ class LaneRuntime:
 
     async def sync_all(self) -> None:
         for lane in db.list_lanes():
-            await self.sync_lane(lane)
+            await self.sync_lane(await canonicalize_binding(lane))
 
     async def sync_lane(self, lane: dict) -> str | None:
         """Bring one lane's delivery in line with its DB row.

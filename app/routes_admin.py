@@ -102,6 +102,12 @@ async def canonical_chat_id(bot_token: str, raw: str) -> str:
     return str(chat.get("id", raw))
 
 
+def remember_chat_alias(slug: str, raw: str, canonical: str) -> None:
+    """Keep the @handle the operator typed, so agents may still pass it as chatId."""
+    raw = (raw or "").strip()
+    db.set_lane_state(slug, "chat_alias", raw if raw and raw != canonical and not telegram.is_numeric_chat_id(raw) else "")
+
+
 class LaneCreate(BaseModel):
     slug: str = ""  # optional — derived from the bot's username when empty
     title: str = ""
@@ -181,6 +187,7 @@ async def lanes_create(req: LaneCreate, hub_session: str | None = Cookie(default
         # footgun that sent bots into the wrong chat).
         default_chat_id=await canonical_chat_id(token, req.default_chat_id),
     )
+    remember_chat_alias(slug, req.default_chat_id, lane_dict["default_chat_id"])
     warning = await runtime.sync_lane(lane_dict)
     view = _lane_view(lane_dict)
     if warning:
@@ -213,6 +220,7 @@ async def lanes_update(slug: str, req: LaneUpdate, hub_session: str | None = Coo
         fields["default_chat_id"] = await canonical_chat_id(
             fields.get("bot_token", lane["bot_token"]), req.default_chat_id
         )
+        remember_chat_alias(slug, req.default_chat_id, fields["default_chat_id"])
     lane = db.update_lane(slug, fields)
     assert lane is not None
     warning = await runtime.sync_lane(lane)

@@ -692,3 +692,49 @@ def test_feed_never_collapses_rows_without_seq(client):
     conn.close()
     rows = db.query_feed(0, 10, "asc", visible_to=("backend", lane["defaultChatId"]))
     assert len(rows) == 3
+
+
+def _bind_legacy_handle(slug, handle="@chan"):
+    """Simulate a pre-0.5 lane bound by @channelname (stored as typed)."""
+    from app import db
+    db.update_lane(slug, {"default_chat_id": handle})
+
+
+def test_legacy_handle_binding_resolved_on_startup(client):
+    import asyncio
+    from app import db
+    from app.runtime import runtime
+    login(client)
+    lane = make_lane(client)
+    _bind_legacy_handle("backend")
+    asyncio.run(runtime.sync_all())
+    assert db.get_lane("backend")["default_chat_id"] == "-100777"
+    _push_human(client, "backend", update_id=1, message_id=1, text="in channel", chat_id=-100777)
+    h = {"X-Bridge-Token": lane["apiKey"]}
+    assert [m["text"] for m in client.get("/backend/feed", headers=h).json()["messages"]] == ["in channel"]
+    # an agent whose .lanehub.env still says the handle is not refused
+    assert client.post("/backend/send", json={"text": "hi", "chatId": "@Chan"}, headers=h).status_code == 200
+    assert client.post("/backend/send", json={"text": "hi", "chatId": "@other"}, headers=h).status_code == 403
+
+
+def test_legacy_handle_binding_resolved_lazily_by_feed(client):
+    """If Telegram was unreachable at startup, the first /feed call resolves it."""
+    from app import db
+    login(client)
+    lane = make_lane(client)
+    _push_human(client, "backend", update_id=1, message_id=1, text="in channel", chat_id=-100777)
+    _bind_legacy_handle("backend")
+    rows = client.get("/backend/feed", headers={"X-Bridge-Token": lane["apiKey"]}).json()["messages"]
+    assert [m["text"] for m in rows] == ["in channel"]
+    assert db.get_lane("backend")["default_chat_id"] == "-100777"
+
+
+def test_admin_handle_binding_keeps_alias(client):
+    login(client)
+    lane = make_lane(client, chat_id="@chan")
+    assert lane["defaultChatId"] == "-100777"
+    h = {"X-Bridge-Token": lane["apiKey"]}
+    assert client.post("/backend/send", json={"text": "x", "chatId": "@chan"}, headers=h).status_code == 200
+    # rebinding by numeric id drops the alias
+    client.patch("/admin/api/lanes/backend", json={"defaultChatId": "-100500"})
+    assert client.post("/backend/send", json={"text": "x", "chatId": "@chan"}, headers=h).status_code == 403

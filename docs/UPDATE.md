@@ -35,7 +35,38 @@ git checkout <prev-sha>
 docker compose up -d --build
 ```
 
+## Without Docker
+
+If you run the hub straight from a virtualenv, reinstall dependencies on
+every update — new versions may add packages, and the app won't start
+without them (0.5 added `python-multipart`):
+
+```bash
+git pull
+.venv/bin/pip install -r requirements.txt
+# then restart your uvicorn / systemd service
+```
+
 ## Version-specific notes
+
+### 0.5 — feed isolation, seq cursor, sendFile
+
+- **Update to 0.5.2 or later, not 0.5.0.** 0.5.0 (`de3ff57`) left the feed
+  showing a single row on a hub with existing history; 0.5.1+ repairs such a
+  database on start. The migration (new `messages` columns, `seq` numbered in
+  date order) runs once, automatically; take a copy of `data/hub.db` first
+  anyway.
+- **Each lane's `/feed` now shows only its bound chat plus its own bot's
+  DMs.** Messages from other chats the bot sits in, and other lanes' DMs, are
+  no longer in it. An unbound lane sees only its DMs — bind every lane.
+- **Binding checks the chat with Telegram.** The bot must already be in the
+  chat when you bind it (otherwise the panel shows an error). Ids missing the
+  `-100` prefix are fixed, `@channel` is stored as its numeric id.
+- **Lanes bound by `@channelname` are converted to the numeric id** on the
+  first start (or first `/feed` call). Agents that still send
+  `"chatId": "@channelname"` keep working.
+- **Agents:** old `tg-fetch.sh` / `tg-report.sh` keep working. Re-download
+  the helpers from the hub to get the seq cursor and `tg-send-file.sh`.
 
 ### Unified login + @mention watcher
 
