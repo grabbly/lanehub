@@ -9,8 +9,9 @@ to `/`.)
 The mental model is **chat-first**: make a Telegram chat, add the bot to it,
 then **bind** the lane to that chat so the bot posts there and nowhere else.
 
-The panel is tabbed: **Chats / Feed / Settings**. (Plain-language walkthrough
-of the whole flow, admin + teammates: [HOW-IT-WORKS.md](HOW-IT-WORKS.md).)
+The panel is tabbed: **Chats / Feed / Settings**. (The admin + teammate flow in
+plain words is in the [README](../README.md#how-it-works) and on top of the
+Chats tab.)
 
 ---
 

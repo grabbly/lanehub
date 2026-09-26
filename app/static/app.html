@@ -87,6 +87,9 @@
   a.gh:hover { color: var(--accent); }
   .about { margin-top: 24px; text-align: center; }
   details { margin-top: 8px; }
+  .howto { border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; }
+  .howto ol { margin: 0; padding-left: 20px; line-height: 1.6; }
+  .howto code, #login-view .hint code { white-space: nowrap; }
   summary { cursor: pointer; font-weight: 600; }
   dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--text); max-width: 560px; width: 92vw; }
   dialog::backdrop { background: rgba(0,0,0,.45); }
@@ -120,7 +123,12 @@
         <input type="password" name="password" id="login-password" autocomplete="current-password"></div>
       <button class="primary" id="login-btn" type="submit">Log in / Войти</button>
       <div class="error" id="login-error"></div>
-      <p class="hint">Enter <code>HUB_ADMIN_PASSWORD</code>.</p>
+      <p class="hint">Пароль задаёт администратор при установке — строка <code>HUB_ADMIN_PASSWORD</code>
+        в файле <code>.env</code> на сервере. Входит только администратор; участникам вход не нужен —
+        адрес и ключ им присылает администратор.</p>
+      <p class="hint">The password is set by the administrator at install time — <code>HUB_ADMIN_PASSWORD</code> in the
+        server's <code>.env</code>. Only the administrator signs in; teammates get their address and key
+        from the administrator.</p>
     </form>
     <p class="hint about">LaneHub — a self-hosted hub that turns one Telegram group into a shared bus where humans and AI agents talk through their own bot lanes. Source code &amp; setup guide: <a href="https://github.com/grabbly/lanehub" target="_blank" rel="noopener">github.com/grabbly/lanehub</a></p>
   </section>
@@ -128,6 +136,29 @@
   <!-- ============ OPERATOR CONSOLE (tabbed) ============ -->
   <div id="admin-view" hidden>
     <section data-tabpanel="lanes">
+      <details id="how-it-works" class="howto" open>
+        <summary><b>Как это работает / How it works</b></summary>
+        <div class="grid cols-2" style="margin-top:8px;">
+          <ol class="hint">
+            <li><b>Участник</b> создаёт бота в <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a>
+              (<code>/newbot</code>, затем <code>/setprivacy → Disable</code>) и присылает вам токен <b>в личку</b>.</li>
+            <li><b>Вы</b> добавляете этого бота в Telegram-чат и пишете там любое сообщение.</li>
+            <li><b>Вы</b> вставляете токен ниже (<b>Add bot</b>) и привязываете бота к чату — клик по чату в «Seen chats».</li>
+            <li><b>Вы</b> жмёте <b>copy DM text</b> на карточке бота и отправляете участнику <b>в личку</b> — там адрес и ключ.</li>
+            <li><b>Участник</b> отдаёт их своему агенту — агент читает чат и пишет от имени своего бота.</li>
+          </ol>
+          <ol class="hint">
+            <li><b>The teammate</b> creates a bot in <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a>
+              (<code>/newbot</code>, then <code>/setprivacy → Disable</code>) and sends you its token <b>in a DM</b>.</li>
+            <li><b>You</b> add that bot to the Telegram chat and post any message there.</li>
+            <li><b>You</b> paste the token below (<b>Add bot</b>) and bind the bot to the chat — click the chat under “Seen chats”.</li>
+            <li><b>You</b> click <b>copy DM text</b> on the bot's card and send it to the teammate <b>in a DM</b> — it has their address and key.</li>
+            <li><b>The teammate</b> gives these to their agent — it reads the chat and posts as its own bot.</li>
+          </ol>
+        </div>
+        <p class="hint">Токены и ключи — только в личку, никогда в общий чат. Утёк ключ — <b>rotate</b> на карточке.<br>
+          Tokens and keys go by DM only, never to the group. Key leaked? <b>rotate</b> on the card.</p>
+      </details>
       <h2>Chats &amp; bots</h2>
       <p class="hint">One block per <b>Telegram chat</b>; inside it the bots that post there.
         Each bot is a <b>lane</b> (its own API key + endpoint) <b>bound to that one chat</b> — it
@@ -790,6 +821,14 @@ $('login-form').addEventListener('submit', async e => {
   } catch (e) { $('login-error').textContent = e.message; }
 });
 $('logout-btn').onclick = async () => { await api('/api/logout', { method: 'POST' }); showLogin(); };
+
+(() => {
+  const box = document.getElementById('how-it-works');
+  try { if (localStorage.getItem('lanehub.howto') === 'closed') box.open = false; } catch (e) { /* storage blocked */ }
+  box.addEventListener('toggle', () => {
+    try { localStorage.setItem('lanehub.howto', box.open ? 'open' : 'closed'); } catch (e) { /* storage blocked */ }
+  });
+})();
 
 async function boot() {
   const st = await api('/api/session');

@@ -5,7 +5,7 @@
 Read this first — 0.5 changes what agents see and how chats are bound.
 Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-cursor-sendfile).
 
-- **Go straight to 0.5.2** (current `main`). 0.5.0 broke `/feed` on hubs with
+- **Go straight to the latest 0.5.x** (0.5.2 or newer). 0.5.0 broke `/feed` on hubs with
   existing history; 0.5.1+ repairs it automatically. Back up `data/hub.db`
   before updating — the schema is migrated once on start.
 - **Revoke and replace every bot token.** Versions before 0.5 wrote bot tokens
@@ -23,6 +23,19 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
   dependency `python-multipart`), or the hub won't start.
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
+
+## 0.5.3 — 2026-09-26
+
+- **"How it works" where people actually look.** The panel's **Chats** tab
+  opens with a short RU/EN walkthrough: the teammate creates a bot and DMs
+  the token to the administrator, the administrator adds the bot to the chat,
+  binds it and DMs back **copy DM text** (address + key), the teammate hands
+  it to their agent. Collapsible; the browser remembers if you close it.
+- **The sign-in screen says where the password comes from:**
+  `HUB_ADMIN_PASSWORD` in the server's `.env`, set by the administrator; only
+  the administrator signs in.
+- The same walkthrough is now at the top of README (and docs/README.ru.md);
+  UI labels in the docs match the current panel (**Chats**, **Add bot**).
 
 ## 0.5.2 — 2026-09-26
 
