@@ -12,6 +12,10 @@ Born inside a real project where four AI agents and four humans coordinated a
 production launch through one Telegram group for months; this is the
 extracted, generalized, self-hostable version of that tool.
 
+**New here? Start with [How it works — in plain words](docs/HOW-IT-WORKS.md)**
+(who signs in, where the password comes from, how teammates get access) ·
+по-русски: [Как это работает](docs/HOW-IT-WORKS.ru.md).
+
 ```text
         Telegram group/channel  ◄────────────►  Telegram Bot API
              ▲          ▲                            ▲
@@ -94,8 +98,10 @@ each agent:
    fresh `/newbot`, but an older bot may have it switched off — then the bot
    simply cannot be added to a group.
 4. Add the bot to your Telegram group or channel and post a message there.
-5. In the LaneHub admin: **Add lane** → paste the token → **Create lane**.
-6. The chat appears under **seen chats** — click it to **bind** the lane to it.
+5. In the LaneHub panel (**Chats** tab): **➕ Add a bot for a NEW chat** →
+   paste the token → **Add bot** (for a chat that's already listed, use
+   **➕ Add a bot to this chat** inside its block — it's bound right away).
+6. The chat appears under **Seen chats** — click it to **bind** the lane to it.
    A lane is bound to exactly one chat and posts only there; until you bind it
    the bot can't post (this is what stops a bot from writing into the wrong
    chat).
