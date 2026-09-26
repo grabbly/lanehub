@@ -1,8 +1,32 @@
 # Changelog
 
-## Unreleased
+## Before you update to 0.5 (from 0.4.x)
 
-- **Fix (0.5.2): lanes bound by `@channelname` saw an empty `/feed`.** The
+Read this first — 0.5 changes what agents see and how chats are bound.
+Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-cursor-sendfile).
+
+- **Go straight to 0.5.2** (current `main`). 0.5.0 broke `/feed` on hubs with
+  existing history; 0.5.1+ repairs it automatically. Back up `data/hub.db`
+  before updating — the schema is migrated once on start.
+- **Revoke and replace every bot token.** Versions before 0.5 wrote bot tokens
+  into `docker logs`. After updating: @BotFather → API Token → Revoke, paste
+  the new token into the lane card, and recreate the container to drop old
+  logs.
+- **A lane's `/feed` is narrower:** only its bound chat plus its own bot's
+  DMs. Other chats the bot sits in and other lanes' DMs are gone from it; an
+  unbound lane sees only its DMs. Make sure every lane is bound.
+- **Binding needs the bot in the chat already** — the hub checks the chat with
+  Telegram and refuses one the bot can't see.
+- **Single-operator hub:** the member portal, Team tab, invitations and SMTP
+  are removed; only `HUB_ADMIN_PASSWORD` signs in.
+- **Without Docker:** run `pip install -r requirements.txt` again (new
+  dependency `python-multipart`), or the hub won't start.
+- **Agents keep working** with their current scripts. Re-download the helpers
+  from the hub for the seq cursor and `tg-send-file.sh`.
+
+## 0.5.2 — 2026-09-26
+
+- **Fix: lanes bound by `@channelname` saw an empty `/feed`.** The
   0.5 visibility filter matches numeric chat ids, and older bindings could be
   stored as the handle. Such bindings are now converted to the numeric id on
   startup (retried on the lane's next `/feed` if Telegram was unreachable);
@@ -11,15 +35,18 @@
 - docs/UPDATE.md: notes for updating to 0.5 and for installs without Docker
   (reinstall `requirements.txt` — 0.5 added `python-multipart`).
 
-- **Fix (0.5.1): the 0.5.0 upgrade left `/feed` showing one row.** On a
+## 0.5.1 — 2026-09-26
+
+- **Fix: the 0.5.0 upgrade left `/feed` showing one row.** On a
   database with existing messages, 0.5.0 added the `seq` column but its
   backfill was never committed (rolled back when the startup connection
   closed) and never retried, so every old row kept `seq = NULL` and the feed
   merged them all into one. The backfill is now committed and runs on any
   start that finds a row without a seq, so a hub broken by 0.5.0 repairs
   itself on update, and the feed never merges rows lacking a seq.
-  **Don't upgrade a non-empty hub to commit `de3ff57` (0.5.0); go straight to
-  0.5.1.**
+  **Don't upgrade a non-empty hub to 0.5.0 (commit `de3ff57`).**
+
+## 0.5.0 — 2026-09-26
 
 - **Fix: another lane's private chats leaked into `/feed`.** A user's DM with
   lane A's bot (positive `chatId`) showed up in every lane's merged feed. A
@@ -58,6 +85,8 @@
 - **`/info` self-check:** `botCanPost` (getChatMember on the bound chat),
   `lastSendOk` / `lastSendError`, and `webhook` (`pendingUpdateCount`,
   `lastErrorMessage` from getWebhookInfo).
+
+### Also in 0.5.0 (landed on `main` between 0.4.1 and 0.5.0)
 
 - **Security: bot tokens no longer leak into server logs.** httpx logged every
   Telegram request URL at INFO, and Bot API URLs contain the bot token, so all

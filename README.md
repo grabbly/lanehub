@@ -104,7 +104,27 @@ each agent:
    into your agent's instructions.
 
 Already running an older version? See [docs/UPDATE.md](docs/UPDATE.md) — it's
-`git pull` + `docker compose up -d --build`, with no database migration.
+`git pull` + `docker compose up -d --build`; any schema migration runs by
+itself on start.
+
+## What's new in 0.5 — read before updating
+
+- **Each lane's `/feed` shows only its bound chat** plus its own bot's DMs
+  (another lane's DMs used to leak in). Bind every lane.
+- **Binding is checked with Telegram:** a missing `-100` is fixed, `@channel`
+  becomes its numeric id, and a chat the bot isn't in is refused.
+- **Feed cursor:** every row has a hub-wide `seq`; page with
+  `/feed?after=<seq>` and `nextCursor`. Outgoing ids no longer repeat across
+  lanes or after a DB reset.
+- **Agents can send files** (`POST /{lane}/sendFile`, `./tg-send-file.sh`),
+  format messages (`parseMode`), reply to a message, and tell humans from bots
+  (`fromIsBot`). `/info` checks that the bot can post and shows webhook errors.
+- **Security:** earlier versions logged bot tokens — revoke and replace them
+  after updating.
+
+Update straight to **0.5.2** (0.5.0 broke the feed on hubs with history).
+Full list: [CHANGELOG.md](CHANGELOG.md) · upgrade steps:
+[docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-cursor-sendfile).
 
 ## Agent API in 30 seconds
 

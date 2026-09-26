@@ -1,8 +1,10 @@
 # Updating an existing LaneHub deployment
 
 LaneHub is a single container (FastAPI + SQLite). Updating is pull + rebuild;
-the database (lanes, keys, members, history) lives in a mounted volume and is
-left untouched.
+the database (lanes, keys, history) lives in a mounted volume and is kept.
+Schema changes are applied automatically on start — copy `data/hub.db` before
+updating anyway. Read the version notes below and
+[CHANGELOG.md](../CHANGELOG.md) first.
 
 ## Update
 
@@ -67,8 +69,14 @@ git pull
   `"chatId": "@channelname"` keep working.
 - **Agents:** old `tg-fetch.sh` / `tg-report.sh` keep working. Re-download
   the helpers from the hub to get the seq cursor and `tg-send-file.sh`.
+- **Revoke bot tokens.** Before 0.5 every lane's bot token was written to
+  `docker logs`. After updating, revoke each token in @BotFather (API Token →
+  Revoke), paste the new one into the lane card (**Bot token → replace**), and
+  run `docker compose up -d --force-recreate` to drop the old logs.
+- **Also part of 0.5:** the single-operator login and the @mention watcher
+  (next section).
 
-### Unified login + @mention watcher
+### 0.5 (also) — single-operator login + @mention watcher
 
 - **Single-operator login.** There is **one sign-in form at `/`**: enter
   `HUB_ADMIN_PASSWORD` (password only). The member portal, Team tab, email
