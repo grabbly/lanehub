@@ -82,6 +82,26 @@ def _lane_view(lane: dict) -> dict:
     }
 
 
+async def canonical_chat_id(bot_token: str, raw: str) -> str:
+    """Check a chat id typed/clicked in the panel against Telegram (getChat as
+    the lane's bot) and return the id Telegram reports. Fixes ids pasted
+    without the supergroup `-100` prefix and resolves @channelname. Empty
+    stays empty (unbinding). A 422 when the bot can't see the chat — binding
+    to it would only fail later on every /send with "chat not found"."""
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    try:
+        chat = await telegram.resolve_chat(bot_token, raw)
+    except telegram.TelegramError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Telegram does not know chat {raw} for this bot ({exc.description}) — "
+                   "add the bot to the chat first and check the id (supergroups start with -100)",
+        )
+    return str(chat.get("id", raw))
+
+
 class LaneCreate(BaseModel):
     slug: str = ""  # optional — derived from the bot's username when empty
     title: str = ""
@@ -159,7 +179,7 @@ async def lanes_create(req: LaneCreate, hub_session: str | None = Cookie(default
         # clicking the chat under "seen chats" once the bot has been added and
         # a message posted. No silent inherit of a hub-wide chat (that was the
         # footgun that sent bots into the wrong chat).
-        default_chat_id=req.default_chat_id.strip(),
+        default_chat_id=await canonical_chat_id(token, req.default_chat_id),
     )
     warning = await runtime.sync_lane(lane_dict)
     view = _lane_view(lane_dict)
@@ -177,8 +197,6 @@ async def lanes_update(slug: str, req: LaneUpdate, hub_session: str | None = Coo
     fields: dict = {}
     if req.title is not None:
         fields["title"] = req.title.strip()
-    if req.default_chat_id is not None:
-        fields["default_chat_id"] = req.default_chat_id.strip()
     if req.enabled is not None:
         fields["enabled"] = int(req.enabled)
     if req.operator_chat_id is not None:
@@ -191,6 +209,10 @@ async def lanes_update(slug: str, req: LaneUpdate, hub_session: str | None = Coo
             raise HTTPException(status_code=422, detail=f"bot token rejected by Telegram: {exc}")
         fields["bot_token"] = token
         fields["bot_username"] = me.get("username", "")
+    if req.default_chat_id is not None:
+        fields["default_chat_id"] = await canonical_chat_id(
+            fields.get("bot_token", lane["bot_token"]), req.default_chat_id
+        )
     lane = db.update_lane(slug, fields)
     assert lane is not None
     warning = await runtime.sync_lane(lane)

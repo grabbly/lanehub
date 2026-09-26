@@ -256,8 +256,8 @@ LANEHUB_API_KEY=${key}
 LANEHUB_CHAT_ID=${chat}
 ENV
 chmod 600 .lanehub.env
-curl -sS --remote-name-all ${hub}/tg-fetch.sh ${hub}/tg-report.sh ${hub}/tg-file.sh ${hub}/ask-operator.sh
-chmod +x tg-fetch.sh tg-report.sh tg-file.sh ask-operator.sh
+curl -sS --remote-name-all ${hub}/tg-fetch.sh ${hub}/tg-report.sh ${hub}/tg-file.sh ${hub}/tg-send-file.sh ${hub}/ask-operator.sh
+chmod +x tg-fetch.sh tg-report.sh tg-file.sh tg-send-file.sh ask-operator.sh
 curl -sSO ${hub}/watcher.py
 LANEHUB_BASE=${base} CLAUDE_PROJECT_DIR="$(pwd)" nohup python3 watcher.py > watcher.log 2>&1 &
 
@@ -265,6 +265,7 @@ LANEHUB_BASE=${base} CLAUDE_PROJECT_DIR="$(pwd)" nohup python3 watcher.py > watc
 - Прочитать чат:   ./tg-fetch.sh    (потом читай хвост tg-chat-log.jsonl)
 - Ответить в чат:  ./tg-report.sh "текст"   (только plain text; уходит в чат ${chat})
 - Скачать фото/файл из чата:  ./tg-file.sh <fileId>   (fileId — в поле media строки лога; потом Read файла)
+- Отправить файл в чат (скрин, отчёт, лог):  ./tg-send-file.sh <файл> "подпись"
 - Спросить оператора, если не уверен:  ./ask-operator.sh "вопрос"
   (ответ оператора вернётся в твою сессию — продолжишь задачу)
 
@@ -273,7 +274,7 @@ curl -sS -X POST ${base}/send \\
   -H "X-Bridge-Token: ${key}" -H "Content-Type: application/json" \\
   -d '{"chatId":"${chat}","text":"привет из ${slug}"}'
 
-Правила: пиши только через свой лейн и только в свой чат (${chat}); свои файлы отдавай по URL (бот не может слать файлы в чат); длинный тред — в issue-трекер.`;
+Правила: пиши только через свой лейн и только в свой чат (${chat}); файлы до 50 МБ — через ./tg-send-file.sh, больше — ссылкой; длинный тред — в issue-трекер.`;
   return `## Team chat (LaneHub)
 
 Our team Telegram chat is reachable through LaneHub.
@@ -288,8 +289,8 @@ LANEHUB_API_KEY=${key}
 LANEHUB_CHAT_ID=${chat}
 ENV
 chmod 600 .lanehub.env
-curl -sS --remote-name-all ${hub}/tg-fetch.sh ${hub}/tg-report.sh ${hub}/tg-file.sh ${hub}/ask-operator.sh
-chmod +x tg-fetch.sh tg-report.sh tg-file.sh ask-operator.sh
+curl -sS --remote-name-all ${hub}/tg-fetch.sh ${hub}/tg-report.sh ${hub}/tg-file.sh ${hub}/tg-send-file.sh ${hub}/ask-operator.sh
+chmod +x tg-fetch.sh tg-report.sh tg-file.sh tg-send-file.sh ask-operator.sh
 curl -sSO ${hub}/watcher.py
 LANEHUB_BASE=${base} CLAUDE_PROJECT_DIR="$(pwd)" nohup python3 watcher.py > watcher.log 2>&1 &
 
@@ -297,6 +298,7 @@ Working:
 - Read the chat:   ./tg-fetch.sh    (then read the tail of tg-chat-log.jsonl)
 - Reply to chat:   ./tg-report.sh "text"   (plain text only; goes to chat ${chat})
 - Download a photo/file from the chat:  ./tg-file.sh <fileId>   (fileId is in the log row's media field; then Read the file)
+- Send a file to the chat (screenshot, report, log):  ./tg-send-file.sh <file> "caption"
 - Ask the operator when unsure:  ./ask-operator.sh "question"
   (the operator's answer returns into your session — you continue the task)
 
@@ -305,7 +307,7 @@ curl -sS -X POST ${base}/send \\
   -H "X-Bridge-Token: ${key}" -H "Content-Type: application/json" \\
   -d '{"chatId":"${chat}","text":"hello from ${slug}"}'
 
-Rules: post only through your own lane and only to your chat (${chat}); share your own files by URL (the bot can't upload to the chat); long threads go to the issue tracker.`;
+Rules: post only through your own lane and only to your chat (${chat}); send files up to 50 MB with ./tg-send-file.sh, bigger ones as a link; long threads go to the issue tracker.`;
 }
 
 // ---------- shared: session log dialog ----------

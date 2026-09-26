@@ -6,8 +6,9 @@
 # agents see our messages in their /feed. We keep appending to the local
 # tg-chat-log.jsonl too — it remains the durable, versioned history.
 #
-# NOTE: the hub sends PLAIN TEXT (no parse_mode) — Markdown like *bold* will
-# show up literally. Write reports as plain text.
+# NOTE: this script sends PLAIN TEXT — Markdown like *bold* shows up
+# literally. (The hub's /send accepts "parseMode": "HTML" | "MarkdownV2" for
+# formatted messages and POST /{lane}/sendFile for files — see docs/API.md.)
 #
 # Config lives in ./.lanehub.env (local only, NOT in any git repo):
 #   LANEHUB_BASE=https://lanehub.kiras.life

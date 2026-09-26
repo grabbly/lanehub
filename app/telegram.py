@@ -1,6 +1,7 @@
 """Thin async client for the Telegram Bot API + message-shape helpers."""
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import Any
@@ -58,8 +59,103 @@ async def get_me(bot_token: str) -> dict:
     return await tg_call(bot_token, "getMe")
 
 
-async def send_message(bot_token: str, chat_id: str, text: str) -> dict:
-    return await tg_call(bot_token, "sendMessage", {"chat_id": chat_id, "text": text})
+async def send_message(
+    bot_token: str,
+    chat_id: str,
+    text: str,
+    parse_mode: str | None = None,
+    reply_to: int | None = None,
+    disable_preview: bool = False,
+) -> dict:
+    payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+    if reply_to:
+        # Still send if the replied-to message was deleted meanwhile.
+        payload["reply_parameters"] = {"message_id": reply_to, "allow_sending_without_reply": True}
+    if disable_preview:
+        payload["link_preview_options"] = {"is_disabled": True}
+    return await tg_call(bot_token, "sendMessage", payload)
+
+
+# sendPhoto takes jpeg/png/webp up to 10 MB (Telegram recompresses it);
+# anything else goes out as a document (up to 50 MB via the Bot API).
+PHOTO_MIMES = {"image/jpeg", "image/png", "image/webp"}
+PHOTO_MAX = 10 * 1024 * 1024
+UPLOAD_MAX = 50 * 1024 * 1024
+
+
+async def tg_upload(bot_token: str, method: str, field: str, filename: str, content: bytes,
+                    mime: str, data: dict, timeout: float = 120) -> Any:
+    """Multipart variant of tg_call for sendPhoto / sendDocument."""
+    url = f"{settings.telegram_api}/bot{bot_token}/{method}"
+    form = {k: (json.dumps(v) if isinstance(v, (dict, list)) else str(v)) for k, v in data.items() if v is not None}
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, data=form, files={field: (filename, content, mime)}, timeout=timeout)
+        body = resp.json()
+    except Exception as exc:
+        raise TelegramError(f"telegram unreachable: {_redact(exc, bot_token)}") from exc
+    if not body.get("ok"):
+        raise TelegramError(body.get("description", "telegram error"), body)
+    return body.get("result")
+
+
+async def send_file(
+    bot_token: str,
+    chat_id: str,
+    filename: str,
+    content: bytes,
+    mime: str,
+    caption: str | None = None,
+    parse_mode: str | None = None,
+    reply_to: int | None = None,
+    as_document: bool = False,
+) -> dict:
+    """Upload a file: small images via sendPhoto (inline preview), everything
+    else — or anything when `as_document` — via sendDocument."""
+    photo = not as_document and mime in PHOTO_MIMES and len(content) <= PHOTO_MAX
+    method, field = ("sendPhoto", "photo") if photo else ("sendDocument", "document")
+    data: dict[str, Any] = {"chat_id": chat_id, "caption": caption or None, "parse_mode": parse_mode}
+    if reply_to:
+        data["reply_parameters"] = {"message_id": reply_to, "allow_sending_without_reply": True}
+    return await tg_upload(bot_token, method, field, filename, content, mime, data)
+
+
+async def get_chat(bot_token: str, chat_id: str) -> dict:
+    return await tg_call(bot_token, "getChat", {"chat_id": chat_id})
+
+
+async def get_chat_member(bot_token: str, chat_id: str, user_id: int) -> dict:
+    return await tg_call(bot_token, "getChatMember", {"chat_id": chat_id, "user_id": user_id})
+
+
+def bot_id_from_token(bot_token: str) -> int | None:
+    """A bot token is '<bot user id>:<secret>'."""
+    head = (bot_token or "").split(":", 1)[0]
+    return int(head) if head.isdigit() else None
+
+
+async def resolve_chat(bot_token: str, raw: str) -> dict:
+    """Validate a chat id (or @channelname) typed into the admin panel against
+    Telegram and return getChat's answer — its `id` is the canonical one to store.
+
+    Clients show supergroup ids in different forms: web.telegram.org drops the
+    `-100` prefix (-4388659826 for -1004388659826). When the id as typed is
+    unknown and could be such a stripped form, retry with `-100` in front.
+    Raises TelegramError when neither works (the bot isn't in the chat, or the
+    id is wrong)."""
+    raw = raw.strip()
+    try:
+        return await get_chat(bot_token, raw)
+    except TelegramError as exc:
+        digits = raw.lstrip("-")
+        if not digits.isdigit() or raw.startswith("-100"):
+            raise
+        try:
+            return await get_chat(bot_token, f"-100{digits}")
+        except TelegramError:
+            raise exc from None
 
 
 def _inline_kb(buttons: list[tuple[str, str]]) -> dict:
@@ -209,6 +305,18 @@ async def download_file(bot_token: str, file_path: str, timeout: float = 60) -> 
     if resp.status_code != 200:
         raise TelegramError(f"telegram file download failed: HTTP {resp.status_code}")
     return resp.content, resp.headers.get("content-type", "application/octet-stream")
+
+
+def extract_author(msg: dict) -> dict:
+    """Structured author of a message: Telegram user id, @username and whether
+    it's a bot. Channel posts / anonymous admins carry sender_chat instead."""
+    sender = msg.get("from") or {}
+    if sender:
+        return {"from_id": sender.get("id"), "from_username": sender.get("username"),
+                "from_is_bot": bool(sender.get("is_bot"))}
+    sender_chat = msg.get("sender_chat") or {}
+    return {"from_id": sender_chat.get("id"), "from_username": sender_chat.get("username"),
+            "from_is_bot": False if sender_chat else None}
 
 
 def extract_sender(msg: dict) -> str:

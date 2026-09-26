@@ -392,7 +392,7 @@ def test_feed_prefers_own_lane_copy_and_file_maps_foreign_id(client):
 
 
 def test_helper_scripts_served(client):
-    for name in ("tg-fetch.sh", "tg-report.sh", "tg-file.sh", "ask-operator.sh"):
+    for name in ("tg-fetch.sh", "tg-report.sh", "tg-file.sh", "tg-send-file.sh", "ask-operator.sh"):
         resp = client.get(f"/{name}")
         assert resp.status_code == 200, name
         assert resp.text.startswith("#!/usr/bin/env bash")
@@ -409,3 +409,223 @@ def test_telegram_error_redacts_token():
     from app.telegram import _redact
     exc = Exception("boom https://api.telegram.org/bot123:SECRET/getMe")
     assert "123:SECRET" not in _redact(exc, "123:SECRET")
+
+
+# --- 0.5: feed isolation, chat-id canonicalisation, hub-wide seq, send extras ---
+
+
+def _push_dm(client, slug, *, update_id, message_id, text, user_id=242193587, user="shao3d"):
+    """A user's private chat with the bot: Telegram gives it a POSITIVE chat id."""
+    resp = client.post(
+        f"/{slug}/webhook",
+        json={
+            "update_id": update_id,
+            "message": {
+                "message_id": message_id,
+                "from": {"id": user_id, "is_bot": False, "username": user},
+                "chat": {"id": user_id, "username": user, "type": "private"},
+                "date": 1_700_000_500,
+                "text": text,
+            },
+        },
+        headers={"X-Telegram-Bot-Api-Secret-Token": _webhook_secret(slug)},
+    )
+    assert resp.status_code == 200, resp.text
+
+
+def test_dm_to_one_lane_never_reaches_another_lanes_feed(client):
+    login(client)
+    a = make_lane(client, slug="alpha")
+    b = make_lane(client, slug="beta")
+    _push_dm(client, "alpha", update_id=5, message_id=1, text="/start")
+    _push_human(client, "beta", update_id=6, message_id=950, text="group msg")
+
+    b_texts = [m["text"] for m in client.get("/beta/feed", headers={"X-Bridge-Token": b["apiKey"]}).json()["messages"]]
+    assert "/start" not in b_texts and "group msg" in b_texts
+    a_texts = [m["text"] for m in client.get("/alpha/feed", headers={"X-Bridge-Token": a["apiKey"]}).json()["messages"]]
+    assert "/start" in a_texts and "group msg" in a_texts  # own DM + the shared bound chat
+
+    # asking for the DM explicitly doesn't help either
+    rows = client.get("/beta/feed?chatId=242193587", headers={"X-Bridge-Token": b["apiKey"]}).json()["messages"]
+    assert rows == []
+
+
+def test_feed_hides_chats_the_lane_is_not_bound_to(client):
+    login(client)
+    a = make_lane(client, slug="alpha")  # bound to -100500
+    make_lane(client, slug="other", chat_id="-100600")
+    _push_human(client, "other", update_id=1, message_id=1, text="elsewhere", chat_id=-100600)
+    rows = client.get("/alpha/feed", headers={"X-Bridge-Token": a["apiKey"]}).json()["messages"]
+    assert rows == []
+    # the admin still sees every chat
+    assert [m["text"] for m in client.get("/admin/api/feed").json()["messages"]] == ["elsewhere"]
+
+
+def test_bind_restores_stripped_supergroup_prefix(client):
+    login(client)
+    make_lane(client, slug="alpha", chat_id="")
+    resp = client.patch("/admin/api/lanes/alpha", json={"defaultChatId": "-4388659826"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["defaultChatId"] == "-1004388659826"
+    # @channelname resolves to the numeric id
+    assert client.patch("/admin/api/lanes/alpha", json={"defaultChatId": "@chan"}).json()["defaultChatId"] == "-100777"
+    # a chat the bot can't see is refused instead of saved
+    resp = client.patch("/admin/api/lanes/alpha", json={"defaultChatId": "not-a-chat"})
+    assert resp.status_code == 422 and "not-a-chat" in resp.json()["detail"]
+    assert client.patch("/admin/api/lanes/alpha", json={"defaultChatId": ""}).json()["defaultChatId"] == ""
+    # same on create
+    lane = make_lane(client, slug="beta", chat_id="-4388659826")
+    assert lane["defaultChatId"] == "-1004388659826"
+
+
+def test_outgoing_ids_unique_across_lanes_and_monotonic(client):
+    import time
+    login(client)
+    back = make_lane(client, slug="back")
+    front = make_lane(client, slug="front")
+    ids = []
+    for lane, key in (("back", back["apiKey"]), ("front", front["apiKey"])) * 2:
+        body = client.post(f"/{lane}/send", json={"text": "x"}, headers={"X-Bridge-Token": key}).json()
+        ids.append(body["updateId"])
+        assert body["seq"] == body["updateId"] and body["messageIds"] == [body["messageId"]]
+    assert ids == sorted(ids) and len(set(ids)) == 4
+    # clock-based: a fresh database never restarts near OUTGOING_BASE
+    assert ids[0] > OUTGOING_BASE and ids[0] >= (time.time_ns() // 1000) - 60_000_000
+
+
+def test_feed_cursor_pages_without_gaps_or_duplicates(client):
+    login(client)
+    back = make_lane(client, slug="back")
+    front = make_lane(client, slug="front")
+    h = {"X-Bridge-Token": back["apiKey"]}
+    for i in range(5):  # every human message captured by both bots, same date
+        _push_human(client, "back", update_id=10 + i, message_id=800 + i, text=f"m{i}", date=1_700_000_000)
+        _push_human(client, "front", update_id=90 + i, message_id=800 + i, text=f"m{i}", date=1_700_000_000)
+    client.post("/front/send", json={"text": "bot"}, headers={"X-Bridge-Token": front["apiKey"]})
+
+    seen, cursor = [], 0
+    while True:
+        page = client.get(f"/back/feed?order=asc&limit=2&after={cursor}", headers=h).json()
+        if not page["messages"]:
+            assert page["nextCursor"] == cursor
+            break
+        seen += [m["text"] for m in page["messages"]]
+        cursor = page["nextCursor"]
+    assert seen == ["m0", "m1", "m2", "m3", "m4", "bot"]
+    # every lane's copy of one message shares its seq; the feed hands out one
+    rows = client.get("/back/feed?order=asc&limit=50", headers=h).json()["messages"]
+    assert len({r["seq"] for r in rows}) == len(rows) == 6
+    assert all(r["date"] for r in rows)
+
+
+def test_feed_rows_carry_author_fields(client):
+    login(client)
+    lane = make_lane(client)
+    h = {"X-Bridge-Token": lane["apiKey"]}
+    _push_human(client, "backend", update_id=1, message_id=1, text="hi")
+    client.post("/backend/send", json={"text": "hello"}, headers=h)
+    human, bot = client.get("/backend/feed?order=asc", headers=h).json()["messages"]
+    assert (human["fromId"], human["fromUsername"], human["fromIsBot"], human["outgoing"]) == (42, "alice", False, False)
+    assert (bot["fromUsername"], bot["fromIsBot"], bot["outgoing"]) == ("test_bot", True, True)
+
+
+def test_send_formatting_and_reply(client):
+    login(client)
+    lane = make_lane(client)
+    h = {"X-Bridge-Token": lane["apiKey"]}
+    resp = client.post("/backend/send", headers=h, json={
+        "text": "<b>done</b>", "parseMode": "HTML", "replyToMessageId": 55, "disableWebPagePreview": True,
+    })
+    assert resp.status_code == 200
+    payload = [c for c in client.fake_tg.calls if c[1] == "sendMessage"][-1][2]
+    assert payload["parse_mode"] == "HTML"
+    assert payload["reply_parameters"]["message_id"] == 55
+    assert payload["link_preview_options"] == {"is_disabled": True}
+    # plain by default
+    client.post("/backend/send", headers=h, json={"text": "*literal*"})
+    payload = [c for c in client.fake_tg.calls if c[1] == "sendMessage"][-1][2]
+    assert "parse_mode" not in payload and "reply_parameters" not in payload
+    assert client.post("/backend/send", headers=h, json={"text": "x", "parseMode": "Markdown"}).status_code == 422
+
+
+def test_send_file_photo_and_document(client):
+    login(client)
+    lane = make_lane(client)
+    h = {"X-Bridge-Token": lane["apiKey"]}
+    resp = client.post("/backend/sendFile", headers=h, data={"caption": "screen"},
+                       files={"file": ("shot.png", b"\x89PNG....", "image/png")})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["kind"] == "photo"
+    resp = client.post("/backend/sendFile", headers=h, files={"file": ("run.log", b"line\n", "text/plain")})
+    assert resp.json()["kind"] == "document"
+    methods = [c[1] for c in client.fake_tg.calls if c[1] in ("sendPhoto", "sendDocument")]
+    assert methods == ["sendPhoto", "sendDocument"]
+
+    feed = client.get("/backend/feed?order=asc", headers=h).json()["messages"]
+    assert feed[0]["text"] == "[photo] screen" and feed[0]["outgoing"] and feed[0]["media"]["kind"] == "photo"
+    assert feed[1]["media"]["name"] == "run.log"
+
+    # same binding rules as /send
+    resp = client.post("/backend/sendFile", headers=h, data={"chatId": "-200700"},
+                       files={"file": ("a.txt", b"a", "text/plain")})
+    assert resp.status_code == 403
+    assert client.post("/backend/sendFile", files={"file": ("a.txt", b"a", "text/plain")}).status_code == 401
+
+
+def test_info_self_diagnostics(client, monkeypatch):
+    login(client)
+    lane = make_lane(client)
+    h = {"X-Bridge-Token": lane["apiKey"]}
+    info = client.get("/backend/info", headers=h).json()
+    assert info["botCanPost"] == {"ok": True, "status": "member"}
+    assert info["lastSendError"] is None
+
+    client.fake_tg.member_status = "left"
+    assert client.get("/backend/info", headers=h).json()["botCanPost"]["ok"] is False
+
+    real = client.fake_tg.__class__.__call__
+
+    async def failing(self, bot_token, method, payload=None, timeout=15):
+        if method == "sendMessage":
+            from app.telegram import TelegramError
+            raise TelegramError("Bad Request: chat not found")
+        return await real(self, bot_token, method, payload, timeout)
+
+    import types
+    monkeypatch.setattr("app.telegram.tg_call", types.MethodType(failing, client.fake_tg))
+    assert client.post("/backend/send", json={"text": "x"}, headers=h).status_code == 502
+    assert "chat not found" in client.get("/backend/info", headers=h).json()["lastSendError"]
+
+
+def test_group_upgrade_rebinds_lane(client):
+    login(client)
+    lane = make_lane(client)  # bound to -100500 (pretend it's the old basic-group id)
+    client.post(
+        "/backend/webhook",
+        json={"update_id": 3, "message": {"message_id": 9, "chat": {"id": -100500, "type": "group"},
+                                          "date": 1, "migrate_to_chat_id": -1009998887776}},
+        headers={"X-Telegram-Bot-Api-Secret-Token": _webhook_secret("backend")},
+    )
+    from app import db
+    assert db.get_lane("backend")["default_chat_id"] == "-1009998887776"
+    assert lane
+
+
+def test_legacy_rows_get_backfilled_seq(tmp_path, monkeypatch):
+    """A pre-0.5 database: seq is assigned in date order, twins share it."""
+    import sqlite3
+    from app import db
+    from app.config import settings
+
+    path = tmp_path / "old.db"
+    old = sqlite3.connect(path)
+    old.executescript(db.SCHEMA.replace("    media TEXT,\n", ""))
+    old.executemany(
+        "INSERT INTO messages(lane_slug, update_id, message_id, chat_id, from_user, text, date) VALUES(?,?,?,?,?,?,?)",
+        [("a", 2, 11, -1, "u", "second", 20), ("a", 1, 10, -1, "u", "first", 10), ("b", 7, 10, -1, "u", "first", 10)],
+    )
+    old.commit()
+    old.close()
+    monkeypatch.setattr(settings, "db_path", path)
+    rows = db.query_feed(0, 10, "asc")
+    assert [(r["text"], r["seq"]) for r in rows] == [("first", 1), ("second", 2)]

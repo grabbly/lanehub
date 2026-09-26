@@ -8,9 +8,12 @@
 # The /feed is merged across ALL lanes — once teammates' bots join the hub,
 # their messages appear here too (plain getUpdates could never see them).
 #
-# Incremental state: .lanehub.feed.since holds the last seen unix `date`.
-# The feed filter is strictly date > since, so we re-fetch the boundary
-# second and dedupe by (lane, update_id) against the tail of the local log.
+# Incremental state: .lanehub.feed.cursor holds the hub's `nextCursor` (the
+# feed's monotonic `seq`); each run pages /feed?after=<cursor> until empty, so
+# nothing is skipped or fetched twice. First run on an old install bootstraps
+# from .lanehub.feed.since (last seen unix `date`, the pre-0.5 cursor), and a
+# hub older than 0.5 (no nextCursor) keeps using the date cursor. Rows are
+# still deduped by (lane, update_id) against the log tail as a safety net.
 # Our own lane's outgoing rows are skipped (tg-report.sh already logs them).
 # Rows with an attachment carry `media` ({kind, fileId, name, mime, size});
 # download it with ./tg-file.sh <fileId>.
@@ -30,18 +33,41 @@ fi
 
 LOG="$HERE/tg-chat-log.jsonl"
 SINCE_FILE="$HERE/.lanehub.feed.since"
-since="$(cat "$SINCE_FILE" 2>/dev/null || echo 0)"
-# Re-fetch the boundary second (feed uses date > since); dedupe handles overlap.
-[ "$since" -gt 0 ] && since=$((since - 1))
+CURSOR_FILE="$HERE/.lanehub.feed.cursor"
 
-resp="$(curl -s "${LANEHUB_BASE}/${LANEHUB_LANE}/feed?order=asc&limit=500&sinceDate=${since}" \
-  -H "X-Bridge-Token: ${LANEHUB_API_KEY}")"
+fetch() {
+  local resp
+  resp="$(curl -s "${LANEHUB_BASE}/${LANEHUB_LANE}/feed?order=asc&limit=500&$1" \
+    -H "X-Bridge-Token: ${LANEHUB_API_KEY}")"
+  if ! printf '%s' "$resp" | jq -e '.messages' > /dev/null 2>&1; then
+    echo "FAILED:" >&2
+    printf '%s\n' "$resp" >&2
+    exit 1
+  fi
+  printf '%s' "$resp"
+}
 
-if ! printf '%s' "$resp" | jq -e '.messages' > /dev/null 2>&1; then
-  echo "FAILED:"
-  printf '%s\n' "$resp"
-  exit 1
+ROWS="$(mktemp)"
+trap 'rm -f "$ROWS"' EXIT
+cursor="$(cat "$CURSOR_FILE" 2>/dev/null || true)"
+if [ -n "$cursor" ]; then
+  while :; do
+    page="$(fetch "after=${cursor}")"
+    n="$(printf '%s' "$page" | jq '.messages | length')"
+    [ "$n" -eq 0 ] && break
+    printf '%s' "$page" | jq -c '.messages[]' >> "$ROWS"
+    cursor="$(printf '%s' "$page" | jq -r '.nextCursor')"
+    [ "$n" -lt 500 ] && break
+  done
+else
+  since="$(cat "$SINCE_FILE" 2>/dev/null || echo 0)"
+  # Re-fetch the boundary second (sinceDate is date > since); dedupe handles overlap.
+  [ "$since" -gt 0 ] && since=$((since - 1))
+  page="$(fetch "sinceDate=${since}")"
+  printf '%s' "$page" | jq -c '.messages[]' >> "$ROWS"
+  cursor="$(printf '%s' "$page" | jq -r '.nextCursor // empty')"
 fi
+resp="$(jq -c -s '{messages: .}' "$ROWS")"
 
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -64,15 +90,20 @@ done < <(printf '%s' "$resp" | jq -c --arg ts "$ts" --arg own "$LANEHUB_LANE" '
       dir: (if .outgoing then "out-lane" else "in" end),
       lane: .lane,
       update_id: .updateId,
+      seq: .seq,
       chat_id: .chatId,
       from: .from,
+      from_is_bot: .fromIsBot,
       message_id: .messageId,
       date: .date,
       text: .text,
       media: .media
     }')
 
-# Advance the incremental cursor to the newest date seen.
+# Advance the cursors: seq (0.5+ hubs) and the newest date (fallback).
+if [ -n "$cursor" ] && [ "$cursor" != "null" ]; then
+  echo "$cursor" > "$CURSOR_FILE"
+fi
 last="$(printf '%s' "$resp" | jq -r '[.messages[].date] | max // empty')"
 if [ -n "$last" ]; then
   echo "$last" > "$SINCE_FILE"

@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+- **Fix: another lane's private chats leaked into `/feed`.** A user's DM with
+  lane A's bot (positive `chatId`) showed up in every lane's merged feed. A
+  lane's `/feed` now contains only its bound chat plus its own DMs; other
+  lanes' DMs and chats it isn't bound to never appear, even with `chatId=`.
+  The admin feed still shows everything.
+- **Fix: binding a chat checks it with Telegram.** The panel (and
+  `POST/PATCH /admin/api/lanes`) now calls `getChat` as the lane's bot and
+  stores the id Telegram returns. An id pasted without the supergroup `-100`
+  prefix (web.telegram.org shows `-4388659826` for `-1004388659826`) is
+  corrected automatically, and `@channelname` resolves to the numeric id. A
+  chat the bot can't see is refused with a 422 and a readable error instead
+  of being saved and failing every `/send` with "chat not found". When a
+  group is upgraded to a supergroup, lanes bound to it follow the new id
+  automatically.
+- **Fix: outgoing `updateId`s repeated across lanes and after a DB reset.**
+  They were a per-lane counter from 10^15. New outgoing rows take the hub-wide
+  `seq` (below) as `updateId`: unique across lanes and never reused after a
+  reset. Real Telegram ids come back from `/send` as `messageId` and
+  `messageIds` (one per part).
+- **Feed cursor: `seq`, `after`, `nextCursor`.** Every row has a monotonic,
+  hub-wide `seq` (clock-based, shared by every lane's copy of one Telegram
+  message). `GET /{lane}/feed?after=<seq>&order=asc` pages without the
+  one-second overlap of `sinceDate`, and the response carries `nextCursor`.
+  The feed is sorted by `seq`; `sinceDate` is still accepted. Existing rows are
+  backfilled in date order on first start. `tg-fetch.sh` uses the cursor now
+  (`.lanehub.feed.cursor`, bootstrapped from the old `.lanehub.feed.since`).
+- **`POST /{lane}/sendFile`**: upload a screenshot, report or log (multipart
+  `file` + optional `caption`). Images go out as a photo, everything else as a
+  document; bound chat only, same rules as `/send`. New dependency:
+  `python-multipart` (rebuild the image).
+- **`/send` options:** `parseMode` (`HTML` | `MarkdownV2`),
+  `replyToMessageId`, `disableWebPagePreview`. The default is still plain text.
+- **Author fields on feed rows:** `fromId`, `fromUsername`, `fromIsBot`
+  (null on pre-0.5 rows); `outgoing` is on every row.
+- **`/info` self-check:** `botCanPost` (getChatMember on the bound chat),
+  `lastSendOk` / `lastSendError`, and `webhook` (`pendingUpdateCount`,
+  `lastErrorMessage` from getWebhookInfo).
+
 - **Security: bot tokens no longer leak into server logs.** httpx logged every
   Telegram request URL at INFO, and Bot API URLs contain the bot token, so all
   lanes' tokens sat in `docker logs` in plain text. The `httpx` logger is now

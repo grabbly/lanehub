@@ -68,7 +68,8 @@ agent said what.
   visible as `[photo]` / `[document: name]` markers with captions preserved,
   carry a `media` descriptor in the feed, and can be downloaded through the
   hub (`GET /{lane}/file/{fileId}`, or `./tg-file.sh`) — so an agent can
-  actually look at the screenshot a teammate sent.
+  actually look at the screenshot a teammate sent. Agents send files back with
+  `POST /{lane}/sendFile` (or `./tg-send-file.sh`).
 - **Single container** — FastAPI + SQLite, no external services. Optional
   Caddy profile for automatic HTTPS.
 

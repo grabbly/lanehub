@@ -1,6 +1,7 @@
 """Per-lane public API: what agents and scripts call.
 
     POST /{lane}/send      — send a message as this lane's bot
+    POST /{lane}/sendFile  — upload a file (photo/document) as this lane's bot
     GET  /{lane}/messages  — this lane's history (humans + own sends)
     GET  /{lane}/feed      — the WHOLE chat merged across all lanes
     GET  /{lane}/file/{id} — download a chat attachment (photo, document…)
@@ -15,7 +16,9 @@ from __future__ import annotations
 import secrets as pysecrets
 import time
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request
+from typing import Literal
+
+from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -42,23 +45,26 @@ def _auth_lane(lane_slug: str, token: str) -> dict:
     return lane
 
 
+ParseMode = Literal["HTML", "MarkdownV2"]
+
+
 class SendRequest(BaseModel):
     text: str = Field(min_length=1, max_length=64000)
     chat_id: str | None = Field(default=None, alias="chatId")
+    parse_mode: ParseMode | None = Field(default=None, alias="parseMode")
+    reply_to_message_id: int | None = Field(default=None, alias="replyToMessageId")
+    disable_web_page_preview: bool = Field(default=False, alias="disableWebPagePreview")
 
     model_config = {"populate_by_name": True}
 
 
-async def perform_send(lane: dict, text: str, chat_id: str | None) -> dict:
-    """Send text as the lane's bot (splitting long text into <=4000-char parts)
-    and record each part as a synthetic outgoing row so other lanes' readers
-    see it in /feed (Telegram never delivers a bot's messages to other bots).
-
-    A lane is bound to exactly ONE chat (its `default_chat_id`) and can post
-    only there — no hub-wide fallback. This is what stops a bot whose account
-    sits in several chats from silently posting into the wrong one. An unbound
-    lane refuses to send (503); a request that names a different chat is a hard
-    403 (a loud signal that a key was pasted for the wrong lane)."""
+def bound_chat(lane: dict, chat_id: str | None) -> str:
+    """The one chat this lane may post to. A lane is bound to exactly ONE chat
+    (its `default_chat_id`) — no hub-wide fallback. This is what stops a bot
+    whose account sits in several chats from silently posting into the wrong
+    one. An unbound lane refuses to send (503); a request that names a
+    different chat is a hard 403 (a loud signal that a key was pasted for the
+    wrong lane)."""
     bound = (lane["default_chat_id"] or "").strip()
     if not bound:
         raise HTTPException(
@@ -71,42 +77,125 @@ async def perform_send(lane: dict, text: str, chat_id: str | None) -> dict:
             status_code=403,
             detail=f"lane '{lane['slug']}' is bound to chat {bound} and cannot post to {requested}",
         )
-    target = bound
+    return bound
+
+
+def _send_failed(lane: dict, exc: telegram.TelegramError) -> HTTPException:
+    """Remember the failure for /info and turn it into a 502."""
+    db.set_lane_state(lane["slug"], "last_send_error", f"{int(time.time())} {exc}")
+    return HTTPException(status_code=502, detail=str(exc))
+
+
+def _record_outgoing(lane: dict, result: dict, text: str, media: dict | None = None) -> dict:
+    """Store a sent message as a synthetic outgoing row so other lanes' readers
+    see it in /feed (Telegram never delivers a bot's messages to other bots)."""
+    db.set_lane_state(lane["slug"], "last_send_ok", str(int(time.time())))
+    db.set_lane_state(lane["slug"], "last_send_error", "")
+    chat = result.get("chat", {})
+    sender = result.get("from", {})
+    return db.store_message(
+        lane_slug=lane["slug"],
+        update_id=None,  # takes the hub-wide seq
+        message_id=result.get("message_id"),
+        chat_id=chat.get("id"),
+        chat_title=chat.get("title") or chat.get("username"),
+        from_user=sender.get("username") or lane["bot_username"] or lane["slug"],
+        text=text,
+        date=result.get("date") or int(time.time()),
+        is_outgoing=True,
+        media=media,
+        from_id=sender.get("id") or telegram.bot_id_from_token(lane["bot_token"]),
+        from_username=sender.get("username") or lane["bot_username"] or None,
+        from_is_bot=True,
+    )
+
+
+async def perform_send(
+    lane: dict,
+    text: str,
+    chat_id: str | None,
+    parse_mode: str | None = None,
+    reply_to: int | None = None,
+    disable_preview: bool = False,
+) -> dict:
+    """Send text as the lane's bot to its bound chat, splitting long text into
+    <=4000-char parts (a reply goes on the first part only)."""
+    target = bound_chat(lane, chat_id)
     parts = telegram.chunk_text(text)
-    first_result: dict | None = None
-    for part in parts:
+    first: dict | None = None
+    rows: list[dict] = []
+    message_ids: list[int] = []
+    for i, part in enumerate(parts):
         try:
-            result = await telegram.send_message(lane["bot_token"], target, part)
+            result = await telegram.send_message(
+                lane["bot_token"], target, part, parse_mode=parse_mode,
+                reply_to=reply_to if i == 0 else None, disable_preview=disable_preview,
+            )
         except telegram.TelegramError as exc:
-            raise HTTPException(status_code=502, detail=str(exc))
-        if first_result is None:
-            first_result = result
-        chat = result.get("chat", {})
-        sender = result.get("from", {})
-        db.store_message(
-            lane_slug=lane["slug"],
-            update_id=db.next_outgoing_update_id(lane["slug"]),
-            message_id=result.get("message_id"),
-            chat_id=chat.get("id"),
-            chat_title=chat.get("title") or chat.get("username"),
-            from_user=sender.get("username") or lane["bot_username"] or lane["slug"],
-            text=result.get("text", part),
-            date=result.get("date", 0),
-            is_outgoing=True,
-        )
-    assert first_result is not None
+            raise _send_failed(lane, exc)
+        if first is None:
+            first = result
+        message_ids.append(result.get("message_id"))
+        rows.append(_record_outgoing(lane, result, result.get("text", part)))
+    assert first is not None
     return {
         "ok": True,
-        "messageId": first_result.get("message_id"),
-        "chatId": first_result.get("chat", {}).get("id"),
+        "messageId": first.get("message_id"),
+        "messageIds": message_ids,  # Telegram message_id of every part
+        "chatId": first.get("chat", {}).get("id"),
         "parts": len(parts),
+        "seq": rows[0]["seq"],
+        "updateId": rows[0]["updateId"],
     }
 
 
 @router.post("/{lane_slug}/send")
 async def send(lane_slug: str, req: SendRequest, x_bridge_token: str = Header(default="")) -> dict:
     lane = _auth_lane(lane_slug, x_bridge_token)
-    return await perform_send(lane, req.text, req.chat_id)
+    return await perform_send(lane, req.text, req.chat_id, req.parse_mode, req.reply_to_message_id,
+                              req.disable_web_page_preview)
+
+
+@router.post("/{lane_slug}/sendFile")
+async def send_file(
+    lane_slug: str,
+    file: UploadFile = File(...),
+    caption: str | None = Form(default=None, max_length=1024),
+    chat_id: str | None = Form(default=None, alias="chatId"),
+    parse_mode: ParseMode | None = Form(default=None, alias="parseMode"),
+    reply_to_message_id: int | None = Form(default=None, alias="replyToMessageId"),
+    as_document: bool = Form(default=False, alias="asDocument"),
+    x_bridge_token: str = Header(default=""),
+) -> dict:
+    """Upload a file (screenshot, report, log…) to the lane's bound chat.
+    Images up to 10 MB go out as a photo, everything else as a document;
+    `asDocument=true` forces a document (no recompression)."""
+    lane = _auth_lane(lane_slug, x_bridge_token)
+    target = bound_chat(lane, chat_id)
+    content = await file.read(telegram.UPLOAD_MAX + 1)
+    if not content:
+        raise HTTPException(status_code=422, detail="empty file")
+    if len(content) > telegram.UPLOAD_MAX:
+        raise HTTPException(status_code=413, detail="file is larger than Telegram's 50 MB bot upload limit")
+    name = (file.filename or "file").rsplit("/", 1)[-1] or "file"
+    mime = file.content_type or "application/octet-stream"
+    try:
+        result = await telegram.send_file(
+            lane["bot_token"], target, name, content, mime, caption=caption,
+            parse_mode=parse_mode, reply_to=reply_to_message_id, as_document=as_document,
+        )
+    except telegram.TelegramError as exc:
+        raise _send_failed(lane, exc)
+    media = telegram.extract_media(result)
+    row = _record_outgoing(lane, result, telegram.extract_text(result), media)
+    return {
+        "ok": True,
+        "messageId": result.get("message_id"),
+        "chatId": result.get("chat", {}).get("id"),
+        "kind": media["kind"] if media else None,
+        "seq": row["seq"],
+        "updateId": row["updateId"],
+    }
 
 
 @router.get("/{lane_slug}/messages")
@@ -127,13 +216,23 @@ async def feed(
     lane_slug: str,
     limit: int = Query(default=50, ge=1, le=500),
     order: str = Query(default="desc", pattern="^(asc|desc)$"),
-    since_date: int = Query(default=0, alias="sinceDate", description="unix seconds; date > sinceDate"),
+    after: int | None = Query(default=None, ge=0, description="seq cursor: rows with seq > after"),
+    since_date: int = Query(default=0, alias="sinceDate", description="legacy: unix seconds; date > sinceDate"),
     chat_id: int | None = Query(default=None, alias="chatId"),
     x_bridge_token: str = Header(default=""),
 ) -> dict:
-    _auth_lane(lane_slug, x_bridge_token)
-    rows = db.query_feed(since_date, limit, order, chat_id, prefer_lane=lane_slug)
-    return {"messages": rows, "count": len(rows)}
+    """The lane's view of the chat, merged across every lane in it.
+
+    A lane sees its bound chat (including other lanes' bots posting there) and
+    its own private chats — never another lane's DMs or chats it isn't bound
+    to. Page with `after=<nextCursor>&order=asc`."""
+    lane = _auth_lane(lane_slug, x_bridge_token)
+    rows = db.query_feed(
+        since_date, limit, order, chat_id, prefer_lane=lane_slug, after=after,
+        visible_to=(lane_slug, lane["default_chat_id"]),
+    )
+    seqs = [r["seq"] for r in rows if r["seq"] is not None]
+    return {"messages": rows, "count": len(rows), "nextCursor": max(seqs) if seqs else after}
 
 
 @router.get("/{lane_slug}/file/{file_id}")
@@ -325,6 +424,42 @@ async def operator_inbox_ack(lane_slug: str, req: InboxAck, x_bridge_token: str 
     return {"ok": True}
 
 
+async def _bot_can_post(lane: dict) -> dict:
+    """Ask Telegram whether the bot is in its bound chat and allowed to write
+    there (getChatMember on itself). {ok, status | error}."""
+    chat = (lane["default_chat_id"] or "").strip()
+    bot_id = telegram.bot_id_from_token(lane["bot_token"])
+    if not chat:
+        return {"ok": False, "error": "lane is not bound to a chat"}
+    try:
+        if bot_id is None:
+            bot_id = (await telegram.get_me(lane["bot_token"]))["id"]
+        m = await telegram.get_chat_member(lane["bot_token"], chat, bot_id)
+    except telegram.TelegramError as exc:
+        return {"ok": False, "error": exc.description}
+    status = m.get("status")
+    ok = status in ("creator", "administrator", "member") or (
+        status == "restricted" and m.get("is_member", True) and m.get("can_send_messages", False)
+    )
+    if status == "administrator" and m.get("can_post_messages") is False:
+        ok = False  # channel admin without posting rights
+    return {"ok": ok, "status": status}
+
+
+async def _webhook_status(lane: dict) -> dict:
+    """The useful bits of getWebhookInfo — Telegram's view of delivery."""
+    try:
+        w = await telegram.get_webhook_info(lane["bot_token"])
+    except telegram.TelegramError as exc:
+        return {"error": exc.description}
+    return {
+        "url": w.get("url") or None,
+        "pendingUpdateCount": w.get("pending_update_count", 0),
+        "lastErrorDate": w.get("last_error_date"),
+        "lastErrorMessage": w.get("last_error_message"),
+    }
+
+
 @router.get("/{lane_slug}/info")
 async def info(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict:
     lane = _auth_lane(lane_slug, x_bridge_token)
@@ -346,6 +481,10 @@ async def info(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
         "defaultChatId": lane["default_chat_id"] or None,
         "deliveryMode": mode,
         "webhookUrl": runtime.webhook_url(lane["slug"]) if mode == "webhook" else None,
+        "botCanPost": await _bot_can_post(lane),
+        "lastSendOk": int(db.get_lane_state(lane_slug, "last_send_ok") or 0) or None,
+        "lastSendError": db.get_lane_state(lane_slug, "last_send_error") or None,
+        "webhook": await _webhook_status(lane) if mode == "webhook" else None,
         "polling": runtime.polling(lane["slug"]),
         "storedMessages": db.count_messages(lane["slug"]),
         "seenChats": db.seen_chats(lane["slug"]),

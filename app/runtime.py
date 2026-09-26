@@ -29,6 +29,12 @@ def ingest_update(lane_slug: str, upd: dict) -> None:
     if not msg:
         return
     chat = msg.get("chat", {})
+    if msg.get("migrate_to_chat_id") and chat.get("id") is not None:
+        # The group became a supergroup under a new id: follow it, or every
+        # later /send would fail with "chat not found".
+        moved = db.migrate_chat(chat["id"], msg["migrate_to_chat_id"])
+        if moved:
+            LOG.info("chat %s migrated to %s; rebound lanes %s", chat["id"], msg["migrate_to_chat_id"], moved)
     db.store_message(
         lane_slug=lane_slug,
         update_id=upd["update_id"],
@@ -40,6 +46,7 @@ def ingest_update(lane_slug: str, upd: dict) -> None:
         date=msg.get("date", 0),
         is_outgoing=False,
         media=telegram.extract_media(msg),
+        **telegram.extract_author(msg),
     )
 
 

@@ -46,10 +46,16 @@ def _bot_username(token: str) -> str:
 
 @app.post("/bot{token}/{method}")
 async def bot_api(token: str, method: str, request: Request) -> dict:
-    try:
-        payload: dict[str, Any] = await request.json()
-    except Exception:
-        payload = {}
+    upload = None
+    if request.headers.get("content-type", "").startswith("multipart/"):
+        form = await request.form()
+        payload: dict[str, Any] = {k: v for k, v in form.items() if isinstance(v, str)}
+        upload = next(((k, v) for k, v in form.items() if not isinstance(v, str)), None)
+    else:
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
 
     if method == "getMe":
         return {"ok": True, "result": {
@@ -72,6 +78,39 @@ async def bot_api(token: str, method: str, request: Request) -> dict:
         }
         sent_messages.append({"token": token, **result})
         return {"ok": True, "result": result}
+
+    if method in ("sendPhoto", "sendDocument") and upload:
+        field, f = upload
+        size = len(await f.read())
+        fid = f"fake{next(_message_ids)}"
+        result = {
+            "message_id": next(_message_ids),
+            "from": {"id": 1, "is_bot": True, "username": _bot_username(token)},
+            "chat": {"id": int(payload.get("chat_id", -100999)), "title": "Fake chat", "type": "supergroup"},
+            "date": int(time.time()),
+        }
+        if payload.get("caption"):
+            result["caption"] = payload["caption"]
+        if field == "photo":
+            result["photo"] = [{"file_id": fid, "file_unique_id": fid, "file_size": size, "width": 1, "height": 1}]
+        else:
+            result["document"] = {"file_id": fid, "file_unique_id": fid, "file_name": f.filename,
+                                  "mime_type": f.content_type, "file_size": size}
+        sent_messages.append({"token": token, **result})
+        return {"ok": True, "result": result}
+
+    if method == "getChat":
+        # Any numeric id or @name "exists"; the stripped supergroup form
+        # (-4388…, no -100) is unknown like on real Telegram.
+        cid = str(payload.get("chat_id", ""))
+        if cid.startswith("@"):
+            return {"ok": True, "result": {"id": -100777, "title": cid, "type": "channel"}}
+        if cid.startswith("-100") or cid.isdigit():
+            return {"ok": True, "result": {"id": int(cid), "title": "Fake chat", "type": "supergroup"}}
+        return {"ok": False, "description": "Bad Request: chat not found"}
+
+    if method == "getChatMember":
+        return {"ok": True, "result": {"status": "member", "user": {"id": payload.get("user_id"), "is_bot": True}}}
 
     if method == "setWebhook":
         _webhooks[token] = {"url": payload.get("url", ""), "secret": payload.get("secret_token", "")}

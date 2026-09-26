@@ -17,6 +17,8 @@ from .config import settings
 
 # Outgoing messages get synthetic update_ids in a high namespace so they never
 # collide with real Telegram update_ids (32-bit ints) and sort after them.
+# Since 0.5 a new outgoing row takes its hub-wide `seq` (a microsecond clock,
+# ~1.7e15) as update_id: unique across lanes and never reused after a DB reset.
 OUTGOING_BASE = 1_000_000_000_000_000
 
 RESERVED_SLUGS = {"admin", "portal", "api", "health", "version", "static", "assets", "docs", "favicon.ico"}
@@ -107,6 +109,42 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
     if "media" not in cols:
         # JSON attachment descriptor (see telegram.extract_media); NULL for text.
         conn.execute("ALTER TABLE messages ADD COLUMN media TEXT")
+    for col, decl in (("from_id", "INTEGER"), ("from_username", "TEXT"), ("from_is_bot", "INTEGER")):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE messages ADD COLUMN {col} {decl}")
+    if "seq" not in cols:
+        # Hub-wide feed cursor. Existing rows are numbered in chronological
+        # order; every new row takes a microsecond-clock value (see _next_seq),
+        # which is far above any backfilled number.
+        conn.execute("ALTER TABLE messages ADD COLUMN seq INTEGER")
+        _backfill_seq(conn)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_seq ON messages(seq)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat_msg ON messages(chat_id, message_id)")
+
+
+def _backfill_seq(conn: sqlite3.Connection) -> None:
+    """Number pre-0.5 rows chronologically; copies of one Telegram message held
+    by several lanes (same chat_id + message_id) share one seq."""
+    seq_of: dict[tuple, int] = {}
+    n = 0
+    rows = conn.execute(
+        "SELECT rowid, chat_id, message_id FROM messages ORDER BY date, message_id, rowid"
+    ).fetchall()
+    for r in rows:
+        key = (r["chat_id"], r["message_id"]) if r["message_id"] is not None else ("row", r["rowid"])
+        if key not in seq_of:
+            n += 1
+            seq_of[key] = n
+        conn.execute("UPDATE messages SET seq = ? WHERE rowid = ?", (seq_of[key], r["rowid"]))
+
+
+def _next_seq(conn: sqlite3.Connection) -> int:
+    """Next hub-wide seq: a microsecond clock, bumped past the current max so it
+    is strictly monotonic. Being clock-based, it keeps growing across a DB reset
+    instead of restarting — clients that keep a local log never see an old id
+    reused. Call inside a write transaction."""
+    row = conn.execute("SELECT COALESCE(MAX(seq), 0) AS m FROM messages").fetchone()
+    return max(row["m"] + 1, time.time_ns() // 1000)
 
 
 def new_api_key() -> str:
@@ -318,7 +356,7 @@ def mark_operator_done(lane_slug: str, msg_id: int) -> None:
 
 def store_message(
     lane_slug: str,
-    update_id: int,
+    update_id: int | None,
     message_id: int | None,
     chat_id: int | None,
     chat_title: str | None,
@@ -327,14 +365,47 @@ def store_message(
     date: int,
     is_outgoing: bool = False,
     media: dict | None = None,
-) -> None:
-    with connect() as conn:
+    from_id: int | None = None,
+    from_username: str | None = None,
+    from_is_bot: bool | None = None,
+) -> dict:
+    """Insert (or refresh, on a redelivered update) one message row.
+
+    `seq` is shared by every lane's copy of the same Telegram message (same
+    chat_id + message_id), so the merged feed can page by seq without handing
+    the same message out twice. `update_id=None` (an outgoing send) takes the
+    new seq as its synthetic update_id. Returns {"seq", "updateId"}."""
+    conn = connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        seq = None
+        existing = conn.execute(
+            "SELECT seq FROM messages WHERE lane_slug = ? AND update_id = ?", (lane_slug, update_id)
+        ).fetchone() if update_id is not None else None
+        if existing and existing["seq"] is not None:
+            seq = existing["seq"]
+        elif chat_id is not None and message_id is not None:
+            twin = conn.execute(
+                "SELECT seq FROM messages WHERE chat_id = ? AND message_id = ? AND seq IS NOT NULL LIMIT 1",
+                (chat_id, message_id),
+            ).fetchone()
+            seq = twin["seq"] if twin else None
+        if seq is None:
+            seq = _next_seq(conn)
+        if update_id is None:
+            update_id = max(seq, OUTGOING_BASE)
         conn.execute(
-            "INSERT OR REPLACE INTO messages "
-            "(lane_slug, update_id, message_id, chat_id, chat_title, from_user, text, date, is_outgoing, media) "
-            "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO messages (lane_slug, update_id, message_id, chat_id, chat_title, from_user, text, date, "
+            "is_outgoing, media, from_id, from_username, from_is_bot, seq) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(lane_slug, update_id) DO UPDATE SET message_id = excluded.message_id, "
+            "chat_id = excluded.chat_id, chat_title = excluded.chat_title, from_user = excluded.from_user, "
+            "text = excluded.text, date = excluded.date, is_outgoing = excluded.is_outgoing, "
+            "media = excluded.media, from_id = excluded.from_id, from_username = excluded.from_username, "
+            "from_is_bot = excluded.from_is_bot, seq = excluded.seq",
             (lane_slug, update_id, message_id, chat_id, chat_title, from_user, text, date, int(is_outgoing),
-             json.dumps(media, ensure_ascii=False) if media else None),
+             json.dumps(media, ensure_ascii=False) if media else None,
+             from_id, from_username, None if from_is_bot is None else int(from_is_bot), seq),
         )
         if chat_id is not None:
             conn.execute(
@@ -343,15 +414,13 @@ def store_message(
                 "title = excluded.title, last_date = MAX(last_date, excluded.last_date)",
                 (lane_slug, chat_id, chat_title or "", date),
             )
-
-
-def next_outgoing_update_id(lane_slug: str) -> int:
-    with connect() as conn:
-        row = conn.execute(
-            "SELECT COALESCE(MAX(update_id), ?) AS m FROM messages WHERE lane_slug = ? AND update_id >= ?",
-            (OUTGOING_BASE - 1, lane_slug, OUTGOING_BASE),
-        ).fetchone()
-        return row["m"] + 1
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {"seq": seq, "updateId": update_id}
 
 
 def max_incoming_update_id(lane_slug: str) -> int:
@@ -380,7 +449,11 @@ def _msg_to_dict(r: sqlite3.Row) -> dict:
         "text": r["text"],
         "date": r["date"],
         "outgoing": bool(r["is_outgoing"]),
+        "fromId": r["from_id"],
+        "fromUsername": r["from_username"],
+        "fromIsBot": None if r["from_is_bot"] is None else bool(r["from_is_bot"]),
         "media": json.loads(r["media"]) if r["media"] else None,
+        "seq": r["seq"],
     }
 
 
@@ -396,40 +469,72 @@ def query_messages(lane_slug: str, since: int, limit: int, order: str) -> list[d
 
 
 def query_feed(
-    since_date: int, limit: int, order: str, chat_id: int | None = None, prefer_lane: str | None = None
+    since_date: int,
+    limit: int,
+    order: str,
+    chat_id: int | None = None,
+    prefer_lane: str | None = None,
+    after: int | None = None,
+    visible_to: tuple[str, str] | None = None,
 ) -> list[dict]:
-    """Whole-chat merged feed across every lane.
+    """Merged feed across every lane, one row per Telegram message.
 
     Human messages are captured by every bot in the chat (each under its own
-    update_id), so rows are deduped by (chat_id, message_id). Each bot's own
-    outgoing rows exist only in its lane and survive the merge. Sorted by date
-    (update_ids are per-bot and not comparable across lanes).
+    update_id) but share one `seq`, so rows are deduped by seq. Each bot's own
+    outgoing rows exist only in its lane and survive the merge. Sorted by seq
+    (hub ingest order; update_ids are per-bot and not comparable across lanes).
+
+    `after` pages by seq (seq > after); `since_date` is the legacy date filter.
 
     `prefer_lane` picks the requesting lane's copy of a duplicated message:
     Telegram file_ids are per-bot, so that copy's `media.fileId` is the one
     the lane's own /file endpoint can download.
+
+    `visible_to=(lane_slug, bound_chat_id)` restricts the feed to what that lane
+    may read: its bound chat (every lane's rows there) plus its OWN private chats
+    (chat_id > 0 — a user's DM with that bot). Other lanes' DMs and chats the
+    lane is not bound to never leak in. None = everything (admin view).
     """
-    where = "date > ?"
+    where = ["date > ?"]
     params: list = [since_date]
+    if after is not None:
+        where.append("seq > ?")
+        params.append(after)
     if chat_id is not None:
-        where += " AND chat_id = ?"
+        where.append("chat_id = ?")
         params.append(chat_id)
+    if visible_to is not None:
+        lane_slug, bound = visible_to
+        try:
+            bound_id = int(bound)
+        except (TypeError, ValueError):
+            bound_id = None  # unbound lane: only its own DMs
+        where.append("(chat_id = ? OR (lane_slug = ? AND chat_id > 0))")
+        params += [bound_id, lane_slug]
+    direction = "DESC" if order == "desc" else "ASC"
+    sql = (
+        "SELECT * FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY seq "
+        "ORDER BY (lane_slug = ?) DESC, lane_slug) AS rn "
+        f"FROM messages WHERE {' AND '.join(where)}) WHERE rn = 1 "
+        f"ORDER BY seq {direction} LIMIT ?"
+    )
+    with connect() as conn:
+        rows = conn.execute(sql, [prefer_lane or "", *params, limit]).fetchall()
+    return [_msg_to_dict(r) for r in rows]
+
+
+def migrate_chat(old_chat_id: int, new_chat_id: int) -> list[str]:
+    """A basic group was upgraded to a supergroup (Telegram changes its id).
+    Rebind lanes bound to the old id; returns the rebound slugs."""
     with connect() as conn:
         rows = conn.execute(
-            f"SELECT * FROM messages WHERE {where} ORDER BY date, message_id", params
+            "SELECT slug FROM lanes WHERE default_chat_id = ?", (str(old_chat_id),)
         ).fetchall()
-    picked: dict[tuple, sqlite3.Row] = {}
-    for r in rows:
-        key = (r["chat_id"], r["message_id"]) if r["message_id"] is not None else (
-            r["lane_slug"], r["update_id"], None
+        conn.execute(
+            "UPDATE lanes SET default_chat_id = ? WHERE default_chat_id = ?",
+            (str(new_chat_id), str(old_chat_id)),
         )
-        if key not in picked or (prefer_lane and r["lane_slug"] == prefer_lane
-                                 and picked[key]["lane_slug"] != prefer_lane):
-            picked[key] = r
-    merged = list(picked.values())
-    if order == "desc":
-        merged.reverse()
-    return [_msg_to_dict(r) for r in merged[:limit]]
+    return [r["slug"] for r in rows]
 
 
 def resolve_media_file(lane_slug: str, file_id: str) -> str:

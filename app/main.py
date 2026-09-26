@@ -34,6 +34,7 @@ HELPERS = {
     "tg-fetch.sh": "read the team chat",
     "tg-report.sh": "post to the team chat",
     "tg-file.sh": "download a photo/file someone posted in the chat",
+    "tg-send-file.sh": "send a file (screenshot, report, log) to the team chat",
     "ask-operator.sh": "ask the operator a clarifying question",
 }
 
