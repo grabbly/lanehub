@@ -611,21 +611,84 @@ def test_group_upgrade_rebinds_lane(client):
     assert lane
 
 
+def _legacy_db(path, rows):
+    """A pre-0.5 database file (no media/seq/author columns)."""
+    import sqlite3
+    from app import db
+
+    old = sqlite3.connect(path)
+    schema = db.SCHEMA.replace("    media TEXT,\n", "").replace(
+        "CREATE INDEX IF NOT EXISTS idx_messages_date ON messages(date);", "")
+    old.executescript(schema)
+    old.executemany(
+        "INSERT INTO messages(lane_slug, update_id, message_id, chat_id, from_user, text, date) VALUES(?,?,?,?,?,?,?)",
+        rows,
+    )
+    old.commit()
+    old.close()
+
+
+LEGACY_ROWS = [("a", 2, 11, -1, "u", "second", 20), ("a", 1, 10, -1, "u", "first", 10),
+               ("b", 7, 10, -1, "u", "first", 10), ("a", 3, 12, -1, "u", "third", 30)]
+
+
 def test_legacy_rows_get_backfilled_seq(tmp_path, monkeypatch):
-    """A pre-0.5 database: seq is assigned in date order, twins share it."""
+    """Upgrade as in production: the migrating connection is opened and closed
+    on its own (app startup), then later connections read. The backfill must be
+    committed by then, twins share a seq, and the feed returns every row."""
     import sqlite3
     from app import db
     from app.config import settings
 
     path = tmp_path / "old.db"
-    old = sqlite3.connect(path)
-    old.executescript(db.SCHEMA.replace("    media TEXT,\n", ""))
-    old.executemany(
-        "INSERT INTO messages(lane_slug, update_id, message_id, chat_id, from_user, text, date) VALUES(?,?,?,?,?,?,?)",
-        [("a", 2, 11, -1, "u", "second", 20), ("a", 1, 10, -1, "u", "first", 10), ("b", 7, 10, -1, "u", "first", 10)],
-    )
-    old.commit()
-    old.close()
+    _legacy_db(path, LEGACY_ROWS)
     monkeypatch.setattr(settings, "db_path", path)
+    db.connect().close()  # what lifespan does
+
+    raw = sqlite3.connect(path)
+    assert raw.execute("SELECT COUNT(*) FROM messages WHERE seq IS NULL").fetchone()[0] == 0
+    raw.close()
     rows = db.query_feed(0, 10, "asc")
-    assert [(r["text"], r["seq"]) for r in rows] == [("first", 1), ("second", 2)]
+    assert [(r["text"], r["seq"]) for r in rows] == [("first", 1), ("second", 2), ("third", 3)]
+
+
+def test_broken_050_database_self_heals(tmp_path, monkeypatch):
+    """0.5.0 added the seq column but lost the backfill, leaving every old row
+    NULL. The next start numbers them; new clock-based rows stay last."""
+    import sqlite3
+    from app import db
+    from app.config import settings
+
+    path = tmp_path / "broken.db"
+    _legacy_db(path, LEGACY_ROWS)
+    monkeypatch.setattr(settings, "db_path", path)
+    raw = sqlite3.connect(path)
+    for col, decl in (("media", "TEXT"), ("from_id", "INTEGER"), ("from_username", "TEXT"),
+                      ("from_is_bot", "INTEGER"), ("seq", "INTEGER")):
+        raw.execute(f"ALTER TABLE messages ADD COLUMN {col} {decl}")
+    # a row written by 0.5.0 after the broken upgrade has a clock seq
+    raw.execute("INSERT INTO messages(lane_slug, update_id, message_id, chat_id, from_user, text, date, seq) "
+                "VALUES('a', 4, 13, -1, 'u', 'after upgrade', 40, 1790000000000000)")
+    raw.commit()
+    raw.close()
+
+    db.connect().close()
+    rows = db.query_feed(0, 10, "asc")
+    assert [r["text"] for r in rows] == ["first", "second", "third", "after upgrade"]
+    assert [r["seq"] for r in rows][:3] == [1, 2, 3]
+    assert db.query_feed(0, 10, "asc", after=2)[0]["text"] == "third"
+
+
+def test_feed_never_collapses_rows_without_seq(client):
+    """Defensive: rows lacking a seq must not be merged into one."""
+    from app import db
+    login(client)
+    lane = make_lane(client)
+    for i in range(3):
+        _push_human(client, "backend", update_id=i + 1, message_id=700 + i, text=f"n{i}")
+    conn = db.connect()
+    conn.execute("UPDATE messages SET seq = NULL")
+    conn.commit()
+    conn.close()
+    rows = db.query_feed(0, 10, "asc", visible_to=("backend", lane["defaultChatId"]))
+    assert len(rows) == 3

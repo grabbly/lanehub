@@ -117,25 +117,48 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
         # order; every new row takes a microsecond-clock value (see _next_seq),
         # which is far above any backfilled number.
         conn.execute("ALTER TABLE messages ADD COLUMN seq INTEGER")
-        _backfill_seq(conn)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_seq ON messages(seq)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat_msg ON messages(chat_id, message_id)")
+    conn.commit()
+    # Keyed on the data, not on the column having just been added: 0.5.0
+    # added the column but lost the backfill (uncommitted), so any row still
+    # without a seq is numbered on the next start.
+    if conn.execute("SELECT 1 FROM messages WHERE seq IS NULL LIMIT 1").fetchone():
+        _backfill_seq(conn)
 
 
 def _backfill_seq(conn: sqlite3.Connection) -> None:
-    """Number pre-0.5 rows chronologically; copies of one Telegram message held
-    by several lanes (same chat_id + message_id) share one seq."""
-    seq_of: dict[tuple, int] = {}
-    n = 0
-    rows = conn.execute(
-        "SELECT rowid, chat_id, message_id FROM messages ORDER BY date, message_id, rowid"
-    ).fetchall()
-    for r in rows:
-        key = (r["chat_id"], r["message_id"]) if r["message_id"] is not None else ("row", r["rowid"])
-        if key not in seq_of:
-            n += 1
-            seq_of[key] = n
-        conn.execute("UPDATE messages SET seq = ? WHERE rowid = ?", (seq_of[key], r["rowid"]))
+    """Give every row without a seq one, in chronological order, in its own
+    committed transaction. Copies of one Telegram message held by several
+    lanes (same chat_id + message_id) share a seq — including a copy that
+    already has one. New numbers continue the small backfilled range (below
+    OUTGOING_BASE), so they stay under every clock-based seq."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        n = conn.execute(
+            "SELECT COALESCE(MAX(seq), 0) AS m FROM messages WHERE seq < ?", (OUTGOING_BASE,)
+        ).fetchone()["m"]
+        seq_of: dict[tuple, int] = {
+            (r["chat_id"], r["message_id"]): r["seq"]
+            for r in conn.execute(
+                "SELECT chat_id, message_id, MIN(seq) AS seq FROM messages "
+                "WHERE seq IS NOT NULL AND message_id IS NOT NULL GROUP BY chat_id, message_id"
+            )
+        }
+        rows = conn.execute(
+            "SELECT rowid, chat_id, message_id FROM messages WHERE seq IS NULL "
+            "ORDER BY date, message_id, rowid"
+        ).fetchall()
+        for r in rows:
+            key = (r["chat_id"], r["message_id"]) if r["message_id"] is not None else ("row", r["rowid"])
+            if key not in seq_of:
+                n += 1
+                seq_of[key] = n
+            conn.execute("UPDATE messages SET seq = ? WHERE rowid = ?", (seq_of[key], r["rowid"]))
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
 
 
 def _next_seq(conn: sqlite3.Connection) -> int:
@@ -513,7 +536,7 @@ def query_feed(
         params += [bound_id, lane_slug]
     direction = "DESC" if order == "desc" else "ASC"
     sql = (
-        "SELECT * FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY seq "
+        "SELECT * FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY COALESCE(seq, -rowid) "
         "ORDER BY (lane_slug = ?) DESC, lane_slug) AS rn "
         f"FROM messages WHERE {' AND '.join(where)}) WHERE rn = 1 "
         f"ORDER BY seq {direction} LIMIT ?"

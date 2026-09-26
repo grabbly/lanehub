@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Fix (0.5.1): the 0.5.0 upgrade left `/feed` showing one row.** On a
+  database with existing messages, 0.5.0 added the `seq` column but its
+  backfill was never committed (rolled back when the startup connection
+  closed) and never retried, so every old row kept `seq = NULL` and the feed
+  merged them all into one. The backfill is now committed and runs on any
+  start that finds a row without a seq, so a hub broken by 0.5.0 repairs
+  itself on update, and the feed never merges rows lacking a seq.
+  **Don't upgrade a non-empty hub to commit `de3ff57` (0.5.0); go straight to
+  0.5.1.**
+
 - **Fix: another lane's private chats leaked into `/feed`.** A user's DM with
   lane A's bot (positive `chatId`) showed up in every lane's merged feed. A
   lane's `/feed` now contains only its bound chat plus its own DMs; other
