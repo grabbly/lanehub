@@ -15,6 +15,27 @@ rejected, 503 lane not bound to a chat yet).
 
 ---
 
+## Two kinds of lanes: `hub` and `send_only`
+
+A Telegram bot has **one** webhook: whoever sets it receives all of the bot's
+updates, users' private messages included. So:
+
+- **`hub`** (the default) — the hub receives the bot's updates (webhook or
+  polling). Use it for bots made for the team chat.
+- **`send_only`** — another system (a product backend, another app) already
+  receives this bot's updates. The hub **never** calls `setWebhook`,
+  `deleteWebhook` or `getUpdates` for it: not on start, edit, disable or
+  delete. The lane still posts through `/send` and `/sendFile`, reads the
+  bound chat through `/feed` (the copies the other lanes' bots captured), and
+  gets `@mentions` through `/wake` (below).
+
+When a bot is added (and on every start or edit of a `hub` lane) the hub asks
+Telegram who holds the webhook. If it points anywhere other than this hub
+(this hub at a previous address, same `/{lane}/webhook` path, counts as ours),
+the lane is switched to `send_only` and the panel shows a warning. The
+operator can switch a lane either way on its card; switching to `hub` takes
+the webhook over and needs a confirmation.
+
 ## Message object
 
 ```json
@@ -192,8 +213,11 @@ answered live by Telegram:
   ("chat not found" = bot not in the chat, or a wrong id).
 - `lastSendOk` (unix time) / `lastSendError` (`"<unix time> <Telegram
   description>"`, cleared by the next successful send).
-- `webhook` (webhook mode) — `url`, `pendingUpdateCount`, `lastErrorDate`,
-  `lastErrorMessage` from Telegram's `getWebhookInfo`.
+- `receiveMode` — `hub` or `send_only` (see the top of this page).
+- `webhook` (webhook mode, and always for send-only lanes) — `url`,
+  `ownedByHub` (false = another system receives this bot's updates),
+  `pendingUpdateCount`, `lastErrorDate`, `lastErrorMessage` from Telegram's
+  `getWebhookInfo`.
 
 ## `POST /{lane}/webhook`
 
@@ -216,6 +240,11 @@ wake cursor and the current Claude session id — so the watcher that drives
   The first ever call seeds the cursor to *now* (history is never replayed) and
   returns `{"wake": false, "sessionId": ...}`. A wake keeps re-firing until it
   is acked (at-least-once).
+- **Send-only lanes** get their mentions the same way, found in the bound
+  chat's feed (the bot itself receives nothing through the hub). Only
+  people's messages count: another bot writing `@your_bot` doesn't wake it.
+  Here `wakeId` is the feed row's `seq`. The system that owns the bot can
+  simply poll `GET /{lane}/wake` every N minutes and ack each mention.
 - `POST /{lane}/wake/ack` — `{"wakeId": 11, "sessionId": "sess-abc"}` consumes
   that mention (advances the cursor) and records the (possibly forked) session
   id the watcher got back from `claude`. `sessionId` is optional.

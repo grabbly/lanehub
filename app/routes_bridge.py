@@ -276,19 +276,48 @@ class WakeAck(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+def _send_only(lane: dict) -> bool:
+    return lane.get("receive_mode") == "send_only"
+
+
+def _wake_id(lane: dict, row: dict) -> int:
+    """Wake cursor unit: the lane's own update_id, or — for a send-only lane,
+    which receives no updates of its own — the feed `seq`."""
+    return row["seq"] if _send_only(lane) else row["updateId"]
+
+
+def _wake_seed(lane: dict) -> int:
+    """Cursor value meaning 'from now' (so enabling wake never replays history)."""
+    if _send_only(lane):
+        newest = db.query_feed(0, 1, "desc", visible_to=(lane["slug"], lane["default_chat_id"]))
+        return newest[0]["seq"] if newest else 0
+    return db.max_incoming_update_id(lane["slug"])
+
+
 def _scan_mention(lane: dict, cursor: int) -> tuple[dict | None, list[dict]]:
     """Look past `cursor` for the first @mention of the lane's bot. Returns
-    (mention_row | None, scanned_incoming_rows). Read-only — no state change."""
+    (mention_row | None, scanned_rows — what the cursor may move past).
+    Read-only — no state change.
+
+    A send-only lane's bot gets no updates through the hub, so its mentions
+    are found in the bound chat's feed — the copies other lanes' bots captured.
+    Only people's messages count (as in hub mode, where Telegram never
+    delivers other bots' messages), which also rules out bot ping-pong."""
     bot_username = lane.get("bot_username") or ""
-    rows = db.query_messages(lane["slug"], cursor, 500, "asc")
-    incoming = [r for r in rows if not r["outgoing"]]
-    for r in incoming:
+    if _send_only(lane):
+        rows = db.query_feed(0, 500, "asc", after=cursor, visible_to=(lane["slug"], lane["default_chat_id"]))
+        scanned = rows  # the cursor moves past bot rows too, or a bot-only window would stall it
+        candidates = [r for r in rows if not r["outgoing"] and not r.get("fromIsBot")]
+    else:
+        rows = db.query_messages(lane["slug"], cursor, 500, "asc")
+        scanned = candidates = [r for r in rows if not r["outgoing"]]
+    for r in candidates:
         sender = (r.get("from") or "").lstrip("@").lower()
         if sender == bot_username.lstrip("@").lower():
             continue
         if telegram.mentions_bot(r.get("text") or "", bot_username):
-            return r, incoming
-    return None, incoming
+            return r, scanned
+    return None, scanned
 
 
 @router.get("/{lane_slug}/wake")
@@ -305,7 +334,7 @@ async def wake(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
 
     cursor_raw = db.get_lane_state(lane_slug, "wake_cursor")
     if cursor_raw is None:
-        seed = db.max_incoming_update_id(lane_slug)
+        seed = _wake_seed(lane)
         db.set_lane_state(lane_slug, "wake_cursor", str(seed))
         return {"wake": False, "sessionId": session_id}
     cursor = int(cursor_raw)
@@ -314,7 +343,7 @@ async def wake(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
     if mention:
         return {
             "wake": True,
-            "wakeId": mention["updateId"],
+            "wakeId": _wake_id(lane, mention),
             "from": mention.get("from"),
             "text": mention.get("text"),
             "chatId": mention.get("chatId"),
@@ -323,7 +352,7 @@ async def wake(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
     # No mention in this window: advance past the incoming messages we scanned
     # (never past outgoing high-namespace ids) so we don't rescan them.
     if incoming:
-        db.set_lane_state(lane_slug, "wake_cursor", str(max(r["updateId"] for r in incoming)))
+        db.set_lane_state(lane_slug, "wake_cursor", str(max(_wake_id(lane, r) for r in incoming)))
     return {"wake": False, "sessionId": session_id}
 
 
@@ -457,8 +486,10 @@ async def _webhook_status(lane: dict) -> dict:
         w = await telegram.get_webhook_info(lane["bot_token"])
     except telegram.TelegramError as exc:
         return {"error": exc.description}
+    url = w.get("url") or None
     return {
-        "url": w.get("url") or None,
+        "url": url,
+        "ownedByHub": runtime.is_own_webhook(lane["slug"], url),
         "pendingUpdateCount": w.get("pending_update_count", 0),
         "lastErrorDate": w.get("last_error_date"),
         "lastErrorMessage": w.get("last_error_message"),
@@ -478,18 +509,22 @@ async def info(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
     if cursor_raw is not None:
         mention, _ = _scan_mention(lane, int(cursor_raw))
         if mention:
-            pending = {"wakeId": mention["updateId"], "from": mention.get("from")}
+            pending = {"wakeId": _wake_id(lane, mention), "from": mention.get("from")}
 
     return {
         "lane": lane["slug"],
         "botUsername": lane["bot_username"],
         "defaultChatId": lane["default_chat_id"] or None,
         "deliveryMode": mode,
-        "webhookUrl": runtime.webhook_url(lane["slug"]) if mode == "webhook" else None,
+        # hub = the hub receives this bot's updates; send_only = another system
+        # owns them (the hub never touches its webhook) and the lane reads the
+        # chat through the other lanes' bots.
+        "receiveMode": lane.get("receive_mode") or "hub",
+        "webhookUrl": runtime.webhook_url(lane["slug"]) if mode == "webhook" and not _send_only(lane) else None,
         "botCanPost": await _bot_can_post(lane),
         "lastSendOk": int(db.get_lane_state(lane_slug, "last_send_ok") or 0) or None,
         "lastSendError": db.get_lane_state(lane_slug, "last_send_error") or None,
-        "webhook": await _webhook_status(lane) if mode == "webhook" else None,
+        "webhook": await _webhook_status(lane) if mode == "webhook" or _send_only(lane) else None,
         "polling": runtime.polling(lane["slug"]),
         "storedMessages": db.count_messages(lane["slug"]),
         "seenChats": db.seen_chats(lane["slug"]),

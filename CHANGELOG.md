@@ -21,8 +21,37 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
   are removed; only `HUB_ADMIN_PASSWORD` signs in.
 - **Without Docker:** run `pip install -r requirements.txt` again (new
   dependency `python-multipart`), or the hub won't start.
+- **A bot that another system already uses is safe from 0.5.4 on.** Earlier
+  versions set the webhook of every bot you add, taking its updates (users'
+  DMs included) away from whatever app received them — on add, on every
+  restart and edit, and disable/delete removed that app's webhook. 0.5.4 turns
+  such lanes into **send-only**. If an older version already took a bot
+  over, see [UPDATE.md](docs/UPDATE.md#054--send-only-lanes).
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
+
+## 0.5.4 — 2026-09-28
+
+- **Fix: adding a bot took its updates away from the app that owned it.** A
+  Telegram bot has one webhook. The hub set it for every lane, so a bot that
+  already served another system (e.g. a product bot with its own backend)
+  silently stopped reaching that system — users' private messages started
+  flowing into the hub. Worse, it happened again on every hub restart or lane
+  edit, and **disable** / **delete** called `deleteWebhook`, removing the other
+  system's webhook. Now:
+  - New lane mode **send-only** (`receiveMode: "send_only"`): the hub never
+    calls `setWebhook`, `deleteWebhook` or `getUpdates` for the bot. It still
+    posts (`/send`, `/sendFile`), reads the bound chat through `/feed`, and
+    gets `@mentions` via `/wake`, found in the chat feed captured by the other
+    lanes' bots (people's messages only).
+  - Before touching a `hub` lane's webhook (add, start, edit, disable,
+    delete) the hub checks `getWebhookInfo`. A webhook pointing anywhere else
+    (this hub at an old address with the same `/{lane}/webhook` path counts as
+    its own) switches the lane to send-only with a warning in the panel. If
+    Telegram can't be asked, the webhook is left alone.
+  - The lane card shows **Updates: hub / send-only** with a switch; taking a
+    webhook over asks for confirmation. `/info` shows `receiveMode` and
+    `webhook.ownedByHub`.
 
 ## 0.5.3 — 2026-09-26
 

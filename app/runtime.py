@@ -10,12 +10,14 @@ Keeps each enabled lane wired to Telegram in the configured delivery mode:
 
 `sync_lane` is called at startup for every lane and again whenever a lane is
 created/updated/deleted from the admin API, so the runtime always reflects the
-database.
+database. A lane whose bot's updates belong to another system (`send_only`)
+is never touched: the hub doesn't set, delete or poll its webhook.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+from urllib.parse import urlsplit
 
 from . import db, telegram
 from .config import settings
@@ -82,16 +84,55 @@ class LaneRuntime:
         for lane in db.list_lanes():
             await self.sync_lane(await canonicalize_binding(lane))
 
-    async def sync_lane(self, lane: dict) -> str | None:
+    def is_own_webhook(self, slug: str, url: str | None) -> bool:
+        """True when `url` is this lane's hub webhook — at the current address,
+        or at a previous address of the hub (same `/{slug}/webhook` path, e.g.
+        after a domain move). An empty url is nobody's."""
+        if not url:
+            return False
+        if url == self.webhook_url(slug):
+            return True
+        return urlsplit(url).path.rstrip("/").endswith(f"/{slug}/webhook")
+
+    async def foreign_webhook(self, lane: dict) -> str | None:
+        """The bot's webhook URL if another system (not this hub) receives its
+        updates, else None. Raises TelegramError when Telegram can't be asked."""
+        info = await telegram.get_webhook_info(lane["bot_token"])
+        url = (info or {}).get("url") or ""
+        if url and not self.is_own_webhook(lane["slug"], url):
+            return url
+        return None
+
+    async def sync_lane(self, lane: dict, take_over: bool = False) -> str | None:
         """Bring one lane's delivery in line with its DB row.
 
-        Returns a warning string when the Telegram side of the sync failed
+        A Telegram bot has ONE webhook, so setting ours takes the bot's updates
+        (including users' DMs) away from whatever received them before. The hub
+        therefore never touches the webhook of a `send_only` lane, and before
+        setting or deleting it for a `hub` lane it checks who owns it: if
+        another system does, the lane is switched to `send_only` instead —
+        unless `take_over` (the operator explicitly chose "hub receives").
+
+        Returns a warning string when something needs the operator's attention
         (the lane row itself is already saved) so callers can surface it."""
         slug = lane["slug"]
         self._stop_poller(slug)
         mode = settings.resolved_delivery_mode()
-        if mode == "off":
+        if mode == "off" or lane.get("receive_mode") == "send_only":
             return None
+        if not take_over:
+            try:
+                foreign = await self.foreign_webhook(lane)
+            except telegram.TelegramError as exc:
+                LOG.warning("lane %s: getWebhookInfo failed, webhook left as is: %s", slug, exc)
+                return f"could not check the bot's webhook ({exc}) — left it untouched; save the lane again later"
+            if foreign:
+                db.update_lane(slug, {"receive_mode": "send_only"})
+                db.delete_lane_state(slug, "wake_cursor")  # mentions are now found via the chat feed
+                LOG.warning("lane %s: bot's updates go to %s — switched to send-only", slug, foreign)
+                return (f"this bot's updates already go to {foreign} — the lane was set to send-only so that "
+                        "system keeps working. The bot still posts through the hub and reads the chat via "
+                        "the other lanes' bots.")
         if not lane.get("enabled"):
             try:
                 await telegram.delete_webhook(lane["bot_token"])
@@ -116,12 +157,17 @@ class LaneRuntime:
         return None
 
     async def remove_lane(self, lane: dict) -> None:
+        """Stop delivery for a lane being deleted. Only a webhook that is ours
+        is removed — never another system's."""
         self._stop_poller(lane["slug"])
-        if settings.resolved_delivery_mode() != "off":
-            try:
-                await telegram.delete_webhook(lane["bot_token"])
-            except telegram.TelegramError as exc:
-                LOG.warning("lane %s: deleteWebhook on remove failed: %s", lane["slug"], exc)
+        if settings.resolved_delivery_mode() == "off" or lane.get("receive_mode") == "send_only":
+            return
+        try:
+            if await self.foreign_webhook(lane):
+                return
+            await telegram.delete_webhook(lane["bot_token"])
+        except telegram.TelegramError as exc:
+            LOG.warning("lane %s: deleteWebhook on remove failed: %s", lane["slug"], exc)
 
     async def stop_all(self) -> None:
         for slug in list(self._pollers):
@@ -149,7 +195,7 @@ class LaneRuntime:
 
     async def _poll_once(self, slug: str) -> None:
         lane = db.get_lane(slug)
-        if not lane or not lane["enabled"]:
+        if not lane or not lane["enabled"] or lane.get("receive_mode") == "send_only":
             return
         offset_raw = db.get_lane_state(slug, "next_offset")
         offset = int(offset_raw) if offset_raw is not None else None

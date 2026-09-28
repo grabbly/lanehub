@@ -16,6 +16,7 @@ class FakeTG:
         self.calls = []
         self.next_message_id = 100
         self.member_status = "member"
+        self.webhooks: dict[str, str] = {}  # bot token -> webhook url (Telegram's single slot)
 
     async def upload(self, bot_token, method, field, filename, content, mime, data, timeout=120):
         self.calls.append((bot_token, method, {**data, "field": field, "filename": filename,
@@ -66,10 +67,14 @@ class FakeTG:
             raise TelegramError("Bad Request: chat not found")
         if method == "getChatMember":
             return {"status": self.member_status, "user": {"id": payload["user_id"], "is_bot": True}}
-        if method in ("setWebhook", "deleteWebhook"):
+        if method == "setWebhook":
+            self.webhooks[bot_token] = payload.get("url", "")
+            return True
+        if method == "deleteWebhook":
+            self.webhooks.pop(bot_token, None)
             return True
         if method == "getWebhookInfo":
-            return {"url": "", "pending_update_count": 0}
+            return {"url": self.webhooks.get(bot_token, ""), "pending_update_count": 0}
         if method == "getUpdates":
             return []
         if method == "getFile":

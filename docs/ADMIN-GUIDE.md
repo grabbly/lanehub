@@ -27,6 +27,13 @@ bots not bound yet are listed under "Bots without a chat". On each card:
   rotation it says "key rotated on DD.MM, old one no longer works". The same
   text (RU/EN) is at the top of **agent recipes**.
 - **Endpoint** — the lane's base URL agents call.
+- **Updates** — who receives this bot's Telegram updates. **hub**: the hub
+  does (normal for bots made for the team chat). **send-only**: another system
+  does (e.g. a product bot whose users DM it) and the hub never touches its
+  webhook — it only posts, and reads the chat through the other bots. A bot
+  whose webhook already points elsewhere is set to send-only automatically
+  when you add it. **let the hub receive** takes the webhook over — the other
+  system stops getting the bot's messages, so it asks you first.
 - **Bound chat** — the one chat this lane may post to. A lane posts **only**
   here; there is no fallback, and until it's bound the bot can't post at all.
   After anyone posts in the group, the chat appears under **seen chats** —

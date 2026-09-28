@@ -738,3 +738,40 @@ def test_admin_handle_binding_keeps_alias(client):
     # rebinding by numeric id drops the alias
     client.patch("/admin/api/lanes/backend", json={"defaultChatId": "-100500"})
     assert client.post("/backend/send", json={"text": "x", "chatId": "@chan"}, headers=h).status_code == 403
+
+
+def test_send_only_lane_wakes_on_mentions_seen_by_other_bots(client):
+    """The send-only bot receives nothing itself; its @mentions are found in
+    the bound chat via the copies captured by other lanes' bots."""
+    from app import db
+    login(client)
+    make_lane(client, slug="gabbs")
+    frai = make_lane(client, slug="frai", receiveMode="send_only")
+    db.update_lane("frai", {"bot_username": "frai_bot"})
+    h = {"X-Bridge-Token": frai["apiKey"]}
+    _push_human(client, "gabbs", update_id=1, message_id=1, text="old @frai_bot")
+    assert client.get("/frai/wake", headers=h).json()["wake"] is False  # seeds 'from now'
+
+    _push_human(client, "gabbs", update_id=2, message_id=2, text="unrelated")
+    assert client.get("/frai/wake", headers=h).json()["wake"] is False
+    _push_human(client, "gabbs", update_id=3, message_id=3, text="@frai_bot глянь", user="alex")
+    w = client.get("/frai/wake", headers=h).json()
+    assert w["wake"] is True and w["text"] == "@frai_bot глянь" and w["from"] == "alex"
+    assert client.get("/frai/wake", headers=h).json()["wakeId"] == w["wakeId"]  # until acked
+    client.post("/frai/wake/ack", json={"wakeId": w["wakeId"]}, headers=h)
+    assert client.get("/frai/wake", headers=h).json()["wake"] is False
+
+
+def test_send_only_wake_skips_bot_messages_and_never_stalls(client):
+    from app import db
+    login(client)
+    gabbs = make_lane(client, slug="gabbs")
+    frai = make_lane(client, slug="frai", receiveMode="send_only")
+    db.update_lane("frai", {"bot_username": "frai_bot"})
+    h = {"X-Bridge-Token": frai["apiKey"]}
+    client.get("/frai/wake", headers=h)  # seed
+    # another bot mentioning frai must not wake it (no bot ping-pong)
+    client.post("/gabbs/send", json={"text": "@frai_bot hi from a bot"}, headers={"X-Bridge-Token": gabbs["apiKey"]})
+    assert client.get("/frai/wake", headers=h).json()["wake"] is False
+    cursor = int(db.get_lane_state("frai", "wake_cursor"))
+    assert cursor > 0  # moved past the bot row

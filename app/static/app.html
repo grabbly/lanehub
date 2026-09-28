@@ -427,7 +427,7 @@ function laneCard(l, opts = {}) {
       <span class="slug">/${esc(l.slug)}</span>
       <span class="bot">${l.botUsername ? '@' + esc(l.botUsername) : ''} ${esc(l.title || '')}</span>
       <span class="badge ${l.enabled ? 'on' : 'off'}">${l.enabled ? 'enabled' : 'disabled'}</span>
-      <span class="badge">${esc(l.deliveryMode)}${l.deliveryMode === 'polling' ? (l.polling ? ' ✓' : ' ✗') : ''}</span>
+      <span class="badge">${l.receiveMode === 'send_only' ? 'send-only' : esc(l.deliveryMode) + (l.deliveryMode === 'polling' ? (l.polling ? ' ✓' : ' ✗') : '')}</span>
       <span class="badge">${l.storedMessages} msgs</span>
     </div>
     <div class="lane-body">
@@ -444,6 +444,13 @@ function laneCard(l, opts = {}) {
         <span class="hint">after Revoke in @BotFather — the old token stops working</span>
       </div>
       <div class="kv"><span class="k">Endpoint</span><code>${esc(base)}/${esc(l.slug)}/…</code></div>
+      <div class="kv"><span class="k">Updates</span>
+        ${l.receiveMode === 'send_only'
+          ? `<span class="badge">send-only</span> <span class="hint">another system receives this bot's updates; the hub never touches its webhook, only posts. The chat is read through the other bots.</span>
+             <button class="small" data-act="recv-hub">let the hub receive</button>`
+          : `<span class="badge">hub</span> <span class="hint">the hub receives this bot's updates</span>
+             <button class="small" data-act="recv-send-only">make send-only</button>`}
+      </div>
       <div class="kv"><span class="k">Operator chat</span>
         <input data-opchat style="max-width:210px;" placeholder="-100… (empty = auto)">
         <button class="small" data-act="opsave">save</button>
@@ -460,7 +467,7 @@ function laneCard(l, opts = {}) {
     </div>
     <div class="actions">
       <button class="small" data-act="toggle">${l.enabled ? 'disable' : 'enable'}</button>
-      ${l.deliveryMode === 'webhook' ? '<button class="small" data-act="webhook-info">webhook status</button>' : ''}
+      ${l.deliveryMode === 'webhook' || l.receiveMode === 'send_only' ? '<button class="small" data-act="webhook-info">webhook status</button>' : ''}
       <button class="small" data-act="recipes"${bound ? '' : ' disabled title="bind a chat first"'}>agent recipes</button>
       <button class="small" data-act="log">session log</button>
       <button class="small danger" data-act="delete">delete</button>
@@ -507,6 +514,17 @@ function laneCard(l, opts = {}) {
     await api(`/admin/api/lanes/${l.slug}`, { method: 'PATCH', body: JSON.stringify({ defaultChatId: chip.dataset.setChat }) });
     await loadLanes();
   }));
+  const setRecv = (mode) => run(async () => {
+    if (mode === 'hub' && !confirm(
+      `Let the hub receive @${l.botUsername}'s updates?\n\nThe hub will set the bot's webhook. Whatever receives the bot's messages now (e.g. its own app / product backend) will STOP getting them, including users' private messages.`)) return;
+    const res = await api(`/admin/api/lanes/${l.slug}`, { method: 'PATCH', body: JSON.stringify({ receiveMode: mode }) });
+    if (res.warning) alert(res.warning);
+    await loadLanes();
+  });
+  const recvHub = div.querySelector('[data-act=recv-hub]');
+  if (recvHub) recvHub.onclick = setRecv('hub');
+  const recvSend = div.querySelector('[data-act=recv-send-only]');
+  if (recvSend) recvSend.onclick = setRecv('send_only');
   div.querySelector('[data-act=toggle]').onclick = run(async () => {
     await api(`/admin/api/lanes/${l.slug}`, { method: 'PATCH', body: JSON.stringify({ enabled: !l.enabled }) });
     await loadLanes();
@@ -672,7 +690,7 @@ function chatBlock(chatId, title, group) {
           defaultChatId: chatId,
         }),
       });
-      if (lane.warning) { e.textContent = 'Added with a warning: ' + lane.warning; }
+      if (lane.warning) alert('Added with a warning: ' + lane.warning);  // the block re-renders below
       await loadLanes();
     } catch (err) { e.textContent = err.message; }
   };

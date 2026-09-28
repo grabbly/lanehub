@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS lanes (
     webhook_secret TEXT NOT NULL,
     default_chat_id TEXT NOT NULL DEFAULT '',
     enabled INTEGER NOT NULL DEFAULT 1,
+    receive_mode TEXT NOT NULL DEFAULT 'hub',
     created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS messages (
@@ -102,6 +103,11 @@ def connect() -> sqlite3.Connection:
 def _ensure_columns(conn: sqlite3.Connection) -> None:
     """Idempotent column adds for tables that predate a field (SQLite has no
     ADD COLUMN IF NOT EXISTS)."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(lanes)")}
+    if "receive_mode" not in cols:
+        # 'hub' = the hub owns the bot's updates (webhook/polling); 'send_only' =
+        # another system owns them and the hub must never touch the webhook.
+        conn.execute("ALTER TABLE lanes ADD COLUMN receive_mode TEXT NOT NULL DEFAULT 'hub'")
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(lane_logs)")}
     if "cost_usd" not in cols:
         conn.execute("ALTER TABLE lane_logs ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0")
@@ -221,11 +227,15 @@ def lane_to_dict(row: sqlite3.Row, include_secrets: bool = False) -> dict:
     return d
 
 
-def create_lane(slug: str, title: str, bot_token: str, bot_username: str, default_chat_id: str) -> dict:
+RECEIVE_MODES = ("hub", "send_only")
+
+
+def create_lane(slug: str, title: str, bot_token: str, bot_username: str, default_chat_id: str,
+                receive_mode: str = "hub") -> dict:
     with connect() as conn:
         conn.execute(
             "INSERT INTO lanes(slug, title, bot_token, bot_username, api_key, webhook_secret, "
-            "default_chat_id, enabled, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, 1, ?)",
+            "default_chat_id, enabled, created_at, receive_mode) VALUES(?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
             (
                 slug,
                 title,
@@ -235,6 +245,7 @@ def create_lane(slug: str, title: str, bot_token: str, bot_username: str, defaul
                 new_webhook_secret(),
                 default_chat_id,
                 int(time.time()),
+                receive_mode,
             ),
         )
     return get_lane(slug)  # type: ignore[return-value]
@@ -252,7 +263,7 @@ def list_lanes() -> list[dict]:
 
 
 def update_lane(slug: str, fields: dict) -> dict | None:
-    allowed = {"title", "bot_token", "bot_username", "default_chat_id", "enabled"}
+    allowed = {"title", "bot_token", "bot_username", "default_chat_id", "enabled", "receive_mode"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if updates:
         cols = ", ".join(f"{k} = ?" for k in updates)
@@ -295,6 +306,11 @@ def set_lane_state(slug: str, key: str, value: str) -> None:
             "ON CONFLICT(lane_slug, key) DO UPDATE SET value = excluded.value",
             (slug, key, value),
         )
+
+
+def delete_lane_state(slug: str, key: str) -> None:
+    with connect() as conn:
+        conn.execute("DELETE FROM lane_state WHERE lane_slug = ? AND key = ?", (slug, key))
 
 
 # --- lane logs (watcher activity, rolling per lane) ----------------------

@@ -14,6 +14,8 @@ import secrets as pysecrets
 import time
 
 from fastapi import APIRouter, Cookie, HTTPException
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from . import db, telegram
@@ -71,6 +73,7 @@ def _lane_view(lane: dict) -> dict:
         "apiKey": lane["api_key"],
         "defaultChatId": lane["default_chat_id"],
         "enabled": bool(lane["enabled"]),
+        "receiveMode": lane.get("receive_mode") or "hub",
         "createdAt": lane["created_at"],
         "keyRotatedAt": int(db.get_lane_state(lane["slug"], "key_rotated_at") or 0) or None,
         "deliveryMode": mode,
@@ -113,6 +116,10 @@ class LaneCreate(BaseModel):
     title: str = ""
     bot_token: str = Field(alias="botToken")
     default_chat_id: str = Field(default="", alias="defaultChatId")
+    # None = auto: the hub receives the bot's updates unless another system
+    # already does (then the lane becomes send_only). 'hub' = take the webhook
+    # over even so; 'send_only' = never touch it.
+    receive_mode: Literal["hub", "send_only"] | None = Field(default=None, alias="receiveMode")
 
     model_config = {"populate_by_name": True}
 
@@ -140,6 +147,7 @@ class LaneUpdate(BaseModel):
     default_chat_id: str | None = Field(default=None, alias="defaultChatId")
     enabled: bool | None = None
     operator_chat_id: str | None = Field(default=None, alias="operatorChatId")
+    receive_mode: Literal["hub", "send_only"] | None = Field(default=None, alias="receiveMode")
 
     model_config = {"populate_by_name": True}
 
@@ -186,9 +194,11 @@ async def lanes_create(req: LaneCreate, hub_session: str | None = Cookie(default
         # a message posted. No silent inherit of a hub-wide chat (that was the
         # footgun that sent bots into the wrong chat).
         default_chat_id=await canonical_chat_id(token, req.default_chat_id),
+        receive_mode=req.receive_mode or "hub",
     )
     remember_chat_alias(slug, req.default_chat_id, lane_dict["default_chat_id"])
-    warning = await runtime.sync_lane(lane_dict)
+    warning = await runtime.sync_lane(lane_dict, take_over=req.receive_mode == "hub")
+    lane_dict = db.get_lane(slug) or lane_dict  # sync may have switched it to send_only
     view = _lane_view(lane_dict)
     if warning:
         view["warning"] = warning
@@ -221,9 +231,15 @@ async def lanes_update(slug: str, req: LaneUpdate, hub_session: str | None = Coo
             fields.get("bot_token", lane["bot_token"]), req.default_chat_id
         )
         remember_chat_alias(slug, req.default_chat_id, fields["default_chat_id"])
+    take_over = False
+    if req.receive_mode is not None and req.receive_mode != (lane.get("receive_mode") or "hub"):
+        fields["receive_mode"] = req.receive_mode
+        db.delete_lane_state(slug, "wake_cursor")  # the two modes find mentions differently
+        take_over = req.receive_mode == "hub"  # the operator chose to take the webhook
     lane = db.update_lane(slug, fields)
     assert lane is not None
-    warning = await runtime.sync_lane(lane)
+    warning = await runtime.sync_lane(lane, take_over=take_over)
+    lane = db.get_lane(slug) or lane
     view = _lane_view(lane)
     if warning:
         view["warning"] = warning

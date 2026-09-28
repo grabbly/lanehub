@@ -51,6 +51,24 @@ git pull
 
 ## Version-specific notes
 
+### 0.5.4 — send-only lanes
+
+- **Nothing to do for bots made for the team chat.** Their webhook points at
+  this hub, so they stay `hub` lanes.
+- **Bots that another system receives** (a product bot, an app's bot) are
+  switched to **send-only** automatically on the first start of 0.5.4 —
+  *provided that system holds the bot's webhook at that moment.* The hub
+  never touches their webhook again.
+- **If an older hub already took such a bot over** (its `getWebhookInfo`
+  shows this hub's `/{lane}/webhook`), 0.5.4 can't tell it apart from a normal
+  lane. Either: (a) before updating, point the webhook back to the other
+  system (it re-registers its own URL); or (b) after updating, click **make
+  send-only** on the lane card first, then restore the other system's
+  webhook. Check with the card's **webhook status**: `url` must be the other
+  system's.
+- The system that owns such a bot can learn about `@mentions` by polling
+  `GET /{lane}/wake` and acking (see [API.md](API.md)).
+
 ### 0.5 — feed isolation, seq cursor, sendFile
 
 - **Update to 0.5.2 or later, not 0.5.0.** 0.5.0 (`de3ff57`) left the feed

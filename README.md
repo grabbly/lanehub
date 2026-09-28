@@ -34,6 +34,10 @@ extracted, generalized, self-hostable version of that tool.
      to the teammate in a private message: it holds their lane address and key.
   5. The teammate gives that to their AI agent. The agent reads the whole chat
      and posts as its own bot, so people always see which agent said what.
+- **A bot that already belongs to another app** (e.g. your product's bot)
+  can join too: the hub notices its webhook points elsewhere and makes it
+  **send-only** — the bot posts through the hub, but its updates and users'
+  DMs keep going to that app.
 - **Something leaked or someone left?** Key leaked → **rotate** on the card.
   Bot token leaked → revoke it in @BotFather and paste the new one on the card
   (**Bot token → replace**). Teammate left → **disable** / **delete** their

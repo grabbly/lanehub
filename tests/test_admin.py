@@ -93,3 +93,103 @@ def test_history_survives_lane_delete(client):
     client.delete("/admin/api/lanes/temp")
     feed = client.get("/admin/api/feed").json()
     assert any(m["text"] == "keep me" for m in feed["messages"])
+
+
+# --- 0.5.4: never take over a bot whose updates belong to another system ---
+
+PORTAL = "https://portal.example.com/api/telegram/webhook"
+
+
+def _webhook_mode(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "delivery_mode", "webhook")
+    monkeypatch.setattr(settings, "public_base_url", "https://hub.example.com")
+
+
+def _webhook_calls(client, token):
+    return [c[1] for c in client.fake_tg.calls if c[0] == token and c[1] in ("setWebhook", "deleteWebhook")]
+
+
+def test_bot_owned_elsewhere_becomes_send_only_on_add(client, monkeypatch):
+    _webhook_mode(monkeypatch)
+    login(client)
+    client.fake_tg.webhooks["frai-token:abc"] = PORTAL
+    lane = make_lane(client, slug="frai")
+    assert lane["receiveMode"] == "send_only"
+    assert PORTAL in lane["warning"]
+    assert _webhook_calls(client, "frai-token:abc") == []
+    assert client.fake_tg.webhooks["frai-token:abc"] == PORTAL
+
+    # sending still works through the hub
+    resp = client.post("/frai/send", json={"text": "hi"}, headers={"X-Bridge-Token": lane["apiKey"]})
+    assert resp.status_code == 200
+    info = client.get("/frai/info", headers={"X-Bridge-Token": lane["apiKey"]}).json()
+    assert info["receiveMode"] == "send_only" and info["webhookUrl"] is None
+    assert info["webhook"]["url"] == PORTAL and info["webhook"]["ownedByHub"] is False
+
+
+def test_send_only_lane_is_never_touched(client, monkeypatch):
+    """Edit, disable, enable, delete, restart: the portal keeps its webhook."""
+    import asyncio
+    from app.runtime import runtime
+    _webhook_mode(monkeypatch)
+    login(client)
+    client.fake_tg.webhooks["frai-token:abc"] = PORTAL
+    make_lane(client, slug="frai")
+    client.patch("/admin/api/lanes/frai", json={"title": "Frai"})
+    client.patch("/admin/api/lanes/frai", json={"enabled": False})
+    client.patch("/admin/api/lanes/frai", json={"enabled": True})
+    asyncio.run(runtime.sync_all())
+    client.delete("/admin/api/lanes/frai")
+    assert _webhook_calls(client, "frai-token:abc") == []
+    assert client.fake_tg.webhooks["frai-token:abc"] == PORTAL
+
+
+def test_existing_lane_protected_on_startup(client, monkeypatch):
+    """A 0.5.3 hub lane whose bot now points elsewhere (the Frai incident): on
+    the next start the hub switches it to send-only instead of re-taking it."""
+    import asyncio
+    from app import db
+    from app.runtime import runtime
+    login(client)
+    make_lane(client, slug="frai")  # delivery 'off' here, so nothing was set
+    assert db.get_lane("frai")["receive_mode"] == "hub"
+    client.fake_tg.webhooks["frai-token:abc"] = PORTAL
+    _webhook_mode(monkeypatch)
+    asyncio.run(runtime.sync_all())
+    assert db.get_lane("frai")["receive_mode"] == "send_only"
+    assert client.fake_tg.webhooks["frai-token:abc"] == PORTAL
+
+
+def test_own_webhook_and_previous_hub_address_are_ours(client, monkeypatch):
+    _webhook_mode(monkeypatch)
+    login(client)
+    client.fake_tg.webhooks["back-token:abc"] = "https://old-hub.example.org/back/webhook"
+    lane = make_lane(client, slug="back")
+    assert lane["receiveMode"] == "hub" and "warning" not in lane
+    assert client.fake_tg.webhooks["back-token:abc"] == "https://hub.example.com/back/webhook"
+    # delete releases OUR webhook
+    client.delete("/admin/api/lanes/back")
+    assert "back-token:abc" not in client.fake_tg.webhooks
+
+
+def test_operator_can_explicitly_take_over(client, monkeypatch):
+    _webhook_mode(monkeypatch)
+    login(client)
+    client.fake_tg.webhooks["frai-token:abc"] = PORTAL
+    make_lane(client, slug="frai")
+    resp = client.patch("/admin/api/lanes/frai", json={"receiveMode": "hub"})
+    assert resp.json()["receiveMode"] == "hub"
+    assert client.fake_tg.webhooks["frai-token:abc"] == "https://hub.example.com/frai/webhook"
+    # and back: send-only again never touches it
+    client.fake_tg.webhooks["frai-token:abc"] = PORTAL
+    assert client.patch("/admin/api/lanes/frai", json={"receiveMode": "send_only"}).json()["receiveMode"] == "send_only"
+    assert client.fake_tg.webhooks["frai-token:abc"] == PORTAL
+
+
+def test_explicit_send_only_on_create(client, monkeypatch):
+    _webhook_mode(monkeypatch)
+    login(client)
+    lane = make_lane(client, slug="frai", receiveMode="send_only")
+    assert lane["receiveMode"] == "send_only"
+    assert _webhook_calls(client, "frai-token:abc") == []
