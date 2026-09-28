@@ -775,3 +775,17 @@ def test_send_only_wake_skips_bot_messages_and_never_stalls(client):
     assert client.get("/frai/wake", headers=h).json()["wake"] is False
     cursor = int(db.get_lane_state("frai", "wake_cursor"))
     assert cursor > 0  # moved past the bot row
+
+
+def test_wake_ignores_mentions_in_other_chats(client):
+    """One bot, two lanes (one per chat): the lane holding the webhook receives
+    both chats, but only a mention in its own bound chat may wake it."""
+    login(client)
+    lane = make_lane(client)  # bound to -100500
+    h = {"X-Bridge-Token": lane["apiKey"]}
+    client.get("/backend/wake", headers=h)  # seed
+    _push_human(client, "backend", update_id=5, message_id=5, text="@test_bot hi", chat_id=-100600)
+    assert client.get("/backend/wake", headers=h).json()["wake"] is False
+    _push_human(client, "backend", update_id=6, message_id=6, text="@test_bot here", chat_id=-100500)
+    w = client.get("/backend/wake", headers=h).json()
+    assert w["wake"] is True and w["chatId"] == -100500

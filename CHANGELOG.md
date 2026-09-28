@@ -30,6 +30,19 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.5.5 — 2026-09-28
+
+- **Fix: a mention in one chat could wake the lane of another chat.** When
+  one bot serves several lanes (one per chat), its single webhook delivers
+  every chat's updates to one of them; `/wake` looked at all of them, so a
+  mention in chat A woke the lane bound to chat B, whose reply then went to B.
+  `/wake` now only considers the lane's bound chat.
+- **One bot in several lanes, explained.** A bot has one webhook, so only one
+  of its lanes receives its updates; since 0.5.4 the others become
+  **send-only** automatically (they still post, read their chat via `/feed`
+  and get their mentions). Deleting the lane that holds the webhook leaves the
+  others deaf until one is switched back to **hub** on its card.
+
 ## 0.5.4 — 2026-09-28
 
 - **Fix: adding a bot took its updates away from the app that owned it.** A

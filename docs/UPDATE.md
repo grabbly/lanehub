@@ -66,6 +66,12 @@ git pull
   send-only** on the lane card first, then restore the other system's
   webhook. Check with the card's **webhook status**: `url` must be the other
   system's.
+- **One bot in several lanes** (same token, one lane per chat): only one lane
+  can hold the bot's webhook, so on start the others are switched to
+  send-only. That's expected — each still posts to its own chat, reads it via
+  `/feed` and gets its mentions (0.5.5+ only from its own chat). If you
+  delete the lane that holds the webhook, switch one of the others back to
+  **hub** on its card.
 - The system that owns such a bot can learn about `@mentions` by polling
   `GET /{lane}/wake` and acking (see [API.md](API.md)).
 

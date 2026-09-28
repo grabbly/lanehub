@@ -310,7 +310,12 @@ def _scan_mention(lane: dict, cursor: int) -> tuple[dict | None, list[dict]]:
         candidates = [r for r in rows if not r["outgoing"] and not r.get("fromIsBot")]
     else:
         rows = db.query_messages(lane["slug"], cursor, 500, "asc")
-        scanned = candidates = [r for r in rows if not r["outgoing"]]
+        scanned = [r for r in rows if not r["outgoing"]]
+        # Only the bound chat wakes the lane: its reply can only go there. One
+        # bot serving several lanes (one per chat) receives every chat's
+        # updates under whichever lane holds the webhook.
+        bound = (lane.get("default_chat_id") or "").strip()
+        candidates = [r for r in scanned if str(r.get("chatId")) == bound]
     for r in candidates:
         sender = (r.get("from") or "").lstrip("@").lower()
         if sender == bot_username.lstrip("@").lower():
