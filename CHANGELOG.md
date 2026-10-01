@@ -30,6 +30,29 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.6.0 — 2026-10-01
+
+- **One bot, many chats.** Add the same bot to any number of chats and give
+  each its own lane (same token, one card per chat): each lane has its own
+  key, bound chat, history and `/wake`, and all of them receive. Until now
+  only one of them held the bot's webhook and the others were made
+  **send-only** — adding a lane warned "this bot's updates already go to
+  …/<other lane>/webhook", and deleting that lane left the others deaf.
+  - The bot's single webhook is registered at its oldest enabled lane; every
+    update is filed under the lane bound to its chat. A chat no lane is bound
+    to (or a DM) stays with that lane and appears under **seen chats** on
+    every card of the bot, ready to bind.
+  - Disabling or deleting that lane moves the webhook to the next one;
+    the last one releases it. Polling runs one poller per bot.
+  - Receive mode is per bot: switching one card to hub / send-only switches
+    all lanes of the bot. A bot owned by another system is still never
+    touched.
+  - The operator chat of any lane of the bot works (it arrives through the
+    shared webhook).
+  - On start, lanes left send-only by 0.5.4/0.5.5 because of a sibling lane
+    go back to hub. `/info` → `webhook.receiverLane` shows where the webhook
+    points; the lane card lists the bot's other lanes.
+
 ## 0.5.5 — 2026-09-28
 
 - **Fix: a mention in one chat could wake the lane of another chat.** When

@@ -450,6 +450,7 @@ function laneCard(l, opts = {}) {
              <button class="small" data-act="recv-hub">let the hub receive</button>`
           : `<span class="badge">hub</span> <span class="hint">the hub receives this bot's updates</span>
              <button class="small" data-act="recv-send-only">make send-only</button>`}
+        ${(l.botLanes || []).length ? ` <span class="hint">same bot also in ${l.botLanes.map(s => '/' + esc(s)).join(', ')} — one webhook for all of them; each lane gets only its own chat. Switching here switches them all.</span>` : ''}
       </div>
       <div class="kv"><span class="k">Operator chat</span>
         <input data-opchat style="max-width:210px;" placeholder="-100… (empty = auto)">

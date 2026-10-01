@@ -51,6 +51,18 @@ git pull
 
 ## Version-specific notes
 
+### 0.6.0 — one bot, many chats
+
+- **Nothing to do.** Lanes that share a bot token and were made send-only by
+  0.5.4/0.5.5 (because another lane of the same bot held the webhook) go back
+  to `hub` on the first start, and the webhook moves to the bot's oldest
+  enabled lane. Their wake cursor is reseeded, so mentions posted while the
+  hub restarts may be skipped once.
+- A bot whose webhook points at another system is left alone, as before —
+  all of its lanes stay send-only.
+- Messages captured before the update stay under the lane that received
+  them; `/feed` shows them in the right chat anyway.
+
 ### 0.5.4 — send-only lanes
 
 - **Nothing to do for bots made for the team chat.** Their webhook points at
@@ -66,7 +78,8 @@ git pull
   send-only** on the lane card first, then restore the other system's
   webhook. Check with the card's **webhook status**: `url` must be the other
   system's.
-- **One bot in several lanes** (same token, one lane per chat): only one lane
+- **One bot in several lanes** (same token, one lane per chat) — *since
+  0.6.0 all of them receive, see above.* In 0.5.4/0.5.5 only one lane
   can hold the bot's webhook, so on start the others are switched to
   send-only. That's expected — each still posts to its own chat, reads it via
   `/feed` and gets its mentions (0.5.5+ only from its own chat). If you

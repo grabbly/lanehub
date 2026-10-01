@@ -36,6 +36,14 @@ the lane is switched to `send_only` and the panel shows a warning. The
 operator can switch a lane either way on its card; switching to `hub` takes
 the webhook over and needs a confirmation.
 
+**One bot in several chats.** Add the same bot token once per chat: each lane
+has its own key, bound chat, history and `/wake`. The bot still has one
+webhook — the hub registers it at the bot's oldest enabled lane and files every
+update under the lane bound to the update's chat (a chat no lane is bound to,
+or a DM, stays with that receiver lane). Receive mode belongs to the bot:
+switching one of its lanes to `hub` / `send_only` switches all of them, and
+deleting or disabling the receiver moves the webhook to the next lane.
+
 ## Message object
 
 ```json
@@ -216,6 +224,7 @@ answered live by Telegram:
 - `receiveMode` — `hub` or `send_only` (see the top of this page).
 - `webhook` (webhook mode, and always for send-only lanes) — `url`,
   `ownedByHub` (false = another system receives this bot's updates),
+  `receiverLane` (which lane of this bot the webhook points at),
   `pendingUpdateCount`, `lastErrorDate`, `lastErrorMessage` from Telegram's
   `getWebhookInfo`.
 

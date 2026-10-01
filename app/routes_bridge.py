@@ -311,9 +311,9 @@ def _scan_mention(lane: dict, cursor: int) -> tuple[dict | None, list[dict]]:
     else:
         rows = db.query_messages(lane["slug"], cursor, 500, "asc")
         scanned = [r for r in rows if not r["outgoing"]]
-        # Only the bound chat wakes the lane: its reply can only go there. One
-        # bot serving several lanes (one per chat) receives every chat's
-        # updates under whichever lane holds the webhook.
+        # Only the bound chat wakes the lane: its reply can only go there.
+        # (Updates are filed by chat, but a chat no lane is bound to stays
+        # with the bot's receiver lane.)
         bound = (lane.get("default_chat_id") or "").strip()
         candidates = [r for r in scanned if str(r.get("chatId")) == bound]
     for r in candidates:
@@ -485,6 +485,13 @@ async def _bot_can_post(lane: dict) -> dict:
     return {"ok": ok, "status": status}
 
 
+def _receiver_url(lane: dict) -> str | None:
+    """Where the hub receives this lane's bot updates — the receiver lane's
+    webhook, shared by every lane of the bot. None for a send-only bot."""
+    receiver = runtime.receiver(lane["bot_token"])
+    return runtime.webhook_url(receiver["slug"]) if receiver else None
+
+
 async def _webhook_status(lane: dict) -> dict:
     """The useful bits of getWebhookInfo — Telegram's view of delivery."""
     try:
@@ -494,7 +501,9 @@ async def _webhook_status(lane: dict) -> dict:
     url = w.get("url") or None
     return {
         "url": url,
-        "ownedByHub": runtime.is_own_webhook(lane["slug"], url),
+        "ownedByHub": runtime.is_own_webhook(lane, url),
+        # one bot serving several lanes has one webhook: the lane it points at
+        "receiverLane": runtime.hub_lane_of(url, [other["slug"] for other in db.bot_lanes(lane["bot_token"])]),
         "pendingUpdateCount": w.get("pending_update_count", 0),
         "lastErrorDate": w.get("last_error_date"),
         "lastErrorMessage": w.get("last_error_message"),
@@ -525,7 +534,7 @@ async def info(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
         # owns them (the hub never touches its webhook) and the lane reads the
         # chat through the other lanes' bots.
         "receiveMode": lane.get("receive_mode") or "hub",
-        "webhookUrl": runtime.webhook_url(lane["slug"]) if mode == "webhook" and not _send_only(lane) else None,
+        "webhookUrl": _receiver_url(lane) if mode == "webhook" else None,
         "botCanPost": await _bot_can_post(lane),
         "lastSendOk": int(db.get_lane_state(lane_slug, "last_send_ok") or 0) or None,
         "lastSendError": db.get_lane_state(lane_slug, "last_send_error") or None,
@@ -590,15 +599,20 @@ async def webhook(
     x_telegram_bot_api_secret_token: str = Header(default=""),
 ) -> dict:
     """Telegram webhook receiver, authenticated by the per-lane secret token
-    Telegram echoes back in the X-Telegram-Bot-Api-Secret-Token header."""
+    Telegram echoes back in the X-Telegram-Bot-Api-Secret-Token header. It
+    receives for every lane of the bot; ingest files each update under the
+    lane bound to its chat."""
     lane = _lane_or_404(lane_slug)
     if not pysecrets.compare_digest(x_telegram_bot_api_secret_token, lane["webhook_secret"]):
         raise HTTPException(status_code=403, detail="bad secret token")
     update = await request.json()
     if not isinstance(update, dict):
         return {"ok": True}
-    if await _handle_operator_chat(lane_slug, lane, update):
-        return {"ok": True}
+    # The bot's single webhook serves all of its lanes, so the operator chat of
+    # any of them arrives here.
+    for owner in db.bot_lanes(lane["bot_token"]):
+        if await _handle_operator_chat(owner["slug"], owner, update):
+            return {"ok": True}
     if "update_id" in update:
         ingest_update(lane_slug, update)
     return {"ok": True}

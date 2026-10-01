@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from . import db, telegram
 from .config import settings
-from .routes_bridge import perform_send
+from .routes_bridge import _receiver_url, perform_send
 from .runtime import runtime
 
 router = APIRouter(prefix="/admin/api")
@@ -66,6 +66,7 @@ def require_admin(hub_session: str | None = Cookie(default=None)) -> None:
 
 def _lane_view(lane: dict) -> dict:
     mode = settings.resolved_delivery_mode()
+    siblings = db.bot_lanes(lane["bot_token"])
     return {
         "slug": lane["slug"],
         "title": lane["title"],
@@ -78,10 +79,13 @@ def _lane_view(lane: dict) -> dict:
         "keyRotatedAt": int(db.get_lane_state(lane["slug"], "key_rotated_at") or 0) or None,
         "deliveryMode": mode,
         "operatorChatId": db.get_lane_state(lane["slug"], "operator_chat_id") or "",
-        "webhookUrl": runtime.webhook_url(lane["slug"]) if mode == "webhook" else None,
+        "webhookUrl": _receiver_url(lane) if mode == "webhook" else None,
         "polling": runtime.polling(lane["slug"]),
         "storedMessages": db.count_messages(lane["slug"]),
-        "seenChats": db.seen_chats(lane["slug"]),
+        # Lanes of the same bot (one per chat) — and the chats it was seen in by
+        # any of them, so a new lane of an existing bot can be bound by a click.
+        "botLanes": [other["slug"] for other in siblings if other["slug"] != lane["slug"]],
+        "seenChats": db.seen_chats([other["slug"] for other in siblings] or lane["slug"]),
     }
 
 
@@ -233,11 +237,17 @@ async def lanes_update(slug: str, req: LaneUpdate, hub_session: str | None = Coo
         remember_chat_alias(slug, req.default_chat_id, fields["default_chat_id"])
     take_over = False
     if req.receive_mode is not None and req.receive_mode != (lane.get("receive_mode") or "hub"):
-        fields["receive_mode"] = req.receive_mode
-        db.delete_lane_state(slug, "wake_cursor")  # the two modes find mentions differently
+        # Who receives the updates is a property of the bot, not of one chat:
+        # all lanes of the bot switch together.
+        for other in db.bot_lanes(lane["bot_token"]):
+            db.update_lane(other["slug"], {"receive_mode": req.receive_mode})
+            db.delete_lane_state(other["slug"], "wake_cursor")  # the two modes find mentions differently
         take_over = req.receive_mode == "hub"  # the operator chose to take the webhook
+    old_token = lane["bot_token"]
     lane = db.update_lane(slug, fields)
     assert lane is not None
+    if lane["bot_token"] != old_token and db.bot_lanes(old_token):
+        await runtime.sync_bot(old_token, released=(slug,))  # the old bot's other lanes keep receiving
     warning = await runtime.sync_lane(lane, take_over=take_over)
     lane = db.get_lane(slug) or lane
     view = _lane_view(lane)
@@ -260,8 +270,8 @@ async def lanes_delete(slug: str, hub_session: str | None = Cookie(default=None)
     lane = db.get_lane(slug)
     if not lane:
         raise HTTPException(status_code=404, detail="unknown lane")
-    await runtime.remove_lane(lane)
     db.delete_lane(slug)
+    await runtime.remove_lane(lane)
     return {"ok": True, "note": "lane removed; message history kept"}
 
 

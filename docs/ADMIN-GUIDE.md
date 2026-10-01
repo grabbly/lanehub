@@ -34,6 +34,10 @@ bots not bound yet are listed under "Bots without a chat". On each card:
   whose webhook already points elsewhere is set to send-only automatically
   when you add it. **let the hub receive** takes the webhook over — the other
   system stops getting the bot's messages, so it asks you first.
+  **One bot in several chats:** add the same token again for each chat and
+  bind each card to its chat. They share one webhook (the card lists the other
+  lanes of the bot); every lane gets only its own chat, and the switch applies
+  to all of them.
 - **Bound chat** — the one chat this lane may post to. A lane posts **only**
   here; there is no fallback, and until it's bound the bot can't post at all.
   After anyone posts in the group, the chat appears under **seen chats** —

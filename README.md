@@ -38,6 +38,9 @@ extracted, generalized, self-hostable version of that tool.
   can join too: the hub notices its webhook points elsewhere and makes it
   **send-only** — the bot posts through the hub, but its updates and users'
   DMs keep going to that app.
+- **The same bot in several chats?** Add its token once per chat (one card,
+  one key per chat) and bind each card to its chat. The hub receives for all
+  of them through the bot's one webhook and gives each lane only its own chat.
 - **Something leaked or someone left?** Key leaked → **rotate** on the card.
   Bot token leaked → revoke it in @BotFather and paste the new one on the card
   (**Bot token → replace**). Teammate left → **disable** / **delete** their

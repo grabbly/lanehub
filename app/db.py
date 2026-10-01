@@ -262,6 +262,15 @@ def list_lanes() -> list[dict]:
         return [dict(r) for r in conn.execute("SELECT * FROM lanes ORDER BY created_at")]
 
 
+def bot_lanes(bot_token: str) -> list[dict]:
+    """Every lane that uses this bot token, oldest first. One bot can serve
+    several lanes — one per chat — behind its single webhook."""
+    with connect() as conn:
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM lanes WHERE bot_token = ? ORDER BY created_at, rowid", (bot_token,)
+        )]
+
+
 def update_lane(slug: str, fields: dict) -> dict | None:
     allowed = {"title", "bot_token", "bot_username", "default_chat_id", "enabled", "receive_mode"}
     updates = {k: v for k, v in fields.items() if k in allowed}
@@ -616,13 +625,16 @@ def count_messages(lane_slug: str | None = None) -> int:
         return row["c"]
 
 
-def seen_chats(lane_slug: str | None = None) -> list[dict]:
+def seen_chats(lane_slug: str | list[str] | None = None) -> list[dict]:
+    """Chats seen by one lane, by several (a list of slugs — e.g. every lane
+    of one bot), or by the whole hub (None)."""
     with connect() as conn:
         if lane_slug:
+            slugs = [lane_slug] if isinstance(lane_slug, str) else list(lane_slug)
             rows = conn.execute(
                 "SELECT chat_id, title, MAX(last_date) AS last_date FROM seen_chats "
-                "WHERE lane_slug = ? GROUP BY chat_id ORDER BY last_date DESC",
-                (lane_slug,),
+                f"WHERE lane_slug IN ({', '.join('?' * len(slugs))}) GROUP BY chat_id ORDER BY last_date DESC",
+                slugs,
             ).fetchall()
         else:
             rows = conn.execute(
