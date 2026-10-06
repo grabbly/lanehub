@@ -75,8 +75,8 @@ Special boxes on the Chats tab:
   recent delivery errors.
 - **Same bot also in** — lists sibling chats where this same bot operates.
 - **More settings** (collapsed by default):
-  - **Bot token**: replace the token with a new one from @BotFather (**Replace token**).
-    The old token dies immediately.
+  - **Bot token**: paste a new token from @BotFather (**Replace token**), e.g.
+    after revoking a leaked one there. Revoking happens in @BotFather, not here.
   - **Session log**: opens the session log dialog showing watcher @mention
     activity, models used, durations, context occupancy, resets, and errors.
 - **Action buttons**:

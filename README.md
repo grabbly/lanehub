@@ -52,7 +52,7 @@ extracted, generalized, self-hostable version of that tool.
   **Remove from chat** on their card (history is kept).
 
 The same steps are shown in the panel itself (under **How it works** in **Settings**,
-and right when you open a chat).
+and on the **Chats** tab while it is still empty).
 
 ```text
         Telegram group/channel  ◄────────────►  Telegram Bot API
