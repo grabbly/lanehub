@@ -172,3 +172,11 @@ def test_polling_runs_one_poller_per_bot(client, monkeypatch):
         return held
 
     assert asyncio.run(go()) == ["team"]
+
+
+def test_hub_wide_seen_chats_list_the_lanes_that_saw_them(client):
+    login(client)
+    _lane(client, "team", "-100500")
+    _push(client, "team", update_id=1, chat_id=-100700, text="bot added to a new group")
+    seen = {c["chatId"]: c for c in client.get("/admin/api/lanes").json()["seenChats"]}
+    assert seen[-100700]["lanes"] == ["team"]

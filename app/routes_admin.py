@@ -118,7 +118,11 @@ def remember_chat_alias(slug: str, raw: str, canonical: str) -> None:
 class LaneCreate(BaseModel):
     slug: str = ""  # optional — derived from the bot's username when empty
     title: str = ""
-    bot_token: str = Field(alias="botToken")
+    bot_token: str = Field(default="", alias="botToken")
+    # Reuse the token of a bot the hub already has (the slug of any of its
+    # lanes) — adding a known bot to another chat needs no token pasting, and
+    # the token never travels to the browser.
+    from_lane: str = Field(default="", alias="fromLane")
     default_chat_id: str = Field(default="", alias="defaultChatId")
     # None = auto: the hub receives the bot's updates unless another system
     # already does (then the lane becomes send_only). 'hub' = take the webhook
@@ -166,7 +170,12 @@ class AdminSend(BaseModel):
 @router.get("/lanes")
 async def lanes_list(hub_session: str | None = Cookie(default=None)) -> dict:
     require_admin(hub_session)
-    return {"lanes": [_lane_view(lane) for lane in db.list_lanes()]}
+    return {
+        "lanes": [_lane_view(lane) for lane in db.list_lanes()],
+        # Every chat any bot has seen, with the lanes that saw it — the
+        # "New chat" picker lists the groups nobody is bound to yet.
+        "seenChats": db.seen_chats_with_lanes(),
+    }
 
 
 @router.post("/lanes", status_code=201)
@@ -181,6 +190,15 @@ async def lanes_create(req: LaneCreate, hub_session: str | None = Cookie(default
         if db.get_lane(slug):
             raise HTTPException(status_code=409, detail="lane already exists")
     token = req.bot_token.strip()
+    if req.from_lane.strip():
+        if token:
+            raise HTTPException(status_code=422, detail="pass either botToken or fromLane, not both")
+        source = db.get_lane(req.from_lane.strip().lower())
+        if not source:
+            raise HTTPException(status_code=404, detail=f"no lane '{req.from_lane}' to take the bot from")
+        token = source["bot_token"]
+    if not token:
+        raise HTTPException(status_code=422, detail="botToken (or fromLane) is required")
     try:
         me = await telegram.get_me(token)
     except telegram.TelegramError as exc:

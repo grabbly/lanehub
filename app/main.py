@@ -10,12 +10,13 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi import Cookie, FastAPI, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from . import db
 from .config import VERSION, settings
 from .routes_admin import router as admin_router
+from .routes_auth import is_authenticated
 from .routes_auth import router as auth_router
 from .routes_bridge import router as bridge_router
 from .runtime import runtime
@@ -61,9 +62,14 @@ def create_app() -> FastAPI:
         return {"name": "LaneHub", "version": VERSION, "deliveryMode": settings.resolved_delivery_mode()}
 
     @app.get("/", include_in_schema=False)
-    async def root() -> FileResponse:
-        """The single web UI: one login, then role-based sections."""
-        return FileResponse(STATIC_DIR / "app.html")
+    async def root(hub_session: str | None = Cookie(default=None)) -> HTMLResponse:
+        """The single web UI. The sign-in state is stamped into the page so the
+        login form is part of the first paint: Safari only offers a saved
+        password for a field that is visible when the page loads."""
+        html = (STATIC_DIR / "app.html").read_text(encoding="utf-8")
+        auth = "1" if is_authenticated(hub_session) else "0"
+        html = html.replace('<html lang="en">', f'<html lang="en" data-auth="{auth}">', 1)
+        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
     # Old /admin entrance still redirects to the unified page (docs, bookmarks).
     @app.get("/admin", include_in_schema=False)

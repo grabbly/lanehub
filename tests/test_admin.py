@@ -193,3 +193,41 @@ def test_explicit_send_only_on_create(client, monkeypatch):
     lane = make_lane(client, slug="frai", receiveMode="send_only")
     assert lane["receiveMode"] == "send_only"
     assert _webhook_calls(client, "frai-token:abc") == []
+
+
+def test_root_stamps_sign_in_state(client):
+    page = client.get("/")
+    assert page.status_code == 200
+    assert '<html lang="en" data-auth="0">' in page.text
+    assert page.headers["cache-control"] == "no-store"
+    login(client)
+    assert '<html lang="en" data-auth="1">' in client.get("/").text
+
+
+def test_add_known_bot_to_another_chat_without_token(client):
+    login(client)
+    first = make_lane(client, slug="alpha", chat_id="-100500")
+    second = client.post("/admin/api/lanes", json={"fromLane": "alpha", "defaultChatId": "-100600"})
+    assert second.status_code == 201, second.text
+    lane = second.json()
+    assert lane["slug"] != "alpha"
+    assert lane["botUsername"] == first["botUsername"]
+    assert lane["defaultChatId"] == "-100600"
+    assert lane["botLanes"] == ["alpha"]
+    assert lane["apiKey"] != first["apiKey"]
+
+
+def test_from_lane_validation(client):
+    login(client)
+    make_lane(client, slug="alpha")
+    both = client.post("/admin/api/lanes", json={"fromLane": "alpha", "botToken": "x:1"})
+    assert both.status_code == 422
+    missing = client.post("/admin/api/lanes", json={"fromLane": "nope"})
+    assert missing.status_code == 404
+
+
+def test_lanes_list_has_hub_wide_seen_chats(client):
+    login(client)
+    make_lane(client, slug="alpha")
+    body = client.get("/admin/api/lanes").json()
+    assert isinstance(body["seenChats"], list)

@@ -644,3 +644,17 @@ def seen_chats(lane_slug: str | list[str] | None = None) -> list[dict]:
         return [
             {"chatId": r["chat_id"], "title": r["title"], "lastDate": r["last_date"]} for r in rows
         ]
+
+
+def seen_chats_with_lanes() -> list[dict]:
+    """Every chat seen hub-wide, newest first, with the slugs of the lanes that saw it."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT chat_id, title, MAX(last_date) AS last_date, GROUP_CONCAT(DISTINCT lane_slug) AS lanes "
+            "FROM seen_chats GROUP BY chat_id ORDER BY last_date DESC"
+        ).fetchall()
+        return [
+            {"chatId": r["chat_id"], "title": r["title"], "lastDate": r["last_date"],
+             "lanes": sorted((r["lanes"] or "").split(",")) if r["lanes"] else []}
+            for r in rows
+        ]
