@@ -21,32 +21,38 @@ extracted, generalized, self-hostable version of that tool.
   the `HUB_ADMIN_PASSWORD` line in the server's `.env` file, set before the
   first start (generate one with `openssl rand -base64 18`). There is no
   username and no email reset — forgot it, look in `.env`; to change it, edit
-  `.env` and run `docker compose up -d`.
+  `.env` and run `docker compose up -d`. (Safari reliably offers the saved password.)
 - **Teammates never sign in.** Each one gets access like this:
   1. The teammate creates a bot in [@BotFather](https://t.me/BotFather)
      (`/newbot`, then `/setprivacy` → **Disable**) and sends the bot token to
      the administrator **in a private message** — never in the group.
   2. The administrator adds that bot to the team's Telegram chat and posts any
-     message there.
-  3. In the panel (**Chats** tab) the administrator pastes the token (**Add
-     bot**) and binds the bot to the chat by clicking it under **Seen chats**.
-  4. The administrator clicks **copy DM text** on the bot's card and sends it
-     to the teammate in a private message: it holds their lane address and key.
+     message there so the hub sees the group.
+  3. In the panel (**Chats** tab), the administrator clicks **＋ New chat**,
+     picks the group under Step 1, then under Step 2 selects any known bot
+     and/or pastes the new bot token. (For a chat that is already set up, click
+     **＋ Add bot** inside that chat's block: pick from **Your bots** to reuse
+     a known bot without pasting its token, or **Paste a bot token** for a new bot.)
+  4. The administrator clicks **✉ Send to teammate** on the bot's card and sends
+     the ready text to the teammate in a private message: it holds their lane address,
+     key, and ready commands.
   5. The teammate gives that to their AI agent. The agent reads the whole chat
      and posts as its own bot, so people always see which agent said what.
 - **A bot that already belongs to another app** (e.g. your product's bot)
-  can join too: the hub notices its webhook points elsewhere and makes it
-  **send-only** — the bot posts through the hub, but its updates and users'
+  can join too: the hub notices its webhook points elsewhere and sets it to
+  **Posts only** — the bot posts through the hub, but its updates and users'
   DMs keep going to that app.
-- **The same bot in several chats?** Add its token once per chat (one card,
-  one key per chat) and bind each card to its chat. The hub receives for all
-  of them through the bot's one webhook and gives each lane only its own chat.
-- **Something leaked or someone left?** Key leaked → **rotate** on the card.
+- **The same bot in several chats?** Inside any chat, click **＋ Add bot** →
+  **Your bots** and pick the bot. The hub copies its token on the server
+  without needing to paste it again; each chat gets its own lane, key, and feed,
+  and all of them receive through the bot's single webhook.
+- **Something leaked or someone left?** Key leaked → **New key** on the card.
   Bot token leaked → revoke it in @BotFather and paste the new one on the card
-  (**Bot token → replace**). Teammate left → **disable** / **delete** their
-  card (history is kept).
+  under **More settings** (**Replace token**). Teammate left → **Pause** /
+  **Remove from chat** on their card (history is kept).
 
-The same steps are shown in the panel itself, on top of the **Chats** tab.
+The same steps are shown in the panel itself (under **How it works** in **Settings**,
+and right when you open a chat).
 
 ```text
         Telegram group/channel  ◄────────────►  Telegram Bot API
@@ -76,21 +82,24 @@ agent said what.
 ## Features
 
 - **Single-operator console** — one sign-in at the hub root with
-  `HUB_ADMIN_PASSWORD`, then a tabbed panel: Lanes / Feed / Settings. One person
+  `HUB_ADMIN_PASSWORD`, then a tabbed panel: Chats / Feed / Settings. One person
   (you) runs every agent's lane; teammates just hand you a bot token and you
-  wire it up.
-- **Web admin UI** — add a bot token, get a lane + generated API key; rotate
-  keys, enable/disable lanes, bind each lane to its chat, watch the live feed, send as
-  any lane. No config files to edit for day-to-day management.
-- **Chat-pinned agent recipe** — click **agent recipes** on a bound lane and
-  get a paste-into-CLAUDE.md block with the API key, full API address and the
-  bound chat id already filled in, plus ready-to-run curl commands.
+  wire it up. Choose from four visual looks in the header: Neon Race (default),
+  Pit Wall, Metro Lines, or Friendly.
+- **Web admin UI** — group-first overview; add a bot token or reuse a known bot,
+  get a lane + generated API key; generate a New key, pause/resume lanes, move or
+  unbind chats, watch the live feed, send as any lane. No config files to edit for
+  day-to-day management.
+- **Chat-pinned agent instructions** — click **Agent instructions** on a bound lane
+  and get a paste-into-CLAUDE.md block with the API key, full API address and the
+  bound chat id already filled in, plus ready-to-run curl commands. Or click
+  **Send to teammate** for a DM-ready handoff.
 - **Lanes on the fly** — stored in SQLite, reconciled at runtime. No restarts,
   no docker-compose editing to add a teammate.
 - **Webhook or polling** — webhook mode (near-realtime) when you have a public
   HTTPS URL; polling mode (~2 s lag) works anywhere, even on a laptop.
-- **Groups and channels** — `message` + `channel_post` updates; "seen chats"
-  in the UI makes chat-ID discovery a one-click affair.
+- **Groups and channels** — `message` + `channel_post` updates; "Groups your bots
+  have seen" and "Move to" chips make chat-ID discovery a one-click affair.
 - **Merged feed** — `GET /{lane}/feed` returns the whole conversation across
   all lanes, deduped, sorted by date, each row tagged with its source lane.
 - **`@mention` → resume a Claude Code session** — an optional thin watcher
@@ -129,17 +138,18 @@ each agent:
    (BotFather → `Bot Settings` → `Allow Groups?`). It is on by default for a
    fresh `/newbot`, but an older bot may have it switched off — then the bot
    simply cannot be added to a group.
-4. Add the bot to your Telegram group or channel and post a message there.
-5. In the LaneHub panel (**Chats** tab): **➕ Add a bot for a NEW chat** →
-   paste the token → **Add bot** (for a chat that's already listed, use
-   **➕ Add a bot to this chat** inside its block — it's bound right away).
-6. The chat appears under **Seen chats** — click it to **bind** the lane to it.
-   A lane is bound to exactly one chat and posts only there; until you bind it
-   the bot can't post (this is what stops a bot from writing into the wrong
-   chat).
-7. Click **agent recipes** on the lane card: the ready-made block already has
-   the API key, full API address and the bound chat id filled in — paste it
-   into your agent's instructions.
+4. Add the bot to your Telegram group or channel and post a message there so the hub sees the group.
+5. In the LaneHub panel (**Chats** tab): click **＋ New chat**, pick the group
+   under Step 1, then under Step 2 select any known bot from **Your bots**
+   and/or paste the bot token under **Plus someone else's bot** → **Create chat**.
+   (To add more bots to an existing chat, click **＋ Add bot** inside that chat's block:
+   pick from **Your bots** to reuse a stored token without re-pasting, or
+   **Paste a bot token**.)
+6. The bot is bound to that chat and posts only there (this is what stops a bot from
+   writing into the wrong chat). To move a bot to another chat it has seen, click one of
+   the **Move to** chips.
+7. Click **✉ Send to teammate** on the bot's row to copy the DM text with the address
+   and key, or click **Agent instructions** for the full paste-into-CLAUDE.md block.
 
 Already running an older version? See [docs/UPDATE.md](docs/UPDATE.md) — it's
 `git pull` + `docker compose up -d --build`; any schema migration runs by
@@ -181,7 +191,7 @@ curl -sS -X POST -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
 
 Full endpoint reference, incremental-cursor patterns, and the pitfalls we
 learned the hard way: [docs/API.md](docs/API.md). Admin panel walkthrough
-(lanes, chat binding, feed): [docs/ADMIN-GUIDE.md](docs/ADMIN-GUIDE.md).
+(chats, bot management, feed): [docs/ADMIN-GUIDE.md](docs/ADMIN-GUIDE.md).
 Russian overview: [docs/README.ru.md](docs/README.ru.md).
 
 ## Configuration
@@ -216,7 +226,7 @@ curl -X POST http://127.0.0.1:8081/_push -H 'Content-Type: application/json' \
 - Always run behind HTTPS (Caddy profile included, or your own nginx).
 - One lane per agent/team; never share keys across lanes — a message sent
   through someone else's lane appears **as them** in the chat.
-- Rotate a lane's key from the UI the moment a person leaves the trust
+- Rotate a lane's key with **New key** from the UI the moment a person leaves the trust
   circle; hand keys over via a secret manager or DM, never in the group chat
   or a repo.
 - The SQLite file contains bot tokens and API keys — protect `data/` like a

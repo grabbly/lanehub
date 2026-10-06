@@ -86,7 +86,7 @@ HUB_PUBLIC_BASE_URL=https://hub.example.com
 ```
 
 then `docker compose up -d` again. Verify per lane in the admin UI
-("webhook status" button) — `url` should be set and `last_error` absent.
+(expand the bot row → **Connection** → **Check**) — should report "Telegram OK" and no delivery errors.
 
 ## 3. Create a bot for each agent
 
@@ -104,25 +104,32 @@ identity:
    has it on already, so this only bites bots repurposed from something else —
    with it off, Telegram refuses to add the bot to a group at all.
 4. Add the bot to the Telegram chat it should live in (or a channel, as an
-   admin who can post) and post one message there.
+   admin who can post) and post one message there so the hub sees the group.
 
 One group can host many bots; one hub can serve many groups/channels.
 
-## 4. Create and bind lanes
+## 4. Create chats and add bots in the panel
 
-Open `https://hub.example.com/`, sign in with `HUB_ADMIN_PASSWORD`, then on the
-**Lanes** tab → **Add lane**:
+Open `https://hub.example.com/`, sign in with `HUB_ADMIN_PASSWORD` (Safari
+reliably offers the saved password), then on the **Chats** tab:
 
-- **slug** — the URL path (`backend`, `frontend`, `pm`, …)
-- **bot token** — from BotFather (validated via `getMe` on save)
-- **bound chat** — leave empty at creation; after the bot has posted in the
-  chat it shows up under **seen chats** → click it to **bind** the lane. A lane
-  is bound to exactly one chat and posts only there; until you bind it the bot
-  can't post.
+1. Click **＋ New chat**.
+2. **Step 1 · Which Telegram group?** Pick the group your bot is in (discovered
+   automatically from the message you posted).
+3. **Step 2 · Who posts here?** Tick any bots the hub already knows (no token
+   needed) and/or paste the bot token under **Plus someone else's bot**, then click
+   **Create chat**.
+   (To add more bots to an existing chat later, click **＋ Add bot** inside that chat's
+   block: choose **Your bots** to reuse a known token without pasting, or
+   **Paste a bot token** for a new bot.)
 
-The lane card shows the generated **API key** (show/copy/rotate) and
-**agent recipes** — a paste-ready CLAUDE.md block (key + full API address +
-bound chat id inlined) plus curl commands.
+Click the bot row to expand it:
+- Use **✉ Send to teammate** to copy a DM-ready message with the lane address, key,
+  and ready curl commands to send to the bot's owner.
+- Use **Agent instructions** for a paste-ready CLAUDE.md block (key + full API
+  address + bound chat ID inlined).
+- If a key is ever compromised, click **New key** to generate a replacement
+  (old key dies immediately).
 
 ## 5. Wire an agent
 
@@ -144,10 +151,10 @@ curl -sS -X POST -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
 - **Upgrade**: `git pull && docker compose up -d --build`.
 - **Logs**: `docker compose logs -f lanehub`.
 - **Health**: `GET /health` (no auth) — wire it to uptime monitoring.
-- **Key rotation**: admin UI → lane → rotate. Old key dies instantly.
+- **Key rotation**: admin UI → bot details → **New key**. Old key dies instantly.
 - **Bot token compromised / person left**: BotFather → `/revoke` → paste the
-  new token into the lane (edit via `PATCH` or recreate the lane); the bot
-  identity and chat history survive.
+  new token into the lane under **More settings** → **Replace token**; the bot
+  identity and chat history survive. Teammate left → **Pause** or **Remove from chat**.
 - **Migrating servers**: copy `data/hub.db` + `.env`, start the container,
   done (webhook lanes re-register on startup).
 
@@ -159,8 +166,8 @@ curl -sS -X POST -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
 | Bot never sees group messages | privacy mode not disabled (BotFather `/setprivacy`), or bot not in the group |
 | Telegram won't let you add the bot to a group at all | `Allow Groups?` is off — BotFather → `/setjoingroups` → **Enable**. Only happens with bots repurposed from another project; `/newbot` enables it by default |
 | `/send` → 502 "bot was kicked" / "bot is not a member" | re-add the bot to the chat; for channels it must be an admin |
-| `/send` → 503 no chat_id | set the lane's default chat / project chat, or pass `chatId` |
-| `/send` → 502 "chat not found" | usually the bot is **not in that chat** — never added, or removed from it. Telegram reports this as "chat not found" rather than as a membership error, so it looks like a bad id. Confirm with `GET /{lane}/info`: if the lane's `seenChats.lastDate` stopped updating while other lanes still receive messages, the bot was removed. A stored `defaultChatId` keeps working after removal — it is the hub's cache, not proof of membership. Less often: a chat id typed by hand without the `-100` prefix — click the "seen chats" chip instead |
-| Webhook lane silent | check "webhook status" in UI: `last_error` explains (cert, DNS, non-HTTPS URL) |
+| `/send` → 503 no chat_id | bind the lane to a chat, or pass `chatId` |
+| `/send` → 502 "chat not found" | usually the bot is **not in that chat** — never added, or removed from it. Telegram reports this as "chat not found" rather than as a membership error, so it looks like a bad id. Confirm with `GET /{lane}/info`: if the lane's `seenChats.lastDate` stopped updating while other lanes still receive messages, the bot was removed. A stored `defaultChatId` keeps working after removal — it is the hub's cache, not proof of membership. Less often: a chat id typed by hand without the `-100` prefix — pick the chat via **＋ New chat** or the **Move to** chips instead |
+| Webhook lane silent | check **Connection** → **Check** in UI: error explains (cert, DNS, non-HTTPS URL) |
 | Chat looks empty to an agent | it read `/messages` without `order=desc` — see [API.md](API.md) pitfalls |
 | Admin UI says password not set | put `HUB_ADMIN_PASSWORD` in `.env`, restart |

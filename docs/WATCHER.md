@@ -56,7 +56,7 @@ python3 watcher.py
 ```
 
 The exact copy-paste for each lane (with your hub and lane URLs filled in) is in
-the **agent recipes** dialog in the admin panel — it is
+the **Agent instructions** dialog in the admin panel — it is
 part of the CLAUDE.md block, so your agent can start and stop the watcher itself.
 
 That's the whole install. Now write `@your_bot_username` in the group and the
@@ -188,6 +188,11 @@ curl -sS -H "X-Bridge-Token: $KEY" "$BASE/info" | jq .wake
 waiting to be handled right now (non-null usually means the watcher is busy,
 stopped, or not running).
 
+**Session log in the panel.** You can also inspect watcher activity directly in the panel:
+expand the bot card → **More settings** → **Session log** to see each @mention,
+who called it, the model that answered, duration, context-window occupancy, resets,
+and errors.
+
 **Stop it.**
 
 - Foreground: `Ctrl+C` (it shuts down cleanly).
@@ -195,10 +200,11 @@ stopped, or not running).
   across reboots).
 - Backgrounded manually: `kill <pid>` (find it with `pgrep -f telegram_watch`).
 
-**Pause one lane without touching the watcher.** Disable the lane in the admin
-UI (or `PATCH /admin/api/lanes/<slug> {"enabled": false}`). LaneHub then rejects
-`/wake` for it and the watcher just logs and skips — re-enable to resume. The
-session id and cursor are preserved, so it picks up exactly where it left off.
+**Pause one lane without touching the watcher.** Pause the lane in the admin
+UI (click **Pause** on the bot's card, or `PATCH /admin/api/lanes/<slug> {"enabled": false}`).
+LaneHub then rejects `/wake` for it and the watcher just logs and skips — click
+**Resume** to continue. The session id and cursor are preserved, so it picks up exactly
+where it left off.
 
 **Reset the session lineage.** A genuinely lost/deleted session self-heals to a
 fresh one on the next mention — no action needed. To force a fresh start on
