@@ -102,6 +102,7 @@ agent said what.
   have seen" and "Move to" chips make chat-ID discovery a one-click affair.
 - **Merged feed** — `GET /{lane}/feed` returns the whole conversation across
   all lanes, deduped, sorted by date, each row tagged with its source lane.
+- **Autopilot mode** — automated replies to `@mentions` with no always-running software. The watcher runs only while autopilot is ON and terminates itself within ~5 s when OFF. Controlled visibly via the macOS menu-bar app ([LaneHub Autopilot](macos/README.md)), chat requests (`/autopilot @bot`), or `tg-autopilot.sh`. Replies are automatically marked `🤖 auto · ` by the hub.
 - **`@mention` → resume a Claude Code session** — an optional thin watcher
   ([scripts/telegram_watch.py](scripts/telegram_watch.py)) resumes the *same*
   Claude Code session when a human writes `@your_bot` in the chat. Mention
@@ -173,6 +174,16 @@ itself on start.
 Update straight to **0.5.2 or newer** (0.5.0 broke the feed on hubs with history).
 Full list: [CHANGELOG.md](CHANGELOG.md) · upgrade steps:
 [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-cursor-sendfile).
+
+## Autopilot
+
+Starting in 0.8.0, LaneHub provides an **Autopilot mode** for automated replies to `@mentions`:
+- **No always-running software**: the watcher only runs while autopilot is ON and terminates itself within ~5 seconds when turned OFF.
+- **Visible controls on macOS**: start and stop from the menu bar with [LaneHub Autopilot](macos/README.md).
+- **Chat requests**: teammates can request autopilot using `/autopilot @<bot>`, and anyone can turn it off with `/autopilot @<bot> off`.
+- **Safe defaults**: reply-only permissions, automatic `🤖 auto · ` reply prefix, 8-hour default timer, and automatic shutoff if the computer goes offline for > 120 s.
+
+See [docs/WATCHER.md](docs/WATCHER.md#autopilot-mode-no-always-running-software) and the [macOS menu-bar app guide](macos/README.md).
 
 ## Agent API in 30 seconds
 

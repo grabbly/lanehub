@@ -30,6 +30,32 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.8.0 — 2026-10-06
+
+- **Autopilot mode — no always-running software.** Core invariant: *no autopilot → no process*.
+  The watcher runs only while autopilot is ON and terminates itself within one poll
+  interval (~5 s) when OFF.
+- **Chat requests and commands.** Anyone in the chat can request autopilot with
+  `/autopilot @<bot> [on]`. The hub tags the bot's configured owner to press Start.
+  Anyone can switch it off with `/autopilot @<bot> off`. All OFF transitions are
+  announced in chat with exact reasons (`by @x`, `by the agent`, `from the panel`,
+  `timer`, or `computer went offline`).
+- **macOS menu-bar app "LaneHub Autopilot".** Native Swift/SwiftUI menu-bar application
+  providing visible status (`ON until HH:MM` / `OFF`), Start (8 h), Stop, Add/Remove project,
+  and clean exit. Supports `lanehub-autopilot://start` and `stop` URL schemes.
+- **CLI helper `tg-autopilot.sh`.** Supports `on [hours]`, `off`, `status`. On macOS it
+  triggers the menu-bar app via URL scheme; on other platforms runs the watcher in the
+  foreground. Served at `/tg-autopilot.sh`.
+- **Hub-side auto-reply marking.** Replies sent during active autopilot wake windows are
+  strictly marked with `🤖 auto · ` by the hub.
+- **Safety timers and offline detection.** Autopilot defaults to 8 hours (max 72 hours).
+  If a watcher machine goes offline (> 120 s without a `/wake` poll while ON), the hub
+  automatically disarms autopilot and notifies the chat.
+- **Reply-only watcher mode.** In env mode, the watcher defaults to read-only tool permissions
+  and helper scripts.
+- **Panel updates.** Bot details display Autopilot status, a Turn off button, Owner input,
+  and instructions recipes with an optional Autopilot block (RU + EN).
+
 ## 0.7.0 — 2026-10-06
 
 - **Redesigned panel, chat first.** The Chats tab is a list of your Telegram

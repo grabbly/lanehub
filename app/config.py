@@ -9,7 +9,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 
 
 def _env(name: str, default: str = "") -> str:
