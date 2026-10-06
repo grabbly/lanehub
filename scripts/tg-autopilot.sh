@@ -16,14 +16,14 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONF="$HERE/.lanehub.env"
+PROJECT_DIR="$HERE"
+[ -f "$PROJECT_DIR/.lanehub.env" ] || PROJECT_DIR="$(pwd)"
+CONF="$PROJECT_DIR/.lanehub.env"
 if [ -f "$CONF" ]; then
   # shellcheck disable=SC1090
   . "$CONF"
-elif [ -f "$(pwd)/.lanehub.env" ]; then
-  # shellcheck disable=SC1090
-  . "$(pwd)/.lanehub.env"
 fi
+urlencode() { python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"; }
 
 : "${LANEHUB_BASE:?Missing LANEHUB_BASE (set it in .lanehub.env)}"
 : "${LANEHUB_LANE:?Missing LANEHUB_LANE (set it in .lanehub.env)}"
@@ -43,8 +43,7 @@ case "$CMD" in
     HOURS="${2:-8}"
     if [ "$(uname)" = "Darwin" ]; then
       if app_is_installed; then
-        PROJECT_DIR="$(pwd)"
-        open "lanehub-autopilot://start?dir=${PROJECT_DIR}&hours=${HOURS}"
+        open "lanehub-autopilot://start?dir=$(urlencode "$PROJECT_DIR")&hours=${HOURS}"
         echo "Autopilot start requested in LaneHub Autopilot menu-bar app (${HOURS}h)."
       else
         echo "LaneHub Autopilot menu-bar app is not installed."
@@ -59,8 +58,8 @@ case "$CMD" in
         -d "{\"on\": true, \"hours\": ${HOURS}}")"
       echo "$resp"
       WATCHER=""
-      if [ -f "$(pwd)/watcher.py" ]; then
-        WATCHER="$(pwd)/watcher.py"
+      if [ -f "$PROJECT_DIR/watcher.py" ]; then
+        WATCHER="$PROJECT_DIR/watcher.py"
       elif [ -f "$HERE/watcher.py" ]; then
         WATCHER="$HERE/watcher.py"
       elif [ -f "$HERE/telegram_watch.py" ]; then
@@ -68,7 +67,7 @@ case "$CMD" in
       fi
       if [ -n "$WATCHER" ]; then
         echo "Starting watcher in foreground (Ctrl+C to stop)..."
-        exec python3 "$WATCHER"
+        CLAUDE_PROJECT_DIR="$PROJECT_DIR" exec python3 "$WATCHER"
       else
         echo "Watcher script not found in current directory. Run watcher to start polling."
       fi
@@ -81,8 +80,7 @@ case "$CMD" in
       -d '{"on": false}')"
     echo "$resp"
     if [ "$(uname)" = "Darwin" ]; then
-      PROJECT_DIR="$(pwd)"
-      open "lanehub-autopilot://stop?dir=${PROJECT_DIR}" >/dev/null 2>&1 || true
+      open "lanehub-autopilot://stop?dir=$(urlencode "$PROJECT_DIR")" >/dev/null 2>&1 || true
     fi
     ;;
   status)

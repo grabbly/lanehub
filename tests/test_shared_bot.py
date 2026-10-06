@@ -64,6 +64,7 @@ def test_same_bot_in_two_chats_both_lanes_receive(client, monkeypatch):
     hb = {"X-Bridge-Token": b["apiKey"]}
     ha = {"X-Bridge-Token": a["apiKey"]}
     client.post("/lira/autopilot", headers=hb, json={"on": True})
+    client.post("/team/autopilot", headers=ha, json={"on": True})  # so team staying asleep proves chat filtering
     client.get("/lira/wake", headers=hb)
     client.get("/team/wake", headers=ha)
     _push(client, "team", update_id=3, chat_id=-100600, text="@test_bot глянь")

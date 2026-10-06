@@ -172,7 +172,7 @@ final class AppModel: ObservableObject {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue(key, forHTTPHeaderField: "X-Bridge-Token")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["on": true, "hours": hours])
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["on": true, "hours": hours, "by": "app"])
 
         let task = URLSession.shared.dataTask(with: req) { [weak self] data, response, error in
             guard let self = self else { return }
@@ -217,6 +217,11 @@ final class AppModel: ObservableObject {
         proc.arguments = ["-lc", "exec python3 \"\(watcherURL.path)\""]
         var env = ProcessInfo.processInfo.environment
         env["CLAUDE_PROJECT_DIR"] = project.dir
+        // Apps don't get the shell's PATH, and `zsh -l` skips .zshrc: put the usual
+        // install places of `claude` and `python3` first.
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let extra = ["\(home)/.local/bin", "\(home)/.claude/local", "/opt/homebrew/bin", "/usr/local/bin"]
+        env["PATH"] = (extra + [env["PATH"] ?? "/usr/bin:/bin"]).joined(separator: ":")
         proc.environment = env
         proc.standardOutput = logHandle
         proc.standardError = logHandle
@@ -240,21 +245,24 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func stop(project: Project) {
+    func stop(project: Project, done: (() -> Void)? = nil) {
         let cleanBase = project.base.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         if let postURL = URL(string: "\(cleanBase)/\(project.lane)/autopilot") {
             var req = URLRequest(url: postURL)
             req.httpMethod = "POST"
+            req.timeoutInterval = 5
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.setValue(project.apiKey, forHTTPHeaderField: "X-Bridge-Token")
-            req.httpBody = try? JSONSerialization.data(withJSONObject: ["on": false])
-            URLSession.shared.dataTask(with: req).resume()
+            req.httpBody = try? JSONSerialization.data(withJSONObject: ["on": false, "by": "app"])
+            URLSession.shared.dataTask(with: req) { _, _, _ in done?() }.resume()
+        } else {
+            done?()
         }
 
         if let proc = project.process, proc.isRunning {
             let pid = proc.processIdentifier
             proc.terminate()
-            DispatchQueue.global().asyncAfter(deadline: .now() + 5.0) {
+            DispatchQueue.global().asyncAfter(deadline: .now() + 8.0) {  // the watcher gets 5 s to stop claude
                 if proc.isRunning {
                     kill(pid, SIGKILL)
                 }
@@ -418,20 +426,29 @@ final class AppModel: ObservableObject {
     }
 
     func quit() {
-        for p in projects {
-            if p.isOn || (p.process?.isRunning ?? false) {
-                stop(project: p)
-            }
+        // Tell the hub first (so the chat hears "OFF", not "computer went
+        // offline"), then quit; give up waiting after 5 s.
+        let group = DispatchGroup()
+        for p in projects where p.isOn || (p.process?.isRunning ?? false) {
+            group.enter()
+            stop(project: p) { group.leave() }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        var finished = false
+        let finish = {
+            if finished { return }
+            finished = true
             NSApplication.shared.terminate(nil)
         }
+        group.notify(queue: .main) { finish() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { finish() }
     }
 
     func cleanupBeforeTerminate() {
+        // SIGTERM, not SIGKILL: the watcher then stops a claude run in progress
+        // before exiting, so nothing is left behind.
         for p in projects {
             if let proc = p.process, proc.isRunning {
-                kill(proc.processIdentifier, SIGKILL)
+                kill(proc.processIdentifier, SIGTERM)
             }
         }
     }

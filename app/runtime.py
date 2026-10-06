@@ -208,6 +208,7 @@ class LaneRuntime:
                 db.update_lane(lane["slug"], {"receive_mode": "hub"})
                 db.delete_lane_state(lane["slug"], "wake_cursor")  # hub mode counts in update_ids
                 LOG.info("lane %s: the hub receives its bot's updates — back to hub", lane["slug"])
+        await self.register_commands(lanes)
         receiver = self.receiver(bot_token)
         if receiver is None:  # every lane of this bot is disabled
             try:
@@ -269,6 +270,19 @@ class LaneRuntime:
         task = self._pollers.pop(slug, None)
         if task:
             task.cancel()
+
+    async def register_commands(self, lanes: list[dict]) -> None:
+        """Show /autopilot_on_<bot> and /autopilot_off_<bot> in the command menu
+        of each enabled hub-mode lane's bound chat. Best effort."""
+        from .autopilot import bot_commands
+        for lane in lanes:
+            chat_id = (lane.get("default_chat_id") or "").strip()
+            if not chat_id or not lane.get("enabled") or lane.get("receive_mode") == "send_only":
+                continue
+            try:
+                await telegram.set_chat_commands(lane["bot_token"], chat_id, bot_commands(lane))
+            except telegram.TelegramError as exc:
+                LOG.warning("lane %s: setMyCommands failed: %s", lane["slug"], exc)
 
     async def _autopilot_loop(self) -> None:
         LOG.info("autopilot background loop started (interval=30s)")

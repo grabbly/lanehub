@@ -641,6 +641,9 @@ async def webhook(
 class AutopilotSetRequest(BaseModel):
     on: bool
     hours: float = Field(default=8.0, ge=0.01, le=72.0)
+    # Who flips it, for the chat announcement: the agent (tg-autopilot.sh) or
+    # the menu-bar app on the bot's computer.
+    by: Literal["agent", "app"] = "agent"
 
 
 @router.get("/{lane_slug}/autopilot")
@@ -659,8 +662,9 @@ async def lane_autopilot_set(
     lane = _auth_lane(lane_slug, x_bridge_token)
     now = int(time.time())
     if req.on:
-        until, _ = await set_autopilot_on(lane, hours=req.hours, by="agent", now=now)
+        until, _ = await set_autopilot_on(lane, hours=req.hours, by=req.by, now=now)
         return {"ok": True, "on": True, "until": until}
     else:
-        await set_autopilot_off(lane, reason="by the agent", now=now)
+        reason = "stopped on the bot's computer" if req.by == "app" else "by the agent"
+        await set_autopilot_off(lane, reason=reason, now=now)
         return {"ok": True, "on": False, "until": None}

@@ -20,11 +20,11 @@ def _headers(lane: dict) -> dict[str, str]:
     return {"X-Bridge-Token": lane["apiKey"]}
 
 
-def _push(client, slug: str, update_id: int, text: str, chat_id: int = -100500, user: str = "alice", msg_id: int = 100):
+def _push(client, slug: str, update_id: int, text: str, chat_id: int = -100500, user: str = "alice", msg_id: int | None = None):
     payload = {
         "update_id": update_id,
         "message": {
-            "message_id": msg_id,
+            "message_id": msg_id if msg_id is not None else update_id,
             "from": {"id": 42, "is_bot": False, "username": user, "first_name": user.title()},
             "chat": {"id": chat_id, "title": "Test Group", "type": "supergroup"},
             "date": 1_700_000_000 + update_id,
@@ -344,3 +344,71 @@ def test_wake_behavior_and_marking_replies(client):
     client.post("/devbot/send", headers=h, json={"text": "manual message"})
     sent_msgs = [c[2] for c in client.fake_tg.calls if c[1] == "sendMessage" and c[2]["chat_id"] == "-100500"]
     assert sent_msgs[-1]["text"] == "manual message"
+
+
+def test_command_handle_fits_telegram_limit():
+    from app.autopilot import command_handle
+    assert command_handle("gabbsrobot") == "gabbsro"
+    assert command_handle("Creativeactive_bot") == "creativeactive"
+    h = command_handle("frai_pocketfraiday_bot")
+    assert len("autopilot_off_" + h) <= 32
+
+
+def test_per_bot_commands_registered_for_the_bound_chat(client, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "delivery_mode", "webhook")
+    monkeypatch.setattr(settings, "public_base_url", "https://hub.example.com")
+    login(client)
+    make_lane(client, slug="devbot")
+    regs = [c[2] for c in client.fake_tg.calls if c[1] == "setMyCommands"]
+    assert regs and regs[-1]["scope"] == {"type": "chat", "chat_id": "-100500"}
+    names = [c["command"] for c in regs[-1]["commands"]]
+    assert names == ["autopilot_on_test", "autopilot_off_test"]
+
+
+def test_send_only_lane_registers_no_commands(client, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "delivery_mode", "webhook")
+    monkeypatch.setattr(settings, "public_base_url", "https://hub.example.com")
+    login(client)
+    make_lane(client, slug="frai", receiveMode="send_only")
+    assert not [c for c in client.fake_tg.calls if c[1] == "setMyCommands"]
+
+
+def test_one_tap_off_command_with_appended_bot_name(client):
+    login(client)
+    lane = make_lane(client, slug="devbot")
+    h = {"X-Bridge-Token": lane["apiKey"]}
+    client.post("/devbot/autopilot", headers=h, json={"on": True})
+    _push(client, "devbot", update_id=20, text="/autopilot_off_test@test_bot", user="denis")
+    assert client.get("/devbot/autopilot", headers=h).json()["on"] is False
+
+
+def test_same_command_seen_by_two_bots_is_handled_once(client):
+    login(client)
+    lane = make_lane(client, slug="devbot")
+    h = {"X-Bridge-Token": lane["apiKey"]}
+    client.post("/devbot/autopilot", headers=h, json={"on": True})
+    before = len([c for c in client.fake_tg.calls if c[1] == "sendMessage"])
+    for update_id in (30, 31):  # same Telegram message delivered twice
+        _push(client, "devbot", update_id=update_id, text="/autopilot_off_test", msg_id=777)
+    offs = [c for c in client.fake_tg.calls[before:] if c[1] == "sendMessage" and "OFF" in c[2]["text"]]
+    assert len(offs) == 1
+
+
+def test_busy_watcher_is_not_offline(client):
+    import asyncio, time
+    from app.autopilot import autopilot_check_pass
+    login(client)
+    lane = make_lane(client, slug="devbot")
+    h = {"X-Bridge-Token": lane["apiKey"]}
+    client.post("/devbot/autopilot", headers=h, json={"on": True})
+    now = int(time.time())
+    db.set_lane_state("devbot", "watcher_seen", str(now - 600))
+    db.set_lane_state("devbot", "autopilot_started_at", str(now - 600))
+    db.set_lane_state("devbot", "auto_window_until", str(now + 600))  # claude is answering a mention
+    asyncio.run(autopilot_check_pass(now))
+    assert client.get("/devbot/autopilot", headers=h).json()["on"] is True
+    db.delete_lane_state("devbot", "auto_window_until")
+    asyncio.run(autopilot_check_pass(now))
+    assert client.get("/devbot/autopilot", headers=h).json()["on"] is False

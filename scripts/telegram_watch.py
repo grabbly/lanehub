@@ -59,6 +59,7 @@ import json
 import logging
 import os
 import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -66,6 +67,21 @@ import urllib.error
 import urllib.request
 
 LOG = logging.getLogger("lanehub.watch")
+
+# The claude run in progress, if any: stopping the watcher (the menu-bar app's
+# Stop/Quit sends SIGTERM) must not leave it running on its own.
+_CHILD: subprocess.Popen | None = None
+
+
+def _stop(signum, _frame) -> None:
+    if _CHILD is not None and _CHILD.poll() is None:
+        _CHILD.terminate()
+        try:
+            _CHILD.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _CHILD.kill()
+    LOG.info("stopped (signal %s)", signum)
+    sys.exit(0)
 
 DEFAULT_CLAUDE_ARGS = [
     "--setting-sources", "project,local",
@@ -240,13 +256,23 @@ def _run_claude(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[
     if session_id:
         cmd += ["--resume", session_id]
     cmd += lane.extra_args
+    global _CHILD
     try:
-        proc = subprocess.run(
-            cmd, cwd=lane.project_dir, capture_output=True, text=True, timeout=1800
+        _CHILD = subprocess.Popen(
+            cmd, cwd=lane.project_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
+        try:
+            out, err = _CHILD.communicate(timeout=1800)
+        except subprocess.TimeoutExpired:
+            _CHILD.kill()
+            out, err = _CHILD.communicate()
+            raise
+        proc = subprocess.CompletedProcess(cmd, _CHILD.returncode, out, err)
     except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
         LOG.error("[%s] claude invocation failed: %s", lane.name, exc)
         return None, str(exc), None
+    finally:
+        _CHILD = None
     if proc.returncode != 0:
         stderr = proc.stderr.strip()
         LOG.error("[%s] claude exited %s: %s", lane.name, proc.returncode, stderr[:500])
@@ -467,6 +493,8 @@ def main() -> None:
         print_status(cfg)
         return
 
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
     for lane in cfg.lanes:
         LOG.info("[%s] effective claude args: %s", lane.name, " ".join(shlex.quote(a) for a in lane.extra_args))
 

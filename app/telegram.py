@@ -200,6 +200,15 @@ async def delete_webhook(bot_token: str) -> None:
     await tg_call(bot_token, "deleteWebhook")
 
 
+async def set_chat_commands(bot_token: str, chat_id: str, commands: list[dict]) -> None:
+    """Register the bot's commands for ONE chat (BotCommandScopeChat), so the
+    hub never overwrites the commands a bot has elsewhere."""
+    await tg_call(bot_token, "setMyCommands", {
+        "commands": commands,
+        "scope": {"type": "chat", "chat_id": chat_id},
+    })
+
+
 async def get_webhook_info(bot_token: str) -> dict:
     return await tg_call(bot_token, "getWebhookInfo")
 
