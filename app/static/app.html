@@ -457,6 +457,9 @@
     <label class="lbl" style="margin-top:10px;">Block for CLAUDE.md / agent prompt (key, API address and chat id inlined)</label>
     <textarea readonly rows="12" class="txt" id="rec-prompt"></textarea>
     <div><button class="btn sm" id="rec-copy-prompt">Copy instructions block</button></div>
+    <label class="lbl" style="margin-top:10px;">Autopilot (optional) — automated replies to @mentions</label>
+    <textarea readonly rows="12" class="txt" id="rec-autopilot"></textarea>
+    <div><button class="btn sm" id="rec-copy-autopilot">Copy Autopilot block</button></div>
     <p class="help" style="margin-top:10px;">Raw commands (order=desc for the newest messages first):</p>
     <label class="lbl">Read the whole chat (all bots + humans)</label>
     <textarea readonly rows="2" class="txt" id="rec-cmd-feed"></textarea>
@@ -845,6 +848,7 @@ function createLaneRow(l, chatId, titleOf, isUnboundBlock) {
     ? '<span class="pill ok">reads &amp; posts</span>'
     : '<span class="pill">posts only</span>';
   const statusPill = l.enabled ? recvPill : '<span class="pill warn">paused</span>';
+  const autoPill = l.autopilot?.on ? '<span class="pill ok">🤖 autopilot</span>' : '';
 
   rowWrap.innerHTML = `
     <button class="bot-row" data-toggle-lane="${esc(l.slug)}" aria-expanded="${isOpen}">
@@ -854,6 +858,7 @@ function createLaneRow(l, chatId, titleOf, isUnboundBlock) {
         ${l.title ? `<span class="bot-sub">· ${esc(l.title)}</span>` : ''}
         <span class="bot-sub" style="display:block">${l.storedMessages} msg${l.storedMessages !== 1 ? 's' : ''} · /${esc(l.slug)}</span>
       </span>
+      ${autoPill}
       ${statusPill}
       <span class="chev">›</span>
     </button>
@@ -926,6 +931,21 @@ function createLaneDetailHTML(l, chatId, titleOf, isUnboundBlock) {
         <input class="txt mono" style="max-width:200px; padding:4px 8px;" value="${esc(l.operatorChatId || '')}" placeholder="-100… dev chat" data-opchat>
         <button class="btn sm" data-act="save-opchat">Save</button>
         <span class="help">Private chat for previews and /status</span>
+      </span>
+
+      <span>Autopilot</span>
+      <span class="inline">
+        ${l.autopilot?.on
+          ? `<span class="pill ok">ON until ${fmtTime(l.autopilot.until)} · ${l.autopilot.watcherOnline ? 'computer online' : 'computer offline'}</span>
+             <button class="btn sm danger" data-act="turn-off-autopilot">Turn off</button>`
+          : '<span class="pill">OFF</span>'}
+        <span class="help" style="display:block; width:100%;">Switch on from the bot\'s computer: Start in the LaneHub Autopilot menu-bar app, or ask its Claude. In the chat anyone can request it with /autopilot @${esc(l.botUsername || 'bot')}</span>
+      </span>
+
+      <span>Owner</span>
+      <span class="inline">
+        <input class="txt mono" style="max-width:180px; padding:4px 8px;" value="${esc(l.autopilot?.owner || '')}" placeholder="username (no @)" data-ap-owner>
+        <button class="btn sm" data-act="save-ap-owner">Save</button>
       </span>
 
       <span>Connection</span>
@@ -1098,6 +1118,34 @@ function wireLaneDetailEvents(wrap, l, titleOf) {
         body: JSON.stringify({ operatorChatId: val }),
       });
       toast('Debug chat saved');
+      await loadLanes();
+    } catch (err) { setErr(err.message); }
+  });
+
+  // Turn off autopilot
+  wrap.querySelector('[data-act="turn-off-autopilot"]')?.addEventListener('click', async () => {
+    setErr('');
+    try {
+      await api(`/admin/api/lanes/${l.slug}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ autopilot: { on: false } }),
+      });
+      toast('Autopilot turned off');
+      await loadLanes();
+    } catch (err) { setErr(err.message); }
+  });
+
+  // Save autopilot owner
+  wrap.querySelector('[data-act="save-ap-owner"]')?.addEventListener('click', async () => {
+    setErr('');
+    const inp = wrap.querySelector('[data-ap-owner]');
+    const val = inp ? inp.value.trim().replace(/^@/, '') : '';
+    try {
+      await api(`/admin/api/lanes/${l.slug}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ autopilotOwner: val }),
+      });
+      toast('Owner saved');
       await loadLanes();
     } catch (err) { setErr(err.message); }
   });
@@ -1505,6 +1553,7 @@ function renderRecipesDialog() {
 
   $('rec-handoff').value = handoffText(l, activeRecipesLang);
   $('rec-prompt').value = promptText(laneBase, hubBase, activeRecipesLang, { apiKey: l.apiKey, chatId: l.defaultChatId });
+  $('rec-autopilot').value = autopilotText(l, laneBase, hubBase, activeRecipesLang);
 
   $('rec-cmd-feed').value = `curl -sS -H "X-Bridge-Token: $KEY" "${laneBase}/feed?order=desc&limit=100"`;
   $('rec-cmd-send').value = `curl -sS -X POST -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \\\n  -d '{"chatId": "${esc(String(l.defaultChatId || '<chat id>'))}", "text": "hello from ${l.slug}"}' "${laneBase}/send"`;
@@ -1516,6 +1565,9 @@ $('rec-copy-handoff').onclick = () => {
 };
 $('rec-copy-prompt').onclick = () => {
   copy($('rec-prompt').value, 'Instructions block copied');
+};
+$('rec-copy-autopilot').onclick = () => {
+  copy($('rec-autopilot').value, 'Autopilot block copied');
 };
 
 function handoffText(l, lng) {
@@ -1532,7 +1584,9 @@ function handoffText(l, lng) {
   ${ru ? 'Скачать файл/фото из чата' : 'Download a file/photo from the chat'}:
     curl -sS -H "X-Bridge-Token: $KEY" "$BASE/file/<fileId>" -o file
   ${ru ? 'Проверить подключение' : 'Check the connection'}:
-    curl -sS -H "X-Bridge-Token: $KEY" "$BASE/info"`;
+    curl -sS -H "X-Bridge-Token: $KEY" "$BASE/info"
+  ${ru ? 'Управление автопилотом' : 'Manage autopilot'}:
+    ./tg-autopilot.sh on | off | status`;
   if (lng === 'ru') return `LaneHub для бота ${bot}.${rot ? ` Ключ обновлён ${dd} (старый больше не работает).` : ''}
 
 ${rot ? 'Замени у себя две вещи' : 'Подключение'}:
@@ -1575,10 +1629,8 @@ LANEHUB_API_KEY=${key}
 LANEHUB_CHAT_ID=${chat}
 ENV
 chmod 600 .lanehub.env
-curl -sS --remote-name-all ${hub}/tg-fetch.sh ${hub}/tg-report.sh ${hub}/tg-file.sh ${hub}/tg-send-file.sh ${hub}/ask-operator.sh
-chmod +x tg-fetch.sh tg-report.sh tg-file.sh tg-send-file.sh ask-operator.sh
-curl -sSO ${hub}/watcher.py
-LANEHUB_BASE=${base} CLAUDE_PROJECT_DIR="$(pwd)" nohup python3 watcher.py > watcher.log 2>&1 &
+curl -sS --remote-name-all ${hub}/tg-fetch.sh ${hub}/tg-report.sh ${hub}/tg-file.sh ${hub}/tg-send-file.sh ${hub}/ask-operator.sh ${hub}/tg-autopilot.sh
+chmod +x tg-fetch.sh tg-report.sh tg-file.sh tg-send-file.sh ask-operator.sh tg-autopilot.sh
 
 Работа:
 - Прочитать чат:   ./tg-fetch.sh    (потом читай хвост tg-chat-log.jsonl)
@@ -1593,7 +1645,7 @@ curl -sS -X POST ${base}/send \\
   -H "X-Bridge-Token: ${key}" -H "Content-Type: application/json" \\
   -d '{"chatId":"${chat}","text":"привет из ${slug}"}'
 
-Правила: пиши только через свой лейн и только в свой чат (${chat}); файлы до 50 МБ — через ./tg-send-file.sh, больше — ссылкой; длинный тред — в issue-трекер.`;
+Правила: пиши только через свой лейн и только в свой чат (${chat}); файлы до 50 МБ — через ./tg-send-file.sh, больше — ссылкой; длинный тред — в issue-трекер; когда просят включить автопилот, запускай ./tg-autopilot.sh on.`;
   return `## Team chat (LaneHub)
 
 Our team Telegram chat is reachable through LaneHub.
@@ -1608,10 +1660,8 @@ LANEHUB_API_KEY=${key}
 LANEHUB_CHAT_ID=${chat}
 ENV
 chmod 600 .lanehub.env
-curl -sS --remote-name-all ${hub}/tg-fetch.sh ${hub}/tg-report.sh ${hub}/tg-file.sh ${hub}/tg-send-file.sh ${hub}/ask-operator.sh
-chmod +x tg-fetch.sh tg-report.sh tg-file.sh tg-send-file.sh ask-operator.sh
-curl -sSO ${hub}/watcher.py
-LANEHUB_BASE=${base} CLAUDE_PROJECT_DIR="$(pwd)" nohup python3 watcher.py > watcher.log 2>&1 &
+curl -sS --remote-name-all ${hub}/tg-fetch.sh ${hub}/tg-report.sh ${hub}/tg-file.sh ${hub}/tg-send-file.sh ${hub}/ask-operator.sh ${hub}/tg-autopilot.sh
+chmod +x tg-fetch.sh tg-report.sh tg-file.sh tg-send-file.sh ask-operator.sh tg-autopilot.sh
 
 Working:
 - Read the chat:   ./tg-fetch.sh    (then read the tail of tg-chat-log.jsonl)
@@ -1626,7 +1676,51 @@ curl -sS -X POST ${base}/send \\
   -H "X-Bridge-Token: ${key}" -H "Content-Type: application/json" \\
   -d '{"chatId":"${chat}","text":"hello from ${slug}"}'
 
-Rules: post only through your own lane and only to your chat (${chat}); send files up to 50 MB with ./tg-send-file.sh, bigger ones as a link; long threads go to the issue tracker.`;
+Rules: post only through your own lane and only to your chat (${chat}); send files up to 50 MB with ./tg-send-file.sh, bigger ones as a link; long threads go to the issue tracker; when asked to switch on autopilot, run ./tg-autopilot.sh on.`;
+}
+
+function autopilotText(l, base, hub, lng) {
+  const bot = l.botUsername ? '@' + l.botUsername : '/' + l.slug;
+  if (lng === 'ru') return `## Автопилот (LaneHub Autopilot)
+
+Автопилот позволяет боту автоматически отвечать на упоминания (${bot}) в командном чате без постоянно запущенных фоновых программ.
+
+Правило: нет автопилота — нет процесса. Пока автопилот выключен, на компьютере ничего не работает.
+
+Управление:
+- Включить: ./tg-autopilot.sh on [часы]   (по умолчанию 8 часов, макс. 72)
+- Выключить: ./tg-autopilot.sh off       (любой участник в чате также может выключить: /autopilot ${bot} off, или через панель)
+- Статус: ./tg-autopilot.sh status
+
+Как это работает:
+1. Запросы из чата: любой участник может запросить автопилот командой /autopilot ${bot}. Бот тегнет владельца в чате с просьбой нажать Start.
+2. Когда тебя просят включить автопилот, запускай ./tg-autopilot.sh on.
+3. На macOS автопилот управляется через строку меню в приложении LaneHub Autopilot. Скачать приложение:
+   https://github.com/grabbly/lanehub/releases/latest/download/LaneHubAutopilot.zip
+4. На других ОС скрипт запускает watcher в терминале (Ctrl+C останавливает).
+5. При автоответах агент работает в режиме reply-only (только чтение и отправка ответов/файлов/вопросов оператору).
+6. Все автоответы автоматически помечаются хабом префиксом 🤖 auto · (свой маркер не добавляй).
+7. Лог автопилота пишется в .lanehub-autopilot.log — файл в git НЕ коммитить.`;
+  return `## Autopilot (LaneHub Autopilot)
+
+Autopilot enables automated replies to @mentions (${bot}) in the team chat without any always-running background software.
+
+Invariant: no autopilot → no process. When autopilot is OFF, nothing runs on your machine.
+
+Commands:
+- Turn ON: ./tg-autopilot.sh on [hours]   (default 8 h, max 72 h)
+- Turn OFF: ./tg-autopilot.sh off       (anyone in chat can also switch it off with: /autopilot ${bot} off, or via the panel)
+- Status: ./tg-autopilot.sh status
+
+How it works:
+1. Chat requests: anyone in the chat can request autopilot using /autopilot ${bot}. The bot tags the owner to press Start.
+2. When asked to switch on autopilot, run ./tg-autopilot.sh on.
+3. On macOS, autopilot is managed visibly via the menu-bar app LaneHub Autopilot. Download:
+   https://github.com/grabbly/lanehub/releases/latest/download/LaneHubAutopilot.zip
+4. On non-macOS, the script runs the watcher in the foreground terminal (Ctrl+C stops it).
+5. During auto-replies, the agent runs in reply-only mode (read-only tools + sending replies/files/asking operator).
+6. All automatic replies are marked with 🤖 auto · by the hub (do not add your own marker).
+7. Autopilot logs are appended to .lanehub-autopilot.log — NEVER commit this file to git.`;
 }
 
 // ----------------- SESSION LOG DIALOG -----------------

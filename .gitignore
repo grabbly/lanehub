@@ -20,3 +20,8 @@ watch.config.json
 # A repo .gitignore outranks core.excludesFile, so this re-includes it.
 !/docs/
 !/docs/**
+
+# Autopilot artifacts
+macos/build/
+.lanehub-autopilot.log
+
