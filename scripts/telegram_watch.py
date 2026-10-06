@@ -259,7 +259,8 @@ def _run_claude(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[
     global _CHILD
     try:
         _CHILD = subprocess.Popen(
-            cmd, cwd=lane.project_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            cmd, cwd=lane.project_dir, stdin=subprocess.DEVNULL,  # `claude -p` reads a non-tty stdin to EOF
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
         try:
             out, err = _CHILD.communicate(timeout=1800)

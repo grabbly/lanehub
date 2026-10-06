@@ -212,17 +212,23 @@ final class AppModel: ObservableObject {
         let logHandle = FileHandle(forWritingAtPath: logPath)
         logHandle?.seekToEndOfFile()
 
+        // python3 directly, not through zsh: ~/.zshenv / profiles may export an
+        // unrelated LANEHUB_KEY that would override this project's key.
         let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        proc.arguments = ["-lc", "exec python3 \"\(watcherURL.path)\""]
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        proc.arguments = ["python3", watcherURL.path]
         var env = ProcessInfo.processInfo.environment
         env["CLAUDE_PROJECT_DIR"] = project.dir
+        let cleanBase = project.base.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        env["LANEHUB_BASE"] = "\(cleanBase)/\(project.lane)"
+        env["LANEHUB_KEY"] = project.apiKey
         // Apps don't get the shell's PATH, and `zsh -l` skips .zshrc: put the usual
         // install places of `claude` and `python3` first.
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let extra = ["\(home)/.local/bin", "\(home)/.claude/local", "/opt/homebrew/bin", "/usr/local/bin"]
         env["PATH"] = (extra + [env["PATH"] ?? "/usr/bin:/bin"]).joined(separator: ":")
         proc.environment = env
+        proc.standardInput = FileHandle.nullDevice
         proc.standardOutput = logHandle
         proc.standardError = logHandle
 
