@@ -30,6 +30,26 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.7.0 — 2026-10-06
+
+- **Redesigned panel, chat first.** The Chats tab is a list of your Telegram
+  groups with the bots that post in each. **＋ New chat** picks a group your
+  bots have already seen, then the bots for it; **＋ Add bot** inside a chat
+  offers the bots the hub already knows. Four looks to choose from in the
+  header: Neon Race (default), Pit Wall, Metro Lines, Friendly.
+- **No token pasting for a bot you already have.** Adding a known bot to
+  another chat copies its token on the server (`POST /admin/api/lanes` with
+  `fromLane` instead of `botToken`); the token never reaches the browser.
+- **Plainer names.** "copy DM text" → **Send to teammate**, "agent recipes" →
+  **Agent instructions**, "rotate" → **New key**, hub / send-only →
+  **Hub reads and posts** / **Posts only**, "operator chat" → **Debug chat**.
+  The unused "Default chat (prefill)" setting is gone from the panel.
+- **Safari offers the saved password every time.** The sign-in form is now
+  in the page's first paint (the server stamps the session state into the
+  HTML), and the hidden username field is off-screen instead of `display:none`.
+- `GET /admin/api/lanes` also returns `seenChats`: every chat any bot has
+  seen, with the lanes that saw it.
+
 ## 0.6.0 — 2026-10-01
 
 - **One bot, many chats.** Add the same bot to any number of chats and give
