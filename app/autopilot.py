@@ -138,7 +138,9 @@ def get_autopilot_state(lane_slug: str, now: int | None = None) -> dict:
     owner = db.get_lane_state(lane_slug, "autopilot_owner")
     seen_raw = db.get_lane_state(lane_slug, "watcher_seen")
     seen = int(seen_raw) if (seen_raw and seen_raw.isdigit()) else None
-    online = bool(seen is not None and (now - seen) < WATCHER_TIMEOUT)
+    # Busy answering a mention (no polling meanwhile) still counts as online.
+    busy = int(db.get_lane_state(lane_slug, "auto_window_until") or 0) > now
+    online = busy or bool(seen is not None and (now - seen) < WATCHER_TIMEOUT)
     return {
         "on": on,
         "until": until,
