@@ -63,6 +63,7 @@ def test_same_bot_in_two_chats_both_lanes_receive(client, monkeypatch):
     # each lane wakes only on its own chat
     hb = {"X-Bridge-Token": b["apiKey"]}
     ha = {"X-Bridge-Token": a["apiKey"]}
+    client.post("/lira/autopilot", headers=hb, json={"on": True})
     client.get("/lira/wake", headers=hb)
     client.get("/team/wake", headers=ha)
     _push(client, "team", update_id=3, chat_id=-100600, text="@test_bot глянь")

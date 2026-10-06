@@ -58,6 +58,7 @@ import argparse
 import json
 import logging
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -65,6 +66,18 @@ import urllib.error
 import urllib.request
 
 LOG = logging.getLogger("lanehub.watch")
+
+DEFAULT_CLAUDE_ARGS = [
+    "--setting-sources", "project,local",
+    "--permission-mode", "default",
+    "--allowedTools",
+    "Bash(./tg-fetch.sh:*)",
+    "Bash(./tg-report.sh:*)",
+    "Bash(./tg-file.sh:*)",
+    "Bash(./tg-send-file.sh:*)",
+    "Bash(./ask-operator.sh:*)",
+    "Read",
+]
 
 # stderr fragments that mean "that session id no longer exists" -> recover by
 # starting a fresh session instead of failing on every future mention.
@@ -96,6 +109,24 @@ def session_token_estimate(project_dir: str, session_id: str) -> int:
         return 0
 
 
+def load_lanehub_env(project_dir: str) -> dict[str, str]:
+    env_path = os.path.join(project_dir, ".lanehub.env")
+    if not os.path.isfile(env_path):
+        return {}
+    res: dict[str, str] = {}
+    try:
+        with open(env_path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                res[k.strip()] = v.strip().strip("'\"")
+    except OSError:
+        pass
+    return res
+
+
 class Lane:
     def __init__(self, raw: dict) -> None:
         self.base = str(raw["base"]).rstrip("/")
@@ -107,7 +138,12 @@ class Lane:
         self.key = key
         self.project_dir = raw.get("project_dir") or os.getcwd()
         self.claude_bin = raw.get("claude_bin")  # falls back to global
-        self.extra_args = list(raw.get("extra_args") or [])
+        if raw.get("extra_args") is not None:
+            self.extra_args = list(raw["extra_args"])
+        elif "CLAUDE_ARGS" in os.environ:
+            self.extra_args = shlex.split(os.environ["CLAUDE_ARGS"])
+        else:
+            self.extra_args = list(DEFAULT_CLAUDE_ARGS)
         # ephemeral, watcher-local retry bookkeeping (NOT session state)
         self._last_fail_wake: int | None = None
         self._fail_count = 0
@@ -134,20 +170,40 @@ class Config:
             with open(path, encoding="utf-8") as fh:
                 return json.load(fh)
         except FileNotFoundError:
+            project_dir = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
+            env_file_data = load_lanehub_env(project_dir)
+
             base = os.environ.get("LANEHUB_BASE")
+            if not base and env_file_data.get("LANEHUB_BASE"):
+                hub_root = env_file_data["LANEHUB_BASE"].rstrip("/")
+                lane_name = env_file_data.get("LANEHUB_LANE", "").strip("/")
+                base = f"{hub_root}/{lane_name}" if lane_name else hub_root
+
+            key = os.environ.get("LANEHUB_KEY")
+            if not key:
+                key = env_file_data.get("LANEHUB_API_KEY") or env_file_data.get("LANEHUB_KEY")
+
             if not base:
                 sys.exit(
                     f"no config at {path} and LANEHUB_BASE is unset. Either set "
                     "LANEHUB_BASE/LANEHUB_KEY/CLAUDE_PROJECT_DIR for a single lane, "
                     "or create a config file (see the header of this file)."
                 )
+
+            claude_args = None
+            if "CLAUDE_ARGS" in os.environ:
+                claude_args = shlex.split(os.environ["CLAUDE_ARGS"])
+            else:
+                claude_args = list(DEFAULT_CLAUDE_ARGS)
+
             return {
                 "poll_interval": os.environ.get("POLL_INTERVAL", 5),
                 "claude_bin": os.environ.get("CLAUDE_BIN", "claude"),
                 "lanes": [{
                     "base": base,
-                    "key": os.environ.get("LANEHUB_KEY"),
-                    "project_dir": os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd()),
+                    "key": key,
+                    "project_dir": project_dir,
+                    "extra_args": claude_args,
                 }],
             }
         except json.JSONDecodeError as exc:
@@ -236,6 +292,7 @@ def build_prompt(sender: str, text: str) -> str:
         "You work autonomously. Read context with ./tg-fetch.sh (then the tail of "
         "tg-chat-log.jsonl), do the task, and reply in the team chat with "
         "./tg-report.sh \"your reply\". Keep it short.\n"
+        "Your replies are automatically marked 🤖 auto by the hub; don't add your own marker.\n"
         "If — and only if — you genuinely need a clarifying decision from the "
         "operator before you can proceed correctly, run ./ask-operator.sh \"your "
         "question\" and then STOP without replying: the operator will answer and "
@@ -303,16 +360,21 @@ def handle_operator_inbox(cfg: Config, lane: Lane) -> None:
         LOG.warning("[%s] operator-inbox ack failed: %s", lane.name, exc)
 
 
-def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
+def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> bool:
     """Process at most one pending wake for a lane. Errors are contained here so
-    one lane never takes down the others."""
+    one lane never takes down the others. Returns False when autopilot is off."""
     try:
         wake = http_json(f"{lane.base}/wake", lane.key)
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         LOG.warning("[%s] wake poll failed: %s", lane.name, exc)
-        return
+        return True
+
+    if wake.get("autopilot") is False:
+        LOG.info("[%s] autopilot is off — exiting", lane.name)
+        return False
+
     if not wake.get("wake"):
-        return
+        return True
 
     wake_id = wake["wakeId"]
     sender = wake.get("from") or "someone"
@@ -322,7 +384,7 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
     if dry_run:
         LOG.info("[%s] DRY-RUN: would resume session %s and NOT ack (nothing consumed)",
                  lane.name, wake.get("sessionId") or "(new)")
-        return
+        return True
 
     hub_log(lane, "info", f"@mention from {sender}: {text[:200]}")
     hub_notify(lane, f"🟡 [{lane.name}] {sender}: {text[:150]}")
@@ -346,7 +408,7 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
         if lane._fail_count < _MAX_WAKE_FAILS:
             LOG.warning("[%s] wake %s failed (%d/%d); will retry",
                         lane.name, wake_id, lane._fail_count, _MAX_WAKE_FAILS)
-            return
+            return True
         LOG.error("[%s] wake %s failed %d times; skipping it", lane.name, wake_id, _MAX_WAKE_FAILS)
         hub_notify(lane, f"✗ [{lane.name}] не удалось ответить — пропущено")
         # fall through to ack so the poison wake is consumed
@@ -362,6 +424,7 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
         http_json(f"{lane.base}/wake/ack", lane.key, method="POST", body=ack)
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         LOG.warning("[%s] ack failed: %s (wake will re-fire)", lane.name, exc)
+    return True
 
 
 def print_status(cfg: Config) -> None:
@@ -404,19 +467,29 @@ def main() -> None:
         print_status(cfg)
         return
 
+    for lane in cfg.lanes:
+        LOG.info("[%s] effective claude args: %s", lane.name, " ".join(shlex.quote(a) for a in lane.extra_args))
+
     mode = "dry-run" if args.dry_run else ("once" if args.once else "watching")
     LOG.info(
         "%s %d lane(s) every %.1fs: %s",
         mode, len(cfg.lanes), cfg.poll_interval, ", ".join(l.name for l in cfg.lanes),
     )
-    while True:
-        for lane in cfg.lanes:
-            handle_lane(cfg, lane, dry_run=args.dry_run)
+    active_lanes = list(cfg.lanes)
+    while active_lanes:
+        for lane in list(active_lanes):
+            still_on = handle_lane(cfg, lane, dry_run=args.dry_run)
+            if not still_on:
+                active_lanes.remove(lane)
+                continue
             if not args.dry_run:
                 handle_operator_inbox(cfg, lane)
+        if not active_lanes:
+            sys.exit(0)
         if args.once:
             return
         time.sleep(cfg.poll_interval)
+    sys.exit(0)
 
 
 if __name__ == "__main__":

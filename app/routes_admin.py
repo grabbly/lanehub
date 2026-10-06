@@ -19,6 +19,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from . import db, telegram
+from .autopilot import get_autopilot_state, set_autopilot_off
 from .config import settings
 from .routes_bridge import _receiver_url, perform_send
 from .runtime import runtime
@@ -86,6 +87,7 @@ def _lane_view(lane: dict) -> dict:
         # any of them, so a new lane of an existing bot can be bound by a click.
         "botLanes": [other["slug"] for other in siblings if other["slug"] != lane["slug"]],
         "seenChats": db.seen_chats([other["slug"] for other in siblings] or lane["slug"]),
+        "autopilot": get_autopilot_state(lane["slug"]),
     }
 
 
@@ -156,8 +158,14 @@ class LaneUpdate(BaseModel):
     enabled: bool | None = None
     operator_chat_id: str | None = Field(default=None, alias="operatorChatId")
     receive_mode: Literal["hub", "send_only"] | None = Field(default=None, alias="receiveMode")
+    autopilot_owner: str | None = Field(default=None, alias="autopilotOwner")
+    autopilot: AutopilotUpdate | None = None
 
     model_config = {"populate_by_name": True}
+
+
+class AutopilotUpdate(BaseModel):
+    on: bool | None = None
 
 
 class AdminSend(BaseModel):
@@ -240,6 +248,16 @@ async def lanes_update(slug: str, req: LaneUpdate, hub_session: str | None = Coo
         fields["enabled"] = int(req.enabled)
     if req.operator_chat_id is not None:
         db.set_lane_state(slug, "operator_chat_id", req.operator_chat_id.strip())
+    if req.autopilot_owner is not None:
+        db.set_lane_state(slug, "autopilot_owner", req.autopilot_owner.lstrip("@").strip())
+    if req.autopilot is not None:
+        if req.autopilot.on is False:
+            await set_autopilot_off(lane, reason="from the panel", now=int(time.time()))
+        elif req.autopilot.on is True:
+            raise HTTPException(
+                status_code=422,
+                detail="autopilot can only be switched on from the bot's computer",
+            )
     if req.bot_token is not None:
         token = req.bot_token.strip()
         try:

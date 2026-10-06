@@ -27,6 +27,7 @@ import logging
 from urllib.parse import urlsplit
 
 from . import db, telegram
+from .autopilot import autopilot_check_pass, handle_incoming_update_commands
 from .config import settings
 
 LOG = logging.getLogger("lanehub.runtime")
@@ -101,11 +102,14 @@ async def canonicalize_binding(lane: dict) -> dict:
 class LaneRuntime:
     def __init__(self) -> None:
         self._pollers: dict[str, asyncio.Task] = {}
+        self._autopilot_task: asyncio.Task | None = None
 
     def webhook_url(self, slug: str) -> str:
         return f"{settings.public_base_url}/{slug}/webhook"
 
     async def sync_all(self) -> None:
+        if self._autopilot_task is None or self._autopilot_task.done():
+            self._autopilot_task = asyncio.create_task(self._autopilot_loop(), name="autopilot_check")
         for lane in db.list_lanes():
             await canonicalize_binding(lane)
         done: set[str] = set()
@@ -255,6 +259,9 @@ class LaneRuntime:
         return any((task := self._pollers.get(s)) and not task.done() for s in slugs)
 
     async def stop_all(self) -> None:
+        if self._autopilot_task:
+            self._autopilot_task.cancel()
+            self._autopilot_task = None
         for slug in list(self._pollers):
             self._stop_poller(slug)
 
@@ -262,6 +269,17 @@ class LaneRuntime:
         task = self._pollers.pop(slug, None)
         if task:
             task.cancel()
+
+    async def _autopilot_loop(self) -> None:
+        LOG.info("autopilot background loop started (interval=30s)")
+        while True:
+            try:
+                await autopilot_check_pass()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                LOG.warning("autopilot loop error: %s", exc)
+            await asyncio.sleep(30)
 
     async def _poll_loop(self, slug: str) -> None:
         LOG.info("poller started for lane %s (interval=%.1fs)", slug, settings.poll_interval)
@@ -285,6 +303,7 @@ class LaneRuntime:
             return
         for upd in updates:
             ingest_update(slug, upd)
+            await handle_incoming_update_commands(slug, upd)
         db.set_lane_state(slug, "next_offset", str(updates[-1]["update_id"] + 1))
         LOG.info("lane %s: ingested %d updates", slug, len(updates))
 
