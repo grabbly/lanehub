@@ -53,6 +53,7 @@
   html[data-auth="1"] #view-panel { display: block !important; }
 
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }  /* `display: grid/flex` on main, .empty etc. would otherwise beat the attribute */
   body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 var(--font); }
   button, select, input, textarea { font: inherit; color: inherit; }
   button { cursor: pointer; }
@@ -241,6 +242,7 @@
   [data-skin="pit"] .page-hd h1 { font-size: 30px; font-weight: 700; }
   [data-skin="pit"] .ver, [data-skin="pit"] .ghost { color: #a9a79f; }
   [data-skin="pit"] .ghost:hover, [data-skin="pit"] a.gh:hover { background: #262626; color: var(--hd-fg); }
+  [data-skin="pit"] .top .btn, [data-skin="pit"] .top select { background: #262626; color: var(--hd-fg); border-color: #444; }
   [data-skin="pit"] a.gh { color: #a9a79f; }
   [data-skin="pit"] .logo { background: var(--accent); border-radius: 4px; }
   [data-skin="pit"] .tabs { background: #262626; border-radius: 4px; }
