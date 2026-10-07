@@ -93,6 +93,9 @@
   .chat-ava { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 600; font-size: 17px; flex: none; background: var(--av); }
   .chat-meta { min-width: 0; flex: 1; }
   .chat-name { font-weight: 600; font-size: 16px; }
+  .rename-btn { font-size: 13px; padding: 0 6px; opacity: .55; vertical-align: middle; }
+  .rename-btn:hover, .rename-btn:focus-visible { opacity: 1; }
+  .rename-box { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0 2px; }
   .chat-sub { color: var(--muted); font-size: 13px; }
   .bots { border-top: 1px solid var(--line); }
   .bot { border-bottom: 1px solid var(--line); }
@@ -451,24 +454,9 @@
   </div>
   <div class="dlg-bd" style="max-height:75vh; overflow-y:auto;">
     <div id="rec-status"></div>
-    <label class="lbl">Message for a DM — send it to whoever runs this bot's agent (key and URL inlined)</label>
-    <textarea readonly rows="9" class="txt" id="rec-handoff"></textarea>
-    <div><button class="btn sm" id="rec-copy-handoff">Copy DM text</button></div>
-    <label class="lbl" style="margin-top:10px;">Block for CLAUDE.md / agent prompt (key, API address and chat id inlined)</label>
-    <textarea readonly rows="12" class="txt" id="rec-prompt"></textarea>
-    <div><button class="btn sm" id="rec-copy-prompt">Copy instructions block</button></div>
-    <label class="lbl" style="margin-top:10px;">Autopilot (optional) — automated replies to @mentions</label>
-    <textarea readonly rows="12" class="txt" id="rec-autopilot"></textarea>
-    <div><button class="btn sm" id="rec-copy-autopilot">Copy Autopilot block</button></div>
-    <p class="help" style="margin-top:10px;">Raw commands (order=desc for the newest messages first):</p>
-    <label class="lbl">Read the whole chat (all bots + humans)</label>
-    <textarea readonly rows="2" class="txt" id="rec-cmd-feed"></textarea>
-    <label class="lbl" style="margin-top:6px;">Send a message (chatId is the bound chat — the bot posts only there)</label>
-    <textarea readonly rows="3" class="txt" id="rec-cmd-send"></textarea>
-    <label class="lbl" style="margin-top:6px;">Incremental cursor (own lane)</label>
-    <textarea readonly rows="2" class="txt" id="rec-cmd-messages"></textarea>
+    <textarea readonly rows="16" class="txt mono" id="rec-prompt" style="font-size:12.5px;"></textarea>
   </div>
-  <div class="dlg-ft"><button class="btn" id="rec-done">Close</button></div>
+  <div class="dlg-ft"><button class="btn" id="rec-done">Close</button><button class="btn primary" id="rec-copy-prompt">Copy</button></div>
 </dialog>
 
 <!-- Session log dialog -->
@@ -727,6 +715,7 @@ function renderChatsTab() {
   const titleOf = {};
   seenChatsHub.forEach(c => { if (c.title) titleOf[String(c.chatId)] = c.title; });
   lanes.forEach(l => (l.seenChats || []).forEach(c => { if (c.title) titleOf[String(c.chatId)] = c.title; }));
+  Object.entries(chatNames).forEach(([id, name]) => { titleOf[id] = name; });
 
   const byChat = new Map();
   const unbound = [];
@@ -816,7 +805,12 @@ function createChatSection(chatId, chatTitle, groupLanes, titleOf) {
     <div class="chat-hd">
       <span class="chat-ava" style="--av:${cColor}">${cIni}</span>
       <div class="chat-meta">
-        <div class="chat-name">${esc(chatTitle)}</div>
+        <div class="chat-name">${esc(chatTitle)} <button class="ghost rename-btn" data-rename-chat="${esc(chatId)}" title="Rename this chat in the panel" aria-label="Rename chat">✎</button></div>
+        <div class="rename-box" data-rename-box="${esc(chatId)}" hidden>
+          <input class="txt" style="max-width:260px; padding:4px 8px;" value="${esc(chatNames[String(chatId)] || chatTitle)}" maxlength="80" data-rename-input>
+          <button class="btn sm primary" data-rename-save="${esc(chatId)}">Save</button>
+          <button class="btn sm" data-rename-reset="${esc(chatId)}" title="Use the name from Telegram">Telegram name</button>
+        </div>
         <div class="chat-sub">${groupLanes.length} bot${groupLanes.length > 1 ? 's' : ''} · <span class="mono">${esc(chatId)}</span></div>
       </div>
       <button class="btn sm" data-open-feed="${esc(chatId)}">Open feed</button>
@@ -924,6 +918,13 @@ function createLaneDetailHTML(l, chatId, titleOf, isUnboundBlock) {
           <input class="txt mono" style="max-width:180px; padding:3px 8px;" placeholder="-100… chat id" data-bind-input>
           <button class="btn sm primary" data-act="bind-custom">Bind</button>
         ` : ''}
+      </span>
+
+      <span>Name</span>
+      <span class="inline">
+        <input class="txt" style="max-width:220px; padding:4px 8px;" value="${esc(l.title || '')}" maxlength="80" placeholder="e.g. Designer agent" data-lane-title>
+        <button class="btn sm" data-act="save-title">Save</button>
+        <span class="help">Shown next to ${esc(l.botUsername ? '@' + l.botUsername : l.slug)}. The API address /${esc(l.slug)} stays the same.</span>
       </span>
 
       <span>Debug chat</span>
@@ -1109,6 +1110,16 @@ function wireLaneDetailEvents(wrap, l, titleOf) {
   });
 
   // Save operator chat
+  wrap.querySelector('[data-act="save-title"]')?.addEventListener('click', async () => {
+    const val = wrap.querySelector('[data-lane-title]').value.trim();
+    setErr('');
+    try {
+      await api(`/admin/api/lanes/${l.slug}`, { method: 'PATCH', body: JSON.stringify({ title: val }) });
+      toast('Name saved');
+      await loadLanes();
+    } catch (err) { setErr(err.message); }
+  });
+
   wrap.querySelector('[data-act="save-opchat"]')?.addEventListener('click', async () => {
     const val = wrap.querySelector('[data-opchat]').value.trim();
     setErr('');
@@ -1231,13 +1242,34 @@ function wireLaneDetailEvents(wrap, l, titleOf) {
 }
 
 // Global click delegation for Chats tab
-document.addEventListener('click', e => {
+document.addEventListener('click', async e => {
   // Toggle bot details row
   const rowBtn = e.target.closest('[data-toggle-lane]');
   if (rowBtn) {
     const slug = rowBtn.dataset.toggleLane;
     openLaneSlug = (openLaneSlug === slug ? null : slug);
     renderChatsTab();
+    return;
+  }
+
+  // Rename a chat (panel name only; Telegram's title is untouched)
+  const renameBtn = e.target.closest('[data-rename-chat]');
+  if (renameBtn) {
+    const box = document.querySelector(`[data-rename-box="${CSS.escape(renameBtn.dataset.renameChat)}"]`);
+    box.hidden = !box.hidden;
+    if (!box.hidden) box.querySelector('input').focus();
+    return;
+  }
+  const renameSave = e.target.closest('[data-rename-save], [data-rename-reset]');
+  if (renameSave) {
+    const id = renameSave.dataset.renameSave || renameSave.dataset.renameReset;
+    const name = renameSave.dataset.renameReset ? '' :
+      document.querySelector(`[data-rename-box="${CSS.escape(id)}"] input`).value.trim();
+    try {
+      await api(`/admin/api/chats/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ name }) });
+      toast(name ? `Renamed to “${name}”` : 'Back to the Telegram name');
+      await loadLanes();
+    } catch (err) { toast(err.message); }
     return;
   }
 
@@ -1546,29 +1578,27 @@ function renderRecipesDialog() {
 
   const statusBox = $('rec-status');
   if (l.defaultChatId) {
-    statusBox.innerHTML = `<p class="help" style="margin:0 0 10px;">Pinned to chat <code>${esc(String(l.defaultChatId))}</code> — the key, full API address and this chat id are already inlined in the block below. Paste it into the agent's CLAUDE.md / prompt.</p>`;
+    statusBox.innerHTML = `<p class="help" style="margin:0 0 10px;">Copy and paste it into <b>Claude Code opened in the agent's project folder</b>. Claude sets everything up, saves the instructions to CLAUDE.md (without the key) and posts “connected” to the chat. The key is inside, so send it only by DM.</p>`;
   } else {
-    statusBox.innerHTML = `<p class="error" style="margin:0 0 10px;">⚠️ This lane is not bound to a chat yet, so it cannot post. Bind it to a chat to use it.</p>`;
+    statusBox.innerHTML = `<p class="error" style="margin:0 0 10px;">⚠️ This lane is not bound to a chat yet, so it cannot post. Bind it to a chat first.</p>`;
   }
-
-  $('rec-handoff').value = handoffText(l, activeRecipesLang);
-  $('rec-prompt').value = promptText(laneBase, hubBase, activeRecipesLang, { apiKey: l.apiKey, chatId: l.defaultChatId });
-  $('rec-autopilot').value = autopilotText(l, laneBase, hubBase, activeRecipesLang);
-
-  $('rec-cmd-feed').value = `curl -sS -H "X-Bridge-Token: $KEY" "${laneBase}/feed?order=desc&limit=100"`;
-  $('rec-cmd-send').value = `curl -sS -X POST -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \\\n  -d '{"chatId": "${esc(String(l.defaultChatId || '<chat id>'))}", "text": "hello from ${l.slug}"}' "${laneBase}/send"`;
-  $('rec-cmd-messages').value = `curl -sS -H "X-Bridge-Token: $KEY" "${laneBase}/messages?since=<updateId>&limit=200"`;
+  $('rec-prompt').value = promptText(laneBase, hubBase, activeRecipesLang, {
+    apiKey: l.apiKey, chatId: l.defaultChatId, bot: l.botUsername ? '@' + l.botUsername : '/' + l.slug,
+    chatName: (chatNames[String(l.defaultChatId)] || ((l.seenChats || []).find(c => String(c.chatId) === String(l.defaultChatId)) || {}).title || ''),
+    handle: commandHandle(l.botUsername || l.slug),
+  });
 }
 
-$('rec-copy-handoff').onclick = () => {
-  copy($('rec-handoff').value, 'DM text copied');
-};
 $('rec-copy-prompt').onclick = () => {
-  copy($('rec-prompt').value, 'Instructions block copied');
+  copy($('rec-prompt').value, 'Copied — paste it into Claude Code in the agent’s project folder');
 };
-$('rec-copy-autopilot').onclick = () => {
-  copy($('rec-autopilot').value, 'Autopilot block copied');
-};
+
+// Same as the hub's command_handle(): '@Creativeactive_bot' -> 'creativeactive' (fits 32 chars).
+function commandHandle(username) {
+  let b = String(username || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
+  for (const suf of ['_bot', 'bot']) { if (b.endsWith(suf) && b.length > suf.length) { b = b.slice(0, -suf.length); break; } }
+  return b.replace(/^_+|_+$/g, '').slice(0, 32 - 'autopilot_off_'.length) || 'bot';
+}
 
 function handoffText(l, lng) {
   const baseUrl = (sessionState?.publicBaseUrl || location.origin).replace(/\/+$/, '');
@@ -1613,15 +1643,17 @@ The key is secret — never post it in the chat.`;
 
 function promptText(base, hub, lng, opts = {}) {
   const slug = base.split('/').pop();
-  const key = opts.apiKey || (lng === 'ru' ? '<ключ из отдельного сообщения>' : '<key from the separate message>');
+  const key = opts.apiKey || '<key>';
   const chat = opts.chatId || '<chat id>';
-  if (lng === 'ru') return `## Командный чат (LaneHub)
+  const bot = opts.bot || '/' + slug;
+  const where = opts.chatName ? `«${opts.chatName}» (${chat})` : chat;
+  const h = opts.handle || 'bot';
+  const app = 'https://github.com/grabbly/lanehub/releases/latest/download/LaneHubAutopilot.zip';
+  const helpers = ['tg-fetch', 'tg-report', 'tg-file', 'tg-send-file', 'ask-operator', 'tg-autopilot'];
+  const curl = `curl -sS --remote-name-all ${helpers.map(n => `${hub}/${n}.sh`).join(' ')}\nchmod +x ${helpers.map(n => n + '.sh').join(' ')}`;
+  if (lng === 'ru') return `Подключи этот проект к командному Telegram-чату через LaneHub. Один раз, по шагам:
 
-Наш командный Telegram-чат доступен через LaneHub.
-Твой лейн (полный адрес API): ${base}
-Ты пишешь ТОЛЬКО в этот чат: ${chat}
-
-Разовая настройка (в каталоге проекта; .lanehub.env в репо НЕ коммить):
+1. Создай .lanehub.env (ключ секретный — только в этом файле):
 cat > .lanehub.env <<'ENV'
 LANEHUB_BASE=${hub}
 LANEHUB_LANE=${slug}
@@ -1629,30 +1661,37 @@ LANEHUB_API_KEY=${key}
 LANEHUB_CHAT_ID=${chat}
 ENV
 chmod 600 .lanehub.env
-curl -sS --remote-name-all ${hub}/tg-fetch.sh ${hub}/tg-report.sh ${hub}/tg-file.sh ${hub}/tg-send-file.sh ${hub}/ask-operator.sh ${hub}/tg-autopilot.sh
-chmod +x tg-fetch.sh tg-report.sh tg-file.sh tg-send-file.sh ask-operator.sh tg-autopilot.sh
 
-Работа:
-- Прочитать чат:   ./tg-fetch.sh    (потом читай хвост tg-chat-log.jsonl)
-- Ответить в чат:  ./tg-report.sh "текст"   (только plain text; уходит в чат ${chat})
-- Скачать фото/файл из чата:  ./tg-file.sh <fileId>   (fileId — в поле media строки лога; потом Read файла)
-- Отправить файл в чат (скрин, отчёт, лог):  ./tg-send-file.sh <файл> "подпись"
-- Спросить оператора, если не уверен:  ./ask-operator.sh "вопрос"
-  (ответ оператора вернётся в твою сессию — продолжишь задачу)
+2. Скачай скрипты чата:
+${curl}
 
-Как писать через API напрямую (без скрипта) — chatId обязателен и равен твоему чату:
-curl -sS -X POST ${base}/send \\
-  -H "X-Bridge-Token: ${key}" -H "Content-Type: application/json" \\
-  -d '{"chatId":"${chat}","text":"привет из ${slug}"}'
+3. Добавь в .gitignore: .lanehub.env, .lanehub-autopilot.*, tg-chat-log.jsonl, tg-files/
 
-Правила: пиши только через свой лейн и только в свой чат (${chat}); файлы до 50 МБ — через ./tg-send-file.sh, больше — ссылкой; длинный тред — в issue-трекер; когда просят включить автопилот, запускай ./tg-autopilot.sh on.`;
-  return `## Team chat (LaneHub)
+4. Добавь в CLAUDE.md раздел между линиями ниже. Ключ туда НЕ пиши.
 
-Our team Telegram chat is reachable through LaneHub.
-Your lane (full API address): ${base}
-You post to THIS chat only: ${chat}
+5. Проверь: ./tg-fetch.sh, затем ./tg-report.sh "${bot} подключён".
 
-One-time setup (in your project dir; never commit .lanehub.env):
+------ раздел для CLAUDE.md ------
+## Командный чат (LaneHub) — ${bot}
+
+Ты — ${bot} в Telegram-чате ${where}. Пишешь только туда. Ключ и адрес — в .lanehub.env.
+
+- Прочитать чат: ./tg-fetch.sh, потом хвост tg-chat-log.jsonl
+- Ответить: ./tg-report.sh "текст" (plain text, коротко)
+- Скачать фото/файл из чата: ./tg-file.sh <fileId> (fileId — в поле media строки лога)
+- Отправить файл: ./tg-send-file.sh <файл> "подпись" (до 50 МБ, больше — ссылкой)
+- Спросить владельца лично: ./ask-operator.sh "вопрос"
+
+Автопилот (бот сам отвечает на упоминания, пока включён):
+- Включить/выключить: ./tg-autopilot.sh on [часы] | off | status. На Mac он запускается в приложении LaneHub Autopilot (строка меню): ${app}
+- В чате: /autopilot_on_${h} просит владельца включить, /autopilot_off_${h} выключает (может любой).
+- На автопилоте: на простой вопрос отвечай сразу; если непонятно — один уточняющий вопрос в чат и стоп; перед любыми изменениями — короткий план, «Делаю? Ответьте ok» и стоп до подтверждения; в конце — короткий отчёт. Хаб сам помечает ответы 🤖 auto.
+
+Правила: тред длиннее 3–4 сообщений — в issue-трекер; ключ никогда не публикуй.
+------ конец раздела ------`;
+  return `Connect this project to our team Telegram chat through LaneHub. Once, step by step:
+
+1. Create .lanehub.env (the key is secret — it lives only in this file):
 cat > .lanehub.env <<'ENV'
 LANEHUB_BASE=${hub}
 LANEHUB_LANE=${slug}
@@ -1660,67 +1699,34 @@ LANEHUB_API_KEY=${key}
 LANEHUB_CHAT_ID=${chat}
 ENV
 chmod 600 .lanehub.env
-curl -sS --remote-name-all ${hub}/tg-fetch.sh ${hub}/tg-report.sh ${hub}/tg-file.sh ${hub}/tg-send-file.sh ${hub}/ask-operator.sh ${hub}/tg-autopilot.sh
-chmod +x tg-fetch.sh tg-report.sh tg-file.sh tg-send-file.sh ask-operator.sh tg-autopilot.sh
 
-Working:
-- Read the chat:   ./tg-fetch.sh    (then read the tail of tg-chat-log.jsonl)
-- Reply to chat:   ./tg-report.sh "text"   (plain text only; goes to chat ${chat})
-- Download a photo/file from the chat:  ./tg-file.sh <fileId>   (fileId is in the log row's media field; then Read the file)
-- Send a file to the chat (screenshot, report, log):  ./tg-send-file.sh <file> "caption"
-- Ask the operator when unsure:  ./ask-operator.sh "question"
-  (the operator's answer returns into your session — you continue the task)
+2. Download the chat helpers:
+${curl}
 
-Write via the API directly (no script) — chatId is required and equals your chat:
-curl -sS -X POST ${base}/send \\
-  -H "X-Bridge-Token: ${key}" -H "Content-Type: application/json" \\
-  -d '{"chatId":"${chat}","text":"hello from ${slug}"}'
+3. Add to .gitignore: .lanehub.env, .lanehub-autopilot.*, tg-chat-log.jsonl, tg-files/
 
-Rules: post only through your own lane and only to your chat (${chat}); send files up to 50 MB with ./tg-send-file.sh, bigger ones as a link; long threads go to the issue tracker; when asked to switch on autopilot, run ./tg-autopilot.sh on.`;
-}
+4. Add the section between the lines below to CLAUDE.md. Do NOT put the key there.
 
-function autopilotText(l, base, hub, lng) {
-  const bot = l.botUsername ? '@' + l.botUsername : '/' + l.slug;
-  if (lng === 'ru') return `## Автопилот (LaneHub Autopilot)
+5. Check: ./tg-fetch.sh, then ./tg-report.sh "${bot} connected".
 
-Автопилот позволяет боту автоматически отвечать на упоминания (${bot}) в командном чате без постоянно запущенных фоновых программ.
+------ CLAUDE.md section ------
+## Team chat (LaneHub) — ${bot}
 
-Правило: нет автопилота — нет процесса. Пока автопилот выключен, на компьютере ничего не работает.
+You are ${bot} in the Telegram chat ${where}. You post only there. Key and address are in .lanehub.env.
 
-Управление:
-- Включить: ./tg-autopilot.sh on [часы]   (по умолчанию 8 часов, макс. 72)
-- Выключить: ./tg-autopilot.sh off       (любой участник в чате также может выключить: /autopilot ${bot} off, или через панель)
-- Статус: ./tg-autopilot.sh status
+- Read the chat: ./tg-fetch.sh, then the tail of tg-chat-log.jsonl
+- Reply: ./tg-report.sh "text" (plain text, short)
+- Download a photo/file from the chat: ./tg-file.sh <fileId> (fileId is in the log row's media field)
+- Send a file: ./tg-send-file.sh <file> "caption" (up to 50 MB, bigger ones as a link)
+- Ask the owner privately: ./ask-operator.sh "question"
 
-Как это работает:
-1. Запросы из чата: любой участник может запросить автопилот командой /autopilot ${bot}. Бот тегнет владельца в чате с просьбой нажать Start.
-2. Когда тебя просят включить автопилот, запускай ./tg-autopilot.sh on.
-3. На macOS автопилот управляется через строку меню в приложении LaneHub Autopilot. Скачать приложение:
-   https://github.com/grabbly/lanehub/releases/latest/download/LaneHubAutopilot.zip
-4. На других ОС скрипт запускает watcher в терминале (Ctrl+C останавливает).
-5. При автоответах агент работает в режиме reply-only (только чтение и отправка ответов/файлов/вопросов оператору).
-6. Все автоответы автоматически помечаются хабом префиксом 🤖 auto · (свой маркер не добавляй).
-7. Лог автопилота пишется в .lanehub-autopilot.log — файл в git НЕ коммитить.`;
-  return `## Autopilot (LaneHub Autopilot)
+Autopilot (the bot answers mentions by itself while it's on):
+- Switch: ./tg-autopilot.sh on [hours] | off | status. On a Mac it runs in the LaneHub Autopilot menu-bar app: ${app}
+- In the chat: /autopilot_on_${h} asks the owner to switch it on, /autopilot_off_${h} switches it off (anyone).
+- On autopilot: answer plain questions right away; if unclear, ask one clarifying question in the chat and stop; before any change post a short plan, "Proceed? Reply ok." and stop until confirmed; finish with a short report. The hub marks replies 🤖 auto.
 
-Autopilot enables automated replies to @mentions (${bot}) in the team chat without any always-running background software.
-
-Invariant: no autopilot → no process. When autopilot is OFF, nothing runs on your machine.
-
-Commands:
-- Turn ON: ./tg-autopilot.sh on [hours]   (default 8 h, max 72 h)
-- Turn OFF: ./tg-autopilot.sh off       (anyone in chat can also switch it off with: /autopilot ${bot} off, or via the panel)
-- Status: ./tg-autopilot.sh status
-
-How it works:
-1. Chat requests: anyone in the chat can request autopilot using /autopilot ${bot}. The bot tags the owner to press Start.
-2. When asked to switch on autopilot, run ./tg-autopilot.sh on.
-3. On macOS, autopilot is managed visibly via the menu-bar app LaneHub Autopilot. Download:
-   https://github.com/grabbly/lanehub/releases/latest/download/LaneHubAutopilot.zip
-4. On non-macOS, the script runs the watcher in the foreground terminal (Ctrl+C stops it).
-5. During auto-replies, the agent runs in reply-only mode (read-only tools + sending replies/files/asking operator).
-6. All automatic replies are marked with 🤖 auto · by the hub (do not add your own marker).
-7. Autopilot logs are appended to .lanehub-autopilot.log — NEVER commit this file to git.`;
+Rules: threads longer than 3–4 messages go to the issue tracker; never post the key.
+------ end of section ------`;
 }
 
 // ----------------- SESSION LOG DIALOG -----------------
@@ -1900,11 +1906,18 @@ howtoEl.addEventListener('toggle', () => {
 });
 
 // ----------------- DATA LOADING -----------------
+let chatNames = {};
+
 async function loadLanes() {
   try {
     const data = await api('/admin/api/lanes');
     lanes = data.lanes || [];
     seenChatsHub = data.seenChats || [];
+    chatNames = data.chatNames || {};
+    // Names given in the panel win over Telegram's titles everywhere (blocks, chips, feed filter).
+    const named = c => { if (chatNames[String(c.chatId)]) c.title = chatNames[String(c.chatId)]; };
+    seenChatsHub.forEach(named);
+    lanes.forEach(l => (l.seenChats || []).forEach(named));
     renderChatsTab();
   } catch (err) {}
 }
@@ -1966,5 +1979,9 @@ setSkin(savedSkin);
 
 boot();
 </script>
+
+<!-- Issue reporting widget (iswish) -->
+<div id="issues-widget"></div>
+<script src="https://iswish.acebox.eu/embed.js" data-site-id="000e4d60" data-api-base="https://iswish.acebox.eu"></script>
 </body>
 </html>

@@ -188,6 +188,18 @@ def new_webhook_secret() -> str:
 # --- hub state -----------------------------------------------------------
 
 
+def chat_names() -> dict[str, str]:
+    """Names the operator gave chats in the panel ({chat_id: name})."""
+    with connect() as conn:
+        rows = conn.execute("SELECT key, value FROM hub_state WHERE key LIKE 'chat_name:%'").fetchall()
+    return {r["key"].split(":", 1)[1]: r["value"] for r in rows if r["value"]}
+
+
+def set_chat_name(chat_id: str, name: str) -> None:
+    """Empty name = back to the title Telegram reports."""
+    set_hub_state(f"chat_name:{chat_id}", name.strip())
+
+
 def get_hub_state(key: str) -> str | None:
     with connect() as conn:
         row = conn.execute("SELECT value FROM hub_state WHERE key = ?", (key,)).fetchone()

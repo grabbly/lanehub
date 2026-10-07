@@ -168,6 +168,20 @@ class AutopilotUpdate(BaseModel):
     on: bool | None = None
 
 
+class ChatRename(BaseModel):
+    name: str = Field(default="", max_length=80)
+
+
+@router.patch("/chats/{chat_id}")
+async def chats_rename(chat_id: str, req: ChatRename, hub_session: str | None = Cookie(default=None)) -> dict:
+    """Give a chat a panel name (empty = use Telegram's title again)."""
+    require_admin(hub_session)
+    if not telegram.is_numeric_chat_id(chat_id):
+        raise HTTPException(status_code=422, detail="chat id must be numeric")
+    db.set_chat_name(chat_id, req.name)
+    return {"chatId": chat_id, "name": req.name.strip() or None}
+
+
 class AdminSend(BaseModel):
     text: str = Field(min_length=1, max_length=64000)
     chat_id: str | None = Field(default=None, alias="chatId")
@@ -183,6 +197,9 @@ async def lanes_list(hub_session: str | None = Cookie(default=None)) -> dict:
         # Every chat any bot has seen, with the lanes that saw it — the
         # "New chat" picker lists the groups nobody is bound to yet.
         "seenChats": db.seen_chats_with_lanes(),
+        # Names the operator gave chats; the panel shows them instead of the
+        # Telegram title.
+        "chatNames": db.chat_names(),
     }
 
 
