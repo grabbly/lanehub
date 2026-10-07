@@ -8,7 +8,9 @@
     <string>LaneHub Autopilot</string>
     <key>CFBundleExecutable</key>
     <string>LaneHub Autopilot</string>
-    <key>CFBundleIdentifier</key>
+    <key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
     <string>dev.lanehub.autopilot</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>

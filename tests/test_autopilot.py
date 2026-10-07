@@ -408,7 +408,8 @@ def test_busy_watcher_is_not_offline(client):
     db.set_lane_state("devbot", "autopilot_started_at", str(now - 600))
     db.set_lane_state("devbot", "auto_window_until", str(now + 600))  # claude is answering a mention
     asyncio.run(autopilot_check_pass(now))
-    assert client.get("/devbot/autopilot", headers=h).json()["on"] is True
+    st = client.get("/devbot/autopilot", headers=h).json()
+    assert st["on"] is True and st["busy"] is True and st["watcherOnline"] is True
     db.delete_lane_state("devbot", "auto_window_until")
     asyncio.run(autopilot_check_pass(now))
     assert client.get("/devbot/autopilot", headers=h).json()["on"] is False

@@ -148,6 +148,7 @@ def get_autopilot_state(lane_slug: str, now: int | None = None) -> dict:
         "owner": owner or None,
         "watcherSeen": seen,
         "watcherOnline": online,
+        "busy": busy,  # claude is answering a mention right now
     }
 
 

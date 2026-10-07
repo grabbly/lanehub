@@ -12,6 +12,8 @@ final class Project: Identifiable, ObservableObject {
     @Published var botUsername: String?
     @Published var isOn: Bool = false
     @Published var until: Date? = nil
+    @Published var isBusy: Bool = false        // claude is answering a mention
+    @Published var attention: String? = nil    // last problem, shown in the menu
     var process: Process? = nil
 
     var folderName: String {
@@ -26,10 +28,11 @@ final class Project: Identifiable, ObservableObject {
     }
 
     var statusText: String {
+        if let a = attention { return "⚠︎ \(a)" }
         if isOn, let u = until {
             let f = DateFormatter()
             f.dateFormat = "HH:mm"
-            return "ON until \(f.string(from: u))"
+            return isBusy ? "answering a mention… (ON until \(f.string(from: u)))" : "ON until \(f.string(from: u))"
         }
         return "OFF"
     }
@@ -54,6 +57,33 @@ final class AppModel: ObservableObject {
 
     var isAnyOn: Bool {
         return projects.contains { $0.isOn }
+    }
+
+    /// What the menu-bar icon shows: a problem wins, then answering, then on.
+    var status: BotGlyph.State {
+        if projects.contains(where: { $0.attention != nil }) { return .attention }
+        if projects.contains(where: { $0.isOn && $0.isBusy }) { return .busy }
+        if isAnyOn { return .on }
+        return .off
+    }
+
+    /// Blinks the "answering" dot; runs only while something is answering.
+    @Published var pulse = true
+    private var pulseTimer: Timer? = nil
+
+    func refreshPulse() {
+        objectWillChange.send()
+        if status == .busy {
+            if pulseTimer == nil {
+                pulseTimer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: true) { [weak self] _ in
+                    self?.pulse.toggle()
+                }
+            }
+        } else {
+            pulseTimer?.invalidate()
+            pulseTimer = nil
+            pulse = true
+        }
     }
 
     private init() {
@@ -161,6 +191,7 @@ final class AppModel: ObservableObject {
         project.lane = lane
         project.base = base
         project.apiKey = key
+        project.attention = nil
         if let bot = env["LANEHUB_BOT_USERNAME"] {
             project.botUsername = bot
         }
@@ -176,9 +207,12 @@ final class AppModel: ObservableObject {
 
         let task = URLSession.shared.dataTask(with: req) { [weak self] data, response, error in
             guard let self = self else { return }
-            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            if error != nil || (response as? HTTPURLResponse)?.statusCode != 200 {
+                let why = error != nil ? "hub unreachable" : "hub said HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)"
                 DispatchQueue.main.async {
-                    self.showAlert(title: "Autopilot Error", message: "Hub returned HTTP \(http.statusCode) when starting autopilot.")
+                    project.attention = "start failed: \(why)"
+                    self.refreshPulse()
+                    self.showAlert(title: "Autopilot didn't start", message: "Could not switch on autopilot for @\(project.botDisplay): \(why).")
                 }
                 return
             }
@@ -188,6 +222,8 @@ final class AppModel: ObservableObject {
                 switch result {
                 case .failure(let err):
                     DispatchQueue.main.async {
+                        project.attention = "couldn't download the watcher"
+                        self.refreshPulse()
                         self.showAlert(title: "Watcher Download Error", message: err.localizedDescription)
                     }
                 case .success(let watcherURL):
@@ -233,9 +269,10 @@ final class AppModel: ObservableObject {
         proc.standardError = logHandle
 
         let dir = project.dir
-        proc.terminationHandler = { [weak self] _ in
+        proc.terminationHandler = { [weak self] p in
+            let failed = p.terminationReason == .exit && p.terminationStatus != 0
             DispatchQueue.main.async {
-                self?.handleProcessExited(forDir: dir)
+                self?.handleProcessExited(forDir: dir, failed: failed)
             }
         }
 
@@ -245,6 +282,7 @@ final class AppModel: ObservableObject {
             project.isOn = true
             project.until = Date().addingTimeInterval(Double(hours) * 3600)
             updatePollingTimer()
+            refreshPulse()
             fetchInfo(for: project)
         } catch {
             showAlert(title: "Process Error", message: "Failed to run watcher: \(error.localizedDescription)")
@@ -276,8 +314,11 @@ final class AppModel: ObservableObject {
         }
         project.process = nil
         project.isOn = false
+        project.isBusy = false
+        project.attention = nil
         project.until = nil
         updatePollingTimer()
+        refreshPulse()
     }
 
     func remove(project: Project) {
@@ -286,12 +327,15 @@ final class AppModel: ObservableObject {
         saveProjects()
     }
 
-    func handleProcessExited(forDir dir: String) {
+    func handleProcessExited(forDir dir: String, failed: Bool = false) {
         if let p = projects.first(where: { $0.dir == dir }) {
             p.isOn = false
+            p.isBusy = false
             p.until = nil
             p.process = nil
+            if failed { p.attention = "watcher stopped with an error — see .lanehub-autopilot.log" }
             updatePollingTimer()
+            refreshPulse()
         }
     }
 
@@ -301,7 +345,7 @@ final class AppModel: ObservableObject {
         let anyOn = projects.contains { $0.isOn }
         if anyOn {
             if pollTimer == nil {
-                pollTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in
+                pollTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
                     self?.pollActiveProjects()
                 }
                 pollActiveProjects()
@@ -327,12 +371,23 @@ final class AppModel: ObservableObject {
             req.timeoutInterval = 10.0
 
             URLSession.shared.dataTask(with: req) { [weak self, weak p] data, _, _ in
-                guard let self = self, let p = p, let data = data else { return }
-                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+                guard let self = self, let p = p else { return }
+                guard let data = data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    DispatchQueue.main.async {
+                        p.attention = "hub unreachable"
+                        self.refreshPulse()
+                    }
+                    return
+                }
                 let on = json["on"] as? Bool ?? false
+                let busy = json["busy"] as? Bool ?? false
                 let untilTs = json["until"] as? Double
 
                 DispatchQueue.main.async {
+                    p.attention = nil
+                    p.isBusy = on && busy
+                    defer { self.refreshPulse() }
                     if !on {
                         p.isOn = false
                         p.until = nil
@@ -531,7 +586,67 @@ struct LaneHubAutopilotApp: App {
                     model.handleURL(url)
                 }
         } label: {
-            Image(systemName: model.isAnyOn ? "paperplane.fill" : "paperplane")
+            Image(nsImage: BotGlyph.image(model.status, dotVisible: model.pulse))
         }
+    }
+}
+
+
+// MARK: - Menu-bar glyph (concept "C · Bot")
+
+/// An 18×18 template image drawn in code, so it follows the light/dark menu bar
+/// like Wi-Fi or the battery. Off: asleep, outlined, dimmed. On: solid with open
+/// eyes. Busy: solid + a blinking dot. Attention: outlined + "!" badge.
+enum BotGlyph {
+    enum State { case off, on, busy, attention }
+
+    static func image(_ state: State, dotVisible: Bool = true) -> NSImage {
+        let img = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { _ in
+            guard let ctx = NSGraphicsContext.current else { return false }
+            let ink = NSColor.black
+            func clear(_ path: NSBezierPath, fill: Bool = true) {
+                ctx.compositingOperation = .clear
+                if fill { path.fill() } else { path.stroke() }
+                ctx.compositingOperation = .sourceOver
+            }
+            func circle(_ x: CGFloat, _ y: CGFloat, _ r: CGFloat) -> NSBezierPath {
+                NSBezierPath(ovalIn: NSRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
+            }
+            func line(_ x1: CGFloat, _ y1: CGFloat, _ x2: CGFloat, _ y2: CGFloat, _ w: CGFloat) -> NSBezierPath {
+                let p = NSBezierPath(); p.move(to: NSPoint(x: x1, y: y1)); p.line(to: NSPoint(x: x2, y: y2))
+                p.lineWidth = w; p.lineCapStyle = .round; return p
+            }
+            let solid = state == .on || state == .busy
+            ink.set()
+            if solid {
+                NSBezierPath(roundedRect: NSRect(x: 2.6, y: 5, width: 12.8, height: 10.6), xRadius: 3.3, yRadius: 3.3).fill()
+                clear(circle(6.8, 10.1, 1.45)); clear(circle(11.2, 10.1, 1.45))
+                line(9, 5, 9, 2.9, 1.5).stroke(); circle(9, 2.2, 1.1).fill()
+            } else {
+                let head = NSBezierPath(roundedRect: NSRect(x: 2.8, y: 5.2, width: 12.4, height: 10.2), xRadius: 3.2, yRadius: 3.2)
+                head.lineWidth = 1.6; head.stroke()
+                line(9, 5.2, 9, 2.9, 1.5).stroke(); circle(9, 2.2, 1).fill()
+                line(5.9, 10.4, 7.8, 10.4, 1.6).stroke(); line(10.2, 10.4, 12.1, 10.4, 1.6).stroke()
+            }
+            switch state {
+            case .busy:
+                clear(circle(14.6, 3.4, 3.6))
+                ink.withAlphaComponent(dotVisible ? 1 : 0.25).set()
+                circle(14.6, 3.4, 2.2).fill()
+            case .attention:
+                clear(circle(14.6, 3.4, 3.7))
+                ink.set(); circle(14.6, 3.4, 3).fill()
+                clear(line(14.6, 1.7, 14.6, 3.8, 1.2), fill: false); clear(circle(14.6, 5.1, 0.6))
+            default: break
+            }
+            if state == .off {  // dim the whole glyph at once, so overlapping strokes don't darken
+                NSColor.black.withAlphaComponent(0.5).set()
+                NSRect(x: 0, y: 0, width: 18, height: 18).fill(using: .destinationIn)
+            }
+            return true
+        }
+        img.isTemplate = true
+        img.accessibilityDescription = "LaneHub Autopilot: \(state)"
+        return img
     }
 }
