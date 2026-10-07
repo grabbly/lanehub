@@ -324,7 +324,10 @@ def _scan_mention(lane: dict, cursor: int) -> tuple[dict | None, list[dict]]:
         sender = (r.get("from") or "").lstrip("@").lower()
         if sender == bot_username.lstrip("@").lower():
             continue
-        if telegram.mentions_bot(r.get("text") or "", bot_username):
+        # A reply to the bot counts as a mention: answering its clarifying
+        # question in Telegram resumes the same session.
+        replied_to_bot = bool(bot_username) and (r.get("replyToUsername") or "").lower() == bot_username.lstrip("@").lower()
+        if replied_to_bot or telegram.mentions_bot(r.get("text") or "", bot_username):
             return r, scanned
     return None, scanned
 

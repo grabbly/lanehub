@@ -325,13 +325,15 @@ async def download_file(bot_token: str, file_path: str, timeout: float = 60) -> 
 def extract_author(msg: dict) -> dict:
     """Structured author of a message: Telegram user id, @username and whether
     it's a bot. Channel posts / anonymous admins carry sender_chat instead."""
+    replied = (msg.get("reply_to_message") or {}).get("from") or {}
+    reply_to = {"reply_to_username": replied.get("username")}
     sender = msg.get("from") or {}
     if sender:
         return {"from_id": sender.get("id"), "from_username": sender.get("username"),
-                "from_is_bot": bool(sender.get("is_bot"))}
+                "from_is_bot": bool(sender.get("is_bot")), **reply_to}
     sender_chat = msg.get("sender_chat") or {}
     return {"from_id": sender_chat.get("id"), "from_username": sender_chat.get("username"),
-            "from_is_bot": False if sender_chat else None}
+            "from_is_bot": False if sender_chat else None, **reply_to}
 
 
 def extract_sender(msg: dict) -> str:

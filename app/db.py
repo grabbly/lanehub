@@ -115,7 +115,8 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
     if "media" not in cols:
         # JSON attachment descriptor (see telegram.extract_media); NULL for text.
         conn.execute("ALTER TABLE messages ADD COLUMN media TEXT")
-    for col, decl in (("from_id", "INTEGER"), ("from_username", "TEXT"), ("from_is_bot", "INTEGER")):
+    for col, decl in (("from_id", "INTEGER"), ("from_username", "TEXT"), ("from_is_bot", "INTEGER"),
+                      ("reply_to_username", "TEXT")):  # author of the message this one replies to
         if col not in cols:
             conn.execute(f"ALTER TABLE messages ADD COLUMN {col} {decl}")
     if "seq" not in cols:
@@ -416,6 +417,7 @@ def store_message(
     from_id: int | None = None,
     from_username: str | None = None,
     from_is_bot: bool | None = None,
+    reply_to_username: str | None = None,
 ) -> dict:
     """Insert (or refresh, on a redelivered update) one message row.
 
@@ -444,16 +446,16 @@ def store_message(
             update_id = max(seq, OUTGOING_BASE)
         conn.execute(
             "INSERT INTO messages (lane_slug, update_id, message_id, chat_id, chat_title, from_user, text, date, "
-            "is_outgoing, media, from_id, from_username, from_is_bot, seq) "
-            "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "is_outgoing, media, from_id, from_username, from_is_bot, reply_to_username, seq) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(lane_slug, update_id) DO UPDATE SET message_id = excluded.message_id, "
             "chat_id = excluded.chat_id, chat_title = excluded.chat_title, from_user = excluded.from_user, "
             "text = excluded.text, date = excluded.date, is_outgoing = excluded.is_outgoing, "
             "media = excluded.media, from_id = excluded.from_id, from_username = excluded.from_username, "
-            "from_is_bot = excluded.from_is_bot, seq = excluded.seq",
+            "from_is_bot = excluded.from_is_bot, reply_to_username = excluded.reply_to_username, seq = excluded.seq",
             (lane_slug, update_id, message_id, chat_id, chat_title, from_user, text, date, int(is_outgoing),
              json.dumps(media, ensure_ascii=False) if media else None,
-             from_id, from_username, None if from_is_bot is None else int(from_is_bot), seq),
+             from_id, from_username, None if from_is_bot is None else int(from_is_bot), reply_to_username, seq),
         )
         if chat_id is not None:
             conn.execute(
@@ -500,6 +502,7 @@ def _msg_to_dict(r: sqlite3.Row) -> dict:
         "fromId": r["from_id"],
         "fromUsername": r["from_username"],
         "fromIsBot": None if r["from_is_bot"] is None else bool(r["from_is_bot"]),
+        "replyToUsername": r["reply_to_username"],
         "media": json.loads(r["media"]) if r["media"] else None,
         "seq": r["seq"],
     }

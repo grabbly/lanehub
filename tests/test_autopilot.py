@@ -413,3 +413,20 @@ def test_busy_watcher_is_not_offline(client):
     db.delete_lane_state("devbot", "auto_window_until")
     asyncio.run(autopilot_check_pass(now))
     assert client.get("/devbot/autopilot", headers=h).json()["on"] is False
+
+
+def test_reply_to_the_bot_wakes_like_a_mention(client):
+    login(client)
+    lane = make_lane(client, slug="devbot")
+    h = {"X-Bridge-Token": lane["apiKey"]}
+    client.post("/devbot/autopilot", headers=h, json={"on": True})
+    client.get("/devbot/wake", headers=h)  # seed
+    payload = {"update_id": 40, "message": {
+        "message_id": 40, "from": {"id": 42, "is_bot": False, "username": "denis"},
+        "chat": {"id": -100500, "title": "Test Group", "type": "supergroup"},
+        "date": 1_700_000_040, "text": "ok",
+        "reply_to_message": {"message_id": 39, "from": {"id": 7, "is_bot": True, "username": "test_bot"}}}}
+    client.post("/devbot/webhook", json=payload,
+                headers={"X-Telegram-Bot-Api-Secret-Token": db.get_lane("devbot")["webhook_secret"]})
+    w = client.get("/devbot/wake", headers=h).json()
+    assert w["wake"] is True and w["text"] == "ok"

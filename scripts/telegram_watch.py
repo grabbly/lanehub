@@ -314,16 +314,24 @@ def resume_session(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tup
 
 def build_prompt(sender: str, text: str) -> str:
     return (
-        f"You were @-mentioned in the team Telegram chat by {sender}:\n\n"
+        f"You are on AUTOPILOT. {sender} wrote to you in the team Telegram chat "
+        "(an @mention or a reply to one of your messages):\n\n"
         f"{text}\n\n"
-        "You work autonomously. Read context with ./tg-fetch.sh (then the tail of "
-        "tg-chat-log.jsonl), do the task, and reply in the team chat with "
-        "./tg-report.sh \"your reply\". Keep it short.\n"
-        "Your replies are automatically marked 🤖 auto by the hub; don't add your own marker.\n"
-        "If — and only if — you genuinely need a clarifying decision from the "
-        "operator before you can proceed correctly, run ./ask-operator.sh \"your "
-        "question\" and then STOP without replying: the operator will answer and "
-        "you'll be resumed to finish. Don't ask trivial questions; just proceed."
+        "First read the context: ./tg-fetch.sh, then the tail of tg-chat-log.jsonl "
+        "(this may be the answer to a question or a plan you posted earlier).\n"
+        "Rules — talk to people ONLY through ./tg-report.sh \"text\" (plain text, short; "
+        "the hub marks your messages 🤖 auto, don't add a marker):\n"
+        "1. A plain question you can answer from the code/chat: answer it.\n"
+        "2. Anything unclear: ask ONE short clarifying question, tagging "
+        f"{sender}, then STOP. Never guess what they meant.\n"
+        "3. Any change (code, files, git, commands with effects, deploy): first post a "
+        "short numbered plan (at most 5 lines) ending with 'Proceed? Reply ok.', then STOP. "
+        "Do the work only after a reply in the chat confirms THIS plan; if they change "
+        "it, post the updated plan and wait again.\n"
+        "4. When done: one short report of what you did and the result (links, commit, "
+        "what to check). If something failed, say so plainly.\n"
+        "Stopping means: end your turn. You'll be resumed in this same session when "
+        "someone replies to you or mentions you again."
     )
 
 
