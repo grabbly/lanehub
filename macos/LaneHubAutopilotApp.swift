@@ -439,8 +439,8 @@ final class AppModel: ObservableObject {
                 addAndStart(dir: cleanDir, hours: 8)
             } else {
                 let alert = NSAlert()
-                alert.messageText = "Missing .lanehub.env"
-                alert.informativeText = "The selected folder does not contain a .lanehub.env file.\n\nPlease set up .lanehub.env before adding the project."
+                alert.messageText = "This folder isn't connected to LaneHub yet"
+                alert.informativeText = "There is no .lanehub.env here (hub address, lane and key).\n\nIn the LaneHub panel open the bot → Agent instructions and run its setup block in this folder, then add it again."
                 alert.alertStyle = .warning
                 alert.runModal()
             }
