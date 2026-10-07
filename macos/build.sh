@@ -31,6 +31,10 @@ codesign --force --deep -s - "${APP_BUNDLE}"
 echo "Creating distribution zip..."
 ditto -c -k --keepParent "${APP_BUNDLE}" "${ZIP_NAME}"
 
+# Keep Launch Services from listing this build copy next to the installed app
+# (two bundles with one id can make Launchpad hide the app).
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "${APP_BUNDLE}" >/dev/null 2>&1 || true
+
 echo "Built successfully:"
 echo "  App: ${APP_BUNDLE}"
 echo "  Zip: ${ZIP_NAME}"
