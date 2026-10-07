@@ -58,6 +58,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -73,7 +74,13 @@ LOG = logging.getLogger("lanehub.watch")
 _CHILD: subprocess.Popen | None = None
 
 
+_BG_RUNNING: tuple[str, str] | None = None  # (claude_bin, bg id) of the session in progress
+
+
 def _stop(signum, _frame) -> None:
+    if _BG_RUNNING:
+        subprocess.run([_BG_RUNNING[0], "stop", _BG_RUNNING[1]], stdin=subprocess.DEVNULL,
+                       capture_output=True, timeout=30)
     if _CHILD is not None and _CHILD.poll() is None:
         _CHILD.terminate()
         try:
@@ -83,17 +90,14 @@ def _stop(signum, _frame) -> None:
     LOG.info("stopped (signal %s)", signum)
     sys.exit(0)
 
-DEFAULT_CLAUDE_ARGS = [
-    "--setting-sources", "project,local",
-    "--permission-mode", "default",
-    "--allowedTools",
-    "Bash(./tg-fetch.sh:*)",
-    "Bash(./tg-report.sh:*)",
-    "Bash(./tg-file.sh:*)",
-    "Bash(./tg-send-file.sh:*)",
-    "Bash(./ask-operator.sh:*)",
-    "Read",
-]
+# Autopilot does the work itself (the owner watches it live and can stop it);
+# override with env CLAUDE_ARGS, e.g. a reply-only allow-list.
+DEFAULT_CLAUDE_ARGS = ["--permission-mode", "bypassPermissions"]
+
+# Where a run's state is published for the menu-bar app (inside the project dir).
+STATUS_FILE = ".lanehub-autopilot.json"
+_BG_ID_RE = re.compile(r"backgrounded\s*·\s*([0-9a-f]{6,})")
+_REMOTE_URL_RE = re.compile(r"https://claude\.ai/code/session_[A-Za-z0-9]+")
 
 # stderr fragments that mean "that session id no longer exists" -> recover by
 # starting a fresh session instead of failing on every future mention.
@@ -154,6 +158,10 @@ class Lane:
         self.key = key
         self.project_dir = raw.get("project_dir") or os.getcwd()
         self.claude_bin = raw.get("claude_bin")  # falls back to global
+        # "bg": a visible background session with Remote Control (claude --bg);
+        # "print": the old invisible `claude -p`.
+        self.runner = raw.get("runner") or "print"
+        self.mention: tuple[str, str] = ("", "")  # (sender, text) being answered
         if raw.get("extra_args") is not None:
             self.extra_args = list(raw["extra_args"])
         elif "CLAUDE_ARGS" in os.environ:
@@ -220,6 +228,7 @@ class Config:
                     "key": key,
                     "project_dir": project_dir,
                     "extra_args": claude_args,
+                    "runner": os.environ.get("AUTOPILOT_RUNNER", "bg"),
                 }],
             }
         except json.JSONDecodeError as exc:
@@ -301,14 +310,102 @@ def _run_claude(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[
     return result.get("session_id") or session_id, "", result
 
 
+def write_status(lane: Lane, **state) -> None:
+    """Publish what the autopilot is doing, for the menu-bar app. Best effort."""
+    path = os.path.join(lane.project_dir, STATUS_FILE)
+    try:
+        with open(path + ".tmp", "w", encoding="utf-8") as fh:
+            json.dump({"lane": lane.name, "updatedAt": int(time.time()), **state}, fh, ensure_ascii=False)
+        os.replace(path + ".tmp", path)
+    except OSError:
+        pass
+
+
+def _bg_session(claude_bin: str, bg_id: str) -> dict | None:
+    try:
+        out = subprocess.run([claude_bin, "agents", "--json", "--all"], stdin=subprocess.DEVNULL,
+                             capture_output=True, text=True, timeout=30).stdout
+        return next((a for a in json.loads(out or "[]") if a.get("id") == bg_id), None)
+    except (subprocess.SubprocessError, json.JSONDecodeError, OSError):
+        return None
+
+
+def _run_claude_bg(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[str | None, str, dict | None]:
+    """Answer in a VISIBLE background session: `claude --bg --remote-control`.
+    It shows up in the Claude app (desktop and phone) and at its claude.ai/code
+    link while it works; the owner can watch, type into it or stop it, and take
+    it over with `claude attach <id>`. Waits until the turn is done, then stops
+    the session (its conversation is kept for the next mention)."""
+    global _BG_RUNNING
+    claude_bin = lane.claude_bin or cfg.claude_bin
+    sender, text = lane.mention
+    title = f"@{lane.name} · {sender}: {text[:60]}"
+    cmd = [claude_bin, "--bg", "--remote-control", title, *lane.extra_args]
+    if session_id:
+        cmd += ["--resume", session_id]
+    cmd.append(prompt)
+    try:
+        proc = subprocess.run(cmd, cwd=lane.project_dir, stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, timeout=120)
+    except (subprocess.SubprocessError, OSError) as exc:
+        return None, str(exc), None
+    m = _BG_ID_RE.search(proc.stdout + proc.stderr)
+    if not m:
+        why = (proc.stdout + proc.stderr).strip()[:300] or f"exit {proc.returncode}"
+        LOG.error("[%s] could not start a background session: %s", lane.name, why)
+        hub_log(lane, "error", f"background session did not start: {why}")
+        return None, why, None
+    bg_id = m.group(1)
+    _BG_RUNNING = (claude_bin, bg_id)
+    started = time.time()
+    state = {"state": "answering", "bgId": bg_id, "from": sender, "text": text[:300],
+             "startedAt": int(started), "remoteUrl": None, "sessionId": None}
+    write_status(lane, **state)
+    LOG.info("[%s] answering in background session %s", lane.name, bg_id)
+
+    seen_busy, url_tries = False, 0
+    try:
+        while time.time() - started < 1800:
+            time.sleep(3)
+            if not state["remoteUrl"] and url_tries < 20:
+                url_tries += 1
+                logs = subprocess.run([claude_bin, "logs", bg_id], stdin=subprocess.DEVNULL,
+                                      capture_output=True, text=True, timeout=30).stdout
+                found = _REMOTE_URL_RE.search(logs or "")
+                if found:
+                    state["remoteUrl"] = found.group(0)
+                    write_status(lane, **state)
+                    hub_notify(lane, f"👀 [{lane.name}] live: {state['remoteUrl']}")
+            info = _bg_session(claude_bin, bg_id)
+            if info and info.get("sessionId"):
+                state["sessionId"] = info["sessionId"]
+            status = (info or {}).get("status")
+            if status == "busy":
+                seen_busy = True
+            elif status is None or (status == "idle" and (seen_busy or time.time() - started > 15)):
+                break  # turn finished, or the owner stopped it
+        else:
+            LOG.warning("[%s] background session %s ran 30 min; stopping it", lane.name, bg_id)
+    finally:
+        subprocess.run([claude_bin, "stop", bg_id], stdin=subprocess.DEVNULL, capture_output=True, timeout=30)
+        _BG_RUNNING = None
+    write_status(lane, state="idle", lastSessionId=state["sessionId"], lastRemoteUrl=state["remoteUrl"],
+                 lastBgId=bg_id, lastFrom=sender, lastText=text[:300], finishedAt=int(time.time()))
+    summary = f"answered in background session {bg_id} · {time.time() - started:.0f}s"
+    LOG.info("[%s] %s", lane.name, summary)
+    hub_log(lane, "info", summary)
+    return state["sessionId"] or session_id or None, "", None
+
+
 def resume_session(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[str | None, dict | None]:
     """Resume `session_id` (or start fresh when empty), self-healing a stale id.
     Returns (session id to report back | None if even a fresh run failed, result_json)."""
     LOG.info("[%s] resuming session %s", lane.name, session_id or "(new)")
-    new_id, stderr, result = _run_claude(cfg, lane, session_id, prompt)
+    run = _run_claude_bg if lane.runner == "bg" else _run_claude
+    new_id, stderr, result = run(cfg, lane, session_id, prompt)
     if new_id is None and session_id and any(h in stderr.lower() for h in _STALE_SESSION_HINTS):
         LOG.warning("[%s] session %s looks gone; starting a fresh one", lane.name, session_id)
-        new_id, _, result = _run_claude(cfg, lane, "", prompt)
+        new_id, _, result = run(cfg, lane, "", prompt)
     return new_id, result
 
 
@@ -406,6 +503,7 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> bool:
 
     if wake.get("autopilot") is False:
         LOG.info("[%s] autopilot is off — exiting", lane.name)
+        write_status(lane, state="off")
         return False
 
     if not wake.get("wake"):
@@ -432,6 +530,7 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> bool:
             hub_log(lane, "info", f"context reset — session ~{est // 1000}k tok >= {SESSION_TOKEN_CAP // 1000}k cap; fresh session")
             resume_id = ""
 
+    lane.mention = (sender, text)
     new_id, result = resume_session(cfg, lane, resume_id, build_prompt(sender, text))
 
     if new_id is None:

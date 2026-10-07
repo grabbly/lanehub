@@ -14,6 +14,12 @@ final class Project: Identifiable, ObservableObject {
     @Published var until: Date? = nil
     @Published var isBusy: Bool = false        // claude is answering a mention
     @Published var attention: String? = nil    // last problem, shown in the menu
+    // From the watcher's .lanehub-autopilot.json: the mention being answered
+    // and how to watch / take over that Claude session.
+    @Published var answering: String? = nil     // "@alice: deploy the fix"
+    @Published var remoteUrl: String? = nil
+    @Published var bgId: String? = nil
+    @Published var lastSessionId: String? = nil
     var process: Process? = nil
 
     var folderName: String {
@@ -341,8 +347,56 @@ final class AppModel: ObservableObject {
 
     // MARK: - Polling
 
+    private var statusTimer: Timer? = nil
+
+    /// Reads each running project's .lanehub-autopilot.json (local file, no network).
+    func readStatusFiles() {
+        for p in projects {
+            let path = (p.dir as NSString).appendingPathComponent(".lanehub-autopilot.json")
+            guard let data = FileManager.default.contents(atPath: path),
+                  let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+            let answering = (j["state"] as? String) == "answering"
+            p.isBusy = p.isOn && answering
+            if answering, let from = j["from"] as? String {
+                p.answering = "\(from): \((j["text"] as? String ?? "").prefix(60))"
+            } else {
+                p.answering = nil
+            }
+            p.remoteUrl = (j["remoteUrl"] as? String) ?? (j["lastRemoteUrl"] as? String)
+            p.bgId = answering ? j["bgId"] as? String : nil
+            p.lastSessionId = (j["sessionId"] as? String) ?? (j["lastSessionId"] as? String) ?? p.lastSessionId
+        }
+        refreshPulse()
+    }
+
+    func watchLive(_ p: Project) {
+        if let u = p.remoteUrl, let url = URL(string: u) { NSWorkspace.shared.open(url) }
+    }
+
+    /// Take over in Terminal: attach to the running session, or resume the last one.
+    func openInTerminal(_ p: Project) {
+        let target: String
+        if let id = p.bgId { target = "claude attach \(id)" }
+        else if let sid = p.lastSessionId { target = "claude --resume \(sid)" }
+        else { return }
+        let dir = p.dir.replacingOccurrences(of: "'", with: "'\\''")
+        let cmd = "cd '\(dir)' && \(target)"
+        let script = "tell application \"Terminal\"\n activate\n do script \"\(cmd.replacingOccurrences(of: "\"", with: "\\\""))\"\nend tell"
+        var err: NSDictionary?
+        NSAppleScript(source: script)?.executeAndReturnError(&err)
+    }
+
     func updatePollingTimer() {
         let anyOn = projects.contains { $0.isOn }
+        if anyOn && statusTimer == nil {
+            statusTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+                self?.readStatusFiles()
+            }
+        } else if !anyOn {
+            statusTimer?.invalidate()
+            statusTimer = nil
+            readStatusFiles()
+        }
         if anyOn {
             if pollTimer == nil {
                 pollTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
@@ -550,6 +604,17 @@ struct MenuView: View {
             ForEach(model.projects) { p in
                 Text("@\(p.botDisplay) · \(p.folderName)")
                 Text("Autopilot: \(p.statusText)")
+                if let a = p.answering {
+                    Text("Answering \(a)")
+                }
+                if p.remoteUrl != nil {
+                    Button("Watch live in Claude") { model.watchLive(p) }
+                }
+                if p.bgId != nil || p.lastSessionId != nil {
+                    Button(p.bgId != nil ? "Take over in Terminal" : "Continue last session in Terminal") {
+                        model.openInTerminal(p)
+                    }
+                }
                 Button("Start (8 h)") {
                     model.start(project: p, hours: 8)
                 }
