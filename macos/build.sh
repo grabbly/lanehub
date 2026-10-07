@@ -16,7 +16,7 @@ echo "Building ${APP_NAME} ${VERSION}..."
 rm -rf "${APP_BUNDLE}" "${ZIP_NAME}"
 mkdir -p "${APP_BUNDLE}/Contents/MacOS"
 mkdir -p "${APP_BUNDLE}/Contents/Resources"
-cp "${SCRIPT_DIR}/AppIcon.icns" "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"  # rendered from AppIcon.svg
+cp "${SCRIPT_DIR}/AppIcon.icns" "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"  # rendered from AppIcon.png
 
 # Update/copy Info.plist with current version
 sed -e "s/<string>0.8.0<\/string>/<string>${VERSION}<\/string>/g" "${SCRIPT_DIR}/Info.plist" > "${APP_BUNDLE}/Contents/Info.plist"
