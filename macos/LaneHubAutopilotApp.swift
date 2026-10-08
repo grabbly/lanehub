@@ -633,9 +633,15 @@ struct MenuView: View {
             model.addProjectPrompt()
         }
         Divider()
+        Text("LaneHub Autopilot \(appVersion)")
         Button("Quit LaneHub Autopilot") {
             model.quit()
         }
+    }
+
+    // Stamped into Info.plist by build.sh from app/config.py VERSION.
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
     }
 }
 

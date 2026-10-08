@@ -18,8 +18,10 @@ mkdir -p "${APP_BUNDLE}/Contents/MacOS"
 mkdir -p "${APP_BUNDLE}/Contents/Resources"
 cp "${SCRIPT_DIR}/AppIcon.icns" "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"  # rendered from AppIcon.png
 
-# Update/copy Info.plist with current version
-sed -e "s/<string>0.8.0<\/string>/<string>${VERSION}<\/string>/g" "${SCRIPT_DIR}/Info.plist" > "${APP_BUNDLE}/Contents/Info.plist"
+# Copy Info.plist and stamp the hub's version into it (the menu shows it)
+cp "${SCRIPT_DIR}/Info.plist" "${APP_BUNDLE}/Contents/Info.plist"
+plutil -replace CFBundleShortVersionString -string "${VERSION}" "${APP_BUNDLE}/Contents/Info.plist"
+plutil -replace CFBundleVersion -string "${VERSION}" "${APP_BUNDLE}/Contents/Info.plist"
 plutil -lint "${APP_BUNDLE}/Contents/Info.plist" > /dev/null
 
 echo "Compiling Swift app..."

@@ -46,6 +46,12 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.8.1 — 2026-10-08
+
+- **LaneHub Autopilot (macOS) shows its version** in the menu, above Quit.
+  `macos/build.sh` stamps it from the hub's version with `plutil`, so a
+  rebuilt app always matches the checkout it was built from.
+
 ## 0.8.0 — 2026-10-08
 
 - **Autopilot mode — no always-running software.** Core invariant: *no autopilot → no process*.
