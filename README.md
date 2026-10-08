@@ -165,6 +165,7 @@ itself on start.
 - **Old @mentions don't wake the agent** after a long pause (24 h by default).
 - **`/file`** fetches attachments only another lane's bot received; `/info`
   warns about **basic groups** (convert them to supergroups).
+- **`scripts/import_messages.py`** copies messages from another hub's `hub.db`.
 - **Moving a hub:** disable the old container and revoke the bot tokens —
   [steps](docs/UPDATE.md#moving-the-hub-to-another-server).
 

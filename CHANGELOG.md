@@ -66,6 +66,10 @@ the live hub received nothing for a day — with nothing anywhere saying so.
   webhook, or a **basic group**: there the merged feed shows a message once
   per bot and replies/files can't be matched across bots. Convert such a chat
   to a supergroup; the hub follows it to the new id.
+- **`scripts/import_messages.py`** copies messages from another hub's
+  `hub.db` (e.g. what an old copy received while it held a bot), skipping
+  rows already present: `docker compose exec lanehub python
+  scripts/import_messages.py /data/old-hub.db --since <unix> [--dry-run]`.
 - **Docs:** moving a hub to another server now says to stop *and disable* the
   old container and to revoke the bot tokens ([UPDATE.md](docs/UPDATE.md#moving-the-hub-to-another-server)).
 

@@ -69,7 +69,9 @@ itself and silently takes every update away from the new hub. So:
    and paste the new one into the lane card (**More settings** → **Bot token
    → Replace token**). Only this makes the old copy harmless for good, and it
    also retires tokens that pre-0.5 versions wrote into `docker logs`.
-5. Check each lane card: no red **updates go elsewhere** badge. The watchdog
+5. Messages the old copy received while it held a bot can be copied over —
+   see [Moving messages from another hub](#moving-messages-from-another-hub).
+6. Check each lane card: no red **updates go elsewhere** badge. The watchdog
    (0.7.1+) raises it within minutes if anything takes a bot later.
 
 ## Version-specific notes
@@ -188,5 +190,5 @@ Options:
 Notes:
 - **Deduplication:** messages with the same `(lane_slug, update_id)` already present in the target database are automatically skipped.
 - **Feed cursor:** imported messages are stored with `store_message()`, which assigns a new monotonic `seq` cursor so imported rows show up to downstream agents following the feed cursor.
-- **Media attachments:** Telegram `media.fileId` attachments remain downloadable through the hub's file proxy only if the same bot token is still used.
+- **Media attachments:** a `media.fileId` belongs to the bot that received the message, so imported attachments stay downloadable through `/file` as long as the lane uses the same bot (a revoked and re-issued token is fine).
 
