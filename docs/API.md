@@ -187,6 +187,10 @@ Optional fields (camelCase or snake_case; the default is plain text):
   `@channelusername`; `chat_id` (snake_case) is accepted too.
 - Long text is split automatically on line/word boundaries into ≤4000-char
   Telegram messages.
+- **Automatic reply marking**: while an autopilot wake window is open (after handing
+  out a mention via `/wake` and before it is acked or times out), the hub automatically
+  prepends `🤖 auto · ` to the first part of the message. The stored feed row also includes
+  this prefix.
 - Response: `{"ok": true, "messageId": 42, "messageIds": [42], "chatId":
   -100..., "parts": 1, "seq": …, "updateId": …}`. `messageIds` lists the
   Telegram id of every part; `seq`/`updateId` are the first part's feed row.
@@ -198,6 +202,7 @@ Optional fields (camelCase or snake_case; the default is plain text):
 Multipart form: `file` (required), optional `caption` (≤1024 chars),
 `parseMode`, `replyToMessageId`, `asDocument`, `chatId`. Same binding rules as
 `/send` (bound chat only: 403 for another chat, 503 if unbound).
+During an active autopilot wake window, the caption is automatically prepended with `🤖 auto · `.
 
 ```bash
 curl -sS "$LANEHUB_BASE/$LANEHUB_LANE/sendFile" -H "X-Bridge-Token: $KEY" \
@@ -256,11 +261,15 @@ wake cursor and the current Claude session id — so the watcher that drives
   ```json
   { "wake": true, "wakeId": 11, "from": "alice",
     "text": "@denis_team_bot глянь деплой", "chatId": -100500,
-    "sessionId": "<session to resume, or null>" }
+    "sessionId": "<session to resume, or null>",
+    "autopilot": true, "autopilotUntil": 1785090000.0 }
   ```
-  The first ever call seeds the cursor to *now* (history is never replayed) and
-  returns `{"wake": false, "sessionId": ...}`. A wake keeps re-firing until it
-  is acked (at-least-once).
+  Every call records `watcher_seen` for offline detection.
+  If autopilot is **OFF** (`"autopilot": false`), `GET /{lane}/wake` returns
+  `{"wake": false, ...}` and advances the cursor past any scanned messages
+  (including mentions), so switching autopilot ON later will not replay stale mentions.
+  When a mention is handed out, the hub arms a 30-minute auto-reply window (`auto_window_until`).
+  Messages containing `/autopilot` commands never count as wake mentions.
 - A mention older than `HUB_WAKE_MAX_AGE_HOURS` (default 24) doesn't wake:
   it is consumed, written to the lane's session log, sent to its debug chat,
   and listed once in `"skippedStale": [{"from", "date", "text"}]`.
@@ -270,10 +279,38 @@ wake cursor and the current Claude session id — so the watcher that drives
   Here `wakeId` is the feed row's `seq`. The system that owns the bot can
   simply poll `GET /{lane}/wake` every N minutes and ack each mention.
 - `POST /{lane}/wake/ack` — `{"wakeId": 11, "sessionId": "sess-abc"}` consumes
-  that mention (advances the cursor) and records the (possibly forked) session
-  id the watcher got back from `claude`. `sessionId` is optional.
+  that mention (advances the cursor), clears the auto-reply marking window, and
+  records the (possibly forked) session id the watcher got back from `claude`.
+  `sessionId` is optional.
 
 Both use the same `X-Bridge-Token` auth as the rest of the lane API.
+
+## `GET /{lane}/autopilot` and `POST /{lane}/autopilot` — autopilot control
+
+Inspect and toggle autopilot mode for the lane (authenticated with `X-Bridge-Token`).
+
+- `GET /{lane}/autopilot`:
+  ```json
+  {
+    "on": true,
+    "until": 1785090000.0,
+    "by": "agent",
+    "owner": "alice",
+    "watcherSeen": 1785061200.0,
+    "watcherOnline": true
+  }
+  ```
+  `watcherOnline` is `true` if a `/wake` request was received within the last 120 seconds.
+- `POST /{lane}/autopilot`:
+  ```json
+  {"on": true, "hours": 8}
+  ```
+  or
+  ```json
+  {"on": false}
+  ```
+  Transitions are announced in the lane's bound chat. Switching ON sets `by: "agent"`.
+
 
 ## Global
 

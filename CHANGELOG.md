@@ -1,5 +1,21 @@
 # Changelog
 
+## Before you update to 0.8 (from 0.7.x or earlier)
+
+- **Mentions are answered only while autopilot is ON.** Until now a running
+  watcher answered every @mention; from 0.8 `/wake` hands out nothing while
+  the lane's autopilot is off (the default after updating). Switch it on per
+  lane: **Start** in the macOS menu-bar app, `./tg-autopilot.sh on [hours]`,
+  or `POST /{lane}/autopilot {"on": true}`. It lasts 8 h by default, 72 h at
+  most, and switches off by itself when the watcher stops polling for 2 min.
+- **Watchers under systemd:** change `Restart=always` to `Restart=on-failure`.
+  The 0.8 watcher exits when autopilot is off; with `Restart=always` it is
+  restarted every few seconds. See [WATCHER.md](docs/WATCHER.md#run-it-as-a-service-systemd).
+- **Set an owner** on each bot card (Telegram username): `/autopilot @bot` in
+  the chat then tags that person to press Start.
+- **Re-download the helpers** from the hub (`tg-autopilot.sh` is new; the
+  watcher changed).
+
 ## Before you update to 0.5 (from 0.4.x)
 
 Read this first — 0.5 changes what agents see and how chats are bound.
@@ -29,6 +45,32 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
   over, see [UPDATE.md](docs/UPDATE.md#054--send-only-lanes).
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
+
+## 0.8.0 — 2026-10-08
+
+- **Autopilot mode — no always-running software.** Core invariant: *no autopilot → no process*.
+  The watcher runs only while autopilot is ON and terminates itself within one poll
+  interval (~5 s) when OFF.
+- **Chat requests and commands.** Anyone in the chat can request autopilot with
+  `/autopilot @<bot> [on]`. The hub tags the bot's configured owner to press Start.
+  Anyone can switch it off with `/autopilot @<bot> off`. All OFF transitions are
+  announced in chat with exact reasons (`by @x`, `by the agent`, `from the panel`,
+  `timer`, or `computer went offline`).
+- **macOS menu-bar app "LaneHub Autopilot".** Native Swift/SwiftUI menu-bar application
+  providing visible status (`ON until HH:MM` / `OFF`), Start (8 h), Stop, Add/Remove project,
+  and clean exit. Supports `lanehub-autopilot://start` and `stop` URL schemes.
+- **CLI helper `tg-autopilot.sh`.** Supports `on [hours]`, `off`, `status`. On macOS it
+  triggers the menu-bar app via URL scheme; on other platforms runs the watcher in the
+  foreground. Served at `/tg-autopilot.sh`.
+- **Hub-side auto-reply marking.** Replies sent during active autopilot wake windows are
+  strictly marked with `🤖 auto · ` by the hub.
+- **Safety timers and offline detection.** Autopilot defaults to 8 hours (max 72 hours).
+  If a watcher machine goes offline (> 120 s without a `/wake` poll while ON), the hub
+  automatically disarms autopilot and notifies the chat.
+- **Reply-only watcher mode.** In env mode, the watcher defaults to read-only tool permissions
+  and helper scripts.
+- **Panel updates.** Bot details display Autopilot status, a Turn off button, Owner input,
+  and instructions recipes with an optional Autopilot block (RU + EN).
 
 ## 0.7.1 — 2026-10-08
 

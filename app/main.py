@@ -37,6 +37,7 @@ HELPERS = {
     "tg-file.sh": "download a photo/file someone posted in the chat",
     "tg-send-file.sh": "send a file (screenshot, report, log) to the team chat",
     "ask-operator.sh": "ask the operator a clarifying question",
+    "tg-autopilot.sh": "control autopilot mode (on/off/status)",
 }
 
 

@@ -76,6 +76,20 @@ itself and silently takes every update away from the new hub. So:
 
 ## Version-specific notes
 
+### 0.8.0 — Autopilot
+
+- **Mentions are answered only while a lane's autopilot is ON** — after the
+  update it is off everywhere, so a watcher that used to answer around the
+  clock goes quiet. Switch it on: **Start** in the macOS menu-bar app
+  ([macos/README.md](../macos/README.md)), `./tg-autopilot.sh on [hours]`, or
+  `POST /{lane}/autopilot {"on": true}` (8 h by default, 72 h max).
+- **systemd watchers:** use `Restart=on-failure` instead of `Restart=always`;
+  the new watcher exits when autopilot is off.
+- **Set the owner** (Telegram username) on each bot card so chat requests
+  (`/autopilot @bot`) reach them.
+- Re-download `telegram_watch.py` and the helpers from the hub
+  (`curl {hub}/watcher.py`, `curl {hub}/tg-autopilot.sh`).
+
 ### 0.7.1 — webhook watchdog
 
 - **Nothing to do** for a hub that stays where it is.

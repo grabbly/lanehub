@@ -58,6 +58,9 @@ import argparse
 import json
 import logging
 import os
+import re
+import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -65,6 +68,36 @@ import urllib.error
 import urllib.request
 
 LOG = logging.getLogger("lanehub.watch")
+
+# The claude run in progress, if any: stopping the watcher (the menu-bar app's
+# Stop/Quit sends SIGTERM) must not leave it running on its own.
+_CHILD: subprocess.Popen | None = None
+
+
+_BG_RUNNING: tuple[str, str] | None = None  # (claude_bin, bg id) of the session in progress
+
+
+def _stop(signum, _frame) -> None:
+    if _BG_RUNNING:
+        subprocess.run([_BG_RUNNING[0], "stop", _BG_RUNNING[1]], stdin=subprocess.DEVNULL,
+                       capture_output=True, timeout=30)
+    if _CHILD is not None and _CHILD.poll() is None:
+        _CHILD.terminate()
+        try:
+            _CHILD.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _CHILD.kill()
+    LOG.info("stopped (signal %s)", signum)
+    sys.exit(0)
+
+# Autopilot does the work itself (the owner watches it live and can stop it);
+# override with env CLAUDE_ARGS, e.g. a reply-only allow-list.
+DEFAULT_CLAUDE_ARGS = ["--permission-mode", "bypassPermissions"]
+
+# Where a run's state is published for the menu-bar app (inside the project dir).
+STATUS_FILE = ".lanehub-autopilot.json"
+_BG_ID_RE = re.compile(r"backgrounded\s*·\s*([0-9a-f]{6,})")
+_REMOTE_URL_RE = re.compile(r"https://claude\.ai/code/session_[A-Za-z0-9]+")
 
 # stderr fragments that mean "that session id no longer exists" -> recover by
 # starting a fresh session instead of failing on every future mention.
@@ -96,6 +129,24 @@ def session_token_estimate(project_dir: str, session_id: str) -> int:
         return 0
 
 
+def load_lanehub_env(project_dir: str) -> dict[str, str]:
+    env_path = os.path.join(project_dir, ".lanehub.env")
+    if not os.path.isfile(env_path):
+        return {}
+    res: dict[str, str] = {}
+    try:
+        with open(env_path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                res[k.strip()] = v.strip().strip("'\"")
+    except OSError:
+        pass
+    return res
+
+
 class Lane:
     def __init__(self, raw: dict) -> None:
         self.base = str(raw["base"]).rstrip("/")
@@ -107,7 +158,16 @@ class Lane:
         self.key = key
         self.project_dir = raw.get("project_dir") or os.getcwd()
         self.claude_bin = raw.get("claude_bin")  # falls back to global
-        self.extra_args = list(raw.get("extra_args") or [])
+        # "bg": a visible background session with Remote Control (claude --bg);
+        # "print": the old invisible `claude -p`.
+        self.runner = raw.get("runner") or "print"
+        self.mention: tuple[str, str] = ("", "")  # (sender, text) being answered
+        if raw.get("extra_args") is not None:
+            self.extra_args = list(raw["extra_args"])
+        elif "CLAUDE_ARGS" in os.environ:
+            self.extra_args = shlex.split(os.environ["CLAUDE_ARGS"])
+        else:
+            self.extra_args = list(DEFAULT_CLAUDE_ARGS)
         # ephemeral, watcher-local retry bookkeeping (NOT session state)
         self._last_fail_wake: int | None = None
         self._fail_count = 0
@@ -134,20 +194,41 @@ class Config:
             with open(path, encoding="utf-8") as fh:
                 return json.load(fh)
         except FileNotFoundError:
+            project_dir = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
+            env_file_data = load_lanehub_env(project_dir)
+
             base = os.environ.get("LANEHUB_BASE")
+            if not base and env_file_data.get("LANEHUB_BASE"):
+                hub_root = env_file_data["LANEHUB_BASE"].rstrip("/")
+                lane_name = env_file_data.get("LANEHUB_LANE", "").strip("/")
+                base = f"{hub_root}/{lane_name}" if lane_name else hub_root
+
+            key = os.environ.get("LANEHUB_KEY")
+            if not key:
+                key = env_file_data.get("LANEHUB_API_KEY") or env_file_data.get("LANEHUB_KEY")
+
             if not base:
                 sys.exit(
                     f"no config at {path} and LANEHUB_BASE is unset. Either set "
                     "LANEHUB_BASE/LANEHUB_KEY/CLAUDE_PROJECT_DIR for a single lane, "
                     "or create a config file (see the header of this file)."
                 )
+
+            claude_args = None
+            if "CLAUDE_ARGS" in os.environ:
+                claude_args = shlex.split(os.environ["CLAUDE_ARGS"])
+            else:
+                claude_args = list(DEFAULT_CLAUDE_ARGS)
+
             return {
                 "poll_interval": os.environ.get("POLL_INTERVAL", 5),
                 "claude_bin": os.environ.get("CLAUDE_BIN", "claude"),
                 "lanes": [{
                     "base": base,
-                    "key": os.environ.get("LANEHUB_KEY"),
-                    "project_dir": os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd()),
+                    "key": key,
+                    "project_dir": project_dir,
+                    "extra_args": claude_args,
+                    "runner": os.environ.get("AUTOPILOT_RUNNER", "bg"),
                 }],
             }
         except json.JSONDecodeError as exc:
@@ -184,13 +265,24 @@ def _run_claude(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[
     if session_id:
         cmd += ["--resume", session_id]
     cmd += lane.extra_args
+    global _CHILD
     try:
-        proc = subprocess.run(
-            cmd, cwd=lane.project_dir, capture_output=True, text=True, timeout=1800
+        _CHILD = subprocess.Popen(
+            cmd, cwd=lane.project_dir, stdin=subprocess.DEVNULL,  # `claude -p` reads a non-tty stdin to EOF
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
+        try:
+            out, err = _CHILD.communicate(timeout=1800)
+        except subprocess.TimeoutExpired:
+            _CHILD.kill()
+            out, err = _CHILD.communicate()
+            raise
+        proc = subprocess.CompletedProcess(cmd, _CHILD.returncode, out, err)
     except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
         LOG.error("[%s] claude invocation failed: %s", lane.name, exc)
         return None, str(exc), None
+    finally:
+        _CHILD = None
     if proc.returncode != 0:
         stderr = proc.stderr.strip()
         LOG.error("[%s] claude exited %s: %s", lane.name, proc.returncode, stderr[:500])
@@ -218,28 +310,125 @@ def _run_claude(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[
     return result.get("session_id") or session_id, "", result
 
 
+def write_status(lane: Lane, **state) -> None:
+    """Publish what the autopilot is doing, for the menu-bar app. Best effort."""
+    path = os.path.join(lane.project_dir, STATUS_FILE)
+    try:
+        with open(path + ".tmp", "w", encoding="utf-8") as fh:
+            json.dump({"lane": lane.name, "updatedAt": int(time.time()), **state}, fh, ensure_ascii=False)
+        os.replace(path + ".tmp", path)
+    except OSError:
+        pass
+
+
+def _bg_session(claude_bin: str, bg_id: str) -> dict | None:
+    try:
+        out = subprocess.run([claude_bin, "agents", "--json", "--all"], stdin=subprocess.DEVNULL,
+                             capture_output=True, text=True, timeout=30).stdout
+        return next((a for a in json.loads(out or "[]") if a.get("id") == bg_id), None)
+    except (subprocess.SubprocessError, json.JSONDecodeError, OSError):
+        return None
+
+
+def _run_claude_bg(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[str | None, str, dict | None]:
+    """Answer in a VISIBLE background session: `claude --bg --remote-control`.
+    It shows up in the Claude app (desktop and phone) and at its claude.ai/code
+    link while it works; the owner can watch, type into it or stop it, and take
+    it over with `claude attach <id>`. Waits until the turn is done, then stops
+    the session (its conversation is kept for the next mention)."""
+    global _BG_RUNNING
+    claude_bin = lane.claude_bin or cfg.claude_bin
+    sender, text = lane.mention
+    title = f"@{lane.name} · {sender}: {text[:60]}"
+    cmd = [claude_bin, "--bg", "--remote-control", title, *lane.extra_args]
+    if session_id:
+        cmd += ["--resume", session_id]
+    cmd.append(prompt)
+    try:
+        proc = subprocess.run(cmd, cwd=lane.project_dir, stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, timeout=120)
+    except (subprocess.SubprocessError, OSError) as exc:
+        return None, str(exc), None
+    m = _BG_ID_RE.search(proc.stdout + proc.stderr)
+    if not m:
+        why = (proc.stdout + proc.stderr).strip()[:300] or f"exit {proc.returncode}"
+        LOG.error("[%s] could not start a background session: %s", lane.name, why)
+        hub_log(lane, "error", f"background session did not start: {why}")
+        return None, why, None
+    bg_id = m.group(1)
+    _BG_RUNNING = (claude_bin, bg_id)
+    started = time.time()
+    state = {"state": "answering", "bgId": bg_id, "from": sender, "text": text[:300],
+             "startedAt": int(started), "remoteUrl": None, "sessionId": None}
+    write_status(lane, **state)
+    LOG.info("[%s] answering in background session %s", lane.name, bg_id)
+
+    seen_busy, url_tries = False, 0
+    try:
+        while time.time() - started < 1800:
+            time.sleep(3)
+            if not state["remoteUrl"] and url_tries < 20:
+                url_tries += 1
+                logs = subprocess.run([claude_bin, "logs", bg_id], stdin=subprocess.DEVNULL,
+                                      capture_output=True, text=True, timeout=30).stdout
+                found = _REMOTE_URL_RE.search(logs or "")
+                if found:
+                    state["remoteUrl"] = found.group(0)
+                    write_status(lane, **state)
+                    hub_notify(lane, f"👀 [{lane.name}] live: {state['remoteUrl']}")
+            info = _bg_session(claude_bin, bg_id)
+            if info and info.get("sessionId"):
+                state["sessionId"] = info["sessionId"]
+            status = (info or {}).get("status")
+            if status == "busy":
+                seen_busy = True
+            elif status is None or (status == "idle" and (seen_busy or time.time() - started > 15)):
+                break  # turn finished, or the owner stopped it
+        else:
+            LOG.warning("[%s] background session %s ran 30 min; stopping it", lane.name, bg_id)
+    finally:
+        subprocess.run([claude_bin, "stop", bg_id], stdin=subprocess.DEVNULL, capture_output=True, timeout=30)
+        _BG_RUNNING = None
+    write_status(lane, state="idle", lastSessionId=state["sessionId"], lastRemoteUrl=state["remoteUrl"],
+                 lastBgId=bg_id, lastFrom=sender, lastText=text[:300], finishedAt=int(time.time()))
+    summary = f"answered in background session {bg_id} · {time.time() - started:.0f}s"
+    LOG.info("[%s] %s", lane.name, summary)
+    hub_log(lane, "info", summary)
+    return state["sessionId"] or session_id or None, "", None
+
+
 def resume_session(cfg: Config, lane: Lane, session_id: str, prompt: str) -> tuple[str | None, dict | None]:
     """Resume `session_id` (or start fresh when empty), self-healing a stale id.
     Returns (session id to report back | None if even a fresh run failed, result_json)."""
     LOG.info("[%s] resuming session %s", lane.name, session_id or "(new)")
-    new_id, stderr, result = _run_claude(cfg, lane, session_id, prompt)
+    run = _run_claude_bg if lane.runner == "bg" else _run_claude
+    new_id, stderr, result = run(cfg, lane, session_id, prompt)
     if new_id is None and session_id and any(h in stderr.lower() for h in _STALE_SESSION_HINTS):
         LOG.warning("[%s] session %s looks gone; starting a fresh one", lane.name, session_id)
-        new_id, _, result = _run_claude(cfg, lane, "", prompt)
+        new_id, _, result = run(cfg, lane, "", prompt)
     return new_id, result
 
 
 def build_prompt(sender: str, text: str) -> str:
     return (
-        f"You were @-mentioned in the team Telegram chat by {sender}:\n\n"
+        f"You are on AUTOPILOT. {sender} wrote to you in the team Telegram chat "
+        "(an @mention or a reply to one of your messages):\n\n"
         f"{text}\n\n"
-        "You work autonomously. Read context with ./tg-fetch.sh (then the tail of "
-        "tg-chat-log.jsonl), do the task, and reply in the team chat with "
-        "./tg-report.sh \"your reply\". Keep it short.\n"
-        "If — and only if — you genuinely need a clarifying decision from the "
-        "operator before you can proceed correctly, run ./ask-operator.sh \"your "
-        "question\" and then STOP without replying: the operator will answer and "
-        "you'll be resumed to finish. Don't ask trivial questions; just proceed."
+        "First read the context: ./tg-fetch.sh, then the tail of tg-chat-log.jsonl "
+        "(this may be the answer to a question or a plan you posted earlier).\n"
+        "Rules — talk to people ONLY through ./tg-report.sh \"text\" (plain text, short; "
+        "the hub marks your messages 🤖 auto, don't add a marker):\n"
+        "1. A plain question you can answer from the code/chat: answer it.\n"
+        "2. Anything unclear: ask ONE short clarifying question, tagging "
+        f"{sender}, then STOP. Never guess what they meant.\n"
+        "3. Any change (code, files, git, commands with effects, deploy): first post a "
+        "short numbered plan (at most 5 lines) ending with 'Proceed? Reply ok.', then STOP. "
+        "Do the work only after a reply in the chat confirms THIS plan; if they change "
+        "it, post the updated plan and wait again.\n"
+        "4. When done: one short report of what you did and the result (links, commit, "
+        "what to check). If something failed, say so plainly.\n"
+        "Stopping means: end your turn. You'll be resumed in this same session when "
+        "someone replies to you or mentions you again."
     )
 
 
@@ -303,16 +492,22 @@ def handle_operator_inbox(cfg: Config, lane: Lane) -> None:
         LOG.warning("[%s] operator-inbox ack failed: %s", lane.name, exc)
 
 
-def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
+def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> bool:
     """Process at most one pending wake for a lane. Errors are contained here so
-    one lane never takes down the others."""
+    one lane never takes down the others. Returns False when autopilot is off."""
     try:
         wake = http_json(f"{lane.base}/wake", lane.key)
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         LOG.warning("[%s] wake poll failed: %s", lane.name, exc)
-        return
+        return True
+
+    if wake.get("autopilot") is False:
+        LOG.info("[%s] autopilot is off — exiting", lane.name)
+        write_status(lane, state="off")
+        return False
+
     if not wake.get("wake"):
-        return
+        return True
 
     wake_id = wake["wakeId"]
     sender = wake.get("from") or "someone"
@@ -322,7 +517,7 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
     if dry_run:
         LOG.info("[%s] DRY-RUN: would resume session %s and NOT ack (nothing consumed)",
                  lane.name, wake.get("sessionId") or "(new)")
-        return
+        return True
 
     hub_log(lane, "info", f"@mention from {sender}: {text[:200]}")
     hub_notify(lane, f"🟡 [{lane.name}] {sender}: {text[:150]}")
@@ -335,6 +530,7 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
             hub_log(lane, "info", f"context reset — session ~{est // 1000}k tok >= {SESSION_TOKEN_CAP // 1000}k cap; fresh session")
             resume_id = ""
 
+    lane.mention = (sender, text)
     new_id, result = resume_session(cfg, lane, resume_id, build_prompt(sender, text))
 
     if new_id is None:
@@ -346,7 +542,7 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
         if lane._fail_count < _MAX_WAKE_FAILS:
             LOG.warning("[%s] wake %s failed (%d/%d); will retry",
                         lane.name, wake_id, lane._fail_count, _MAX_WAKE_FAILS)
-            return
+            return True
         LOG.error("[%s] wake %s failed %d times; skipping it", lane.name, wake_id, _MAX_WAKE_FAILS)
         hub_notify(lane, f"✗ [{lane.name}] не удалось ответить — пропущено")
         # fall through to ack so the poison wake is consumed
@@ -362,6 +558,7 @@ def handle_lane(cfg: Config, lane: Lane, dry_run: bool = False) -> None:
         http_json(f"{lane.base}/wake/ack", lane.key, method="POST", body=ack)
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         LOG.warning("[%s] ack failed: %s (wake will re-fire)", lane.name, exc)
+    return True
 
 
 def print_status(cfg: Config) -> None:
@@ -404,19 +601,31 @@ def main() -> None:
         print_status(cfg)
         return
 
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
+    for lane in cfg.lanes:
+        LOG.info("[%s] effective claude args: %s", lane.name, " ".join(shlex.quote(a) for a in lane.extra_args))
+
     mode = "dry-run" if args.dry_run else ("once" if args.once else "watching")
     LOG.info(
         "%s %d lane(s) every %.1fs: %s",
         mode, len(cfg.lanes), cfg.poll_interval, ", ".join(l.name for l in cfg.lanes),
     )
-    while True:
-        for lane in cfg.lanes:
-            handle_lane(cfg, lane, dry_run=args.dry_run)
+    active_lanes = list(cfg.lanes)
+    while active_lanes:
+        for lane in list(active_lanes):
+            still_on = handle_lane(cfg, lane, dry_run=args.dry_run)
+            if not still_on:
+                active_lanes.remove(lane)
+                continue
             if not args.dry_run:
                 handle_operator_inbox(cfg, lane)
+        if not active_lanes:
+            sys.exit(0)
         if args.once:
             return
         time.sleep(cfg.poll_interval)
+    sys.exit(0)
 
 
 if __name__ == "__main__":

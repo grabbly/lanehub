@@ -19,6 +19,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from . import db, telegram
+from .autopilot import get_autopilot_state, set_autopilot_off
 from .config import settings
 from .routes_bridge import _receiver_url, perform_send
 from .runtime import runtime, webhook_lost
@@ -87,6 +88,7 @@ def _lane_view(lane: dict) -> dict:
         # any of them, so a new lane of an existing bot can be bound by a click.
         "botLanes": [other["slug"] for other in siblings if other["slug"] != lane["slug"]],
         "seenChats": db.seen_chats([other["slug"] for other in siblings] or lane["slug"]),
+        "autopilot": get_autopilot_state(lane["slug"]),
     }
 
 
@@ -157,8 +159,28 @@ class LaneUpdate(BaseModel):
     enabled: bool | None = None
     operator_chat_id: str | None = Field(default=None, alias="operatorChatId")
     receive_mode: Literal["hub", "send_only"] | None = Field(default=None, alias="receiveMode")
+    autopilot_owner: str | None = Field(default=None, alias="autopilotOwner")
+    autopilot: AutopilotUpdate | None = None
 
     model_config = {"populate_by_name": True}
+
+
+class AutopilotUpdate(BaseModel):
+    on: bool | None = None
+
+
+class ChatRename(BaseModel):
+    name: str = Field(default="", max_length=80)
+
+
+@router.patch("/chats/{chat_id}")
+async def chats_rename(chat_id: str, req: ChatRename, hub_session: str | None = Cookie(default=None)) -> dict:
+    """Give a chat a panel name (empty = use Telegram's title again)."""
+    require_admin(hub_session)
+    if not telegram.is_numeric_chat_id(chat_id):
+        raise HTTPException(status_code=422, detail="chat id must be numeric")
+    db.set_chat_name(chat_id, req.name)
+    return {"chatId": chat_id, "name": req.name.strip() or None}
 
 
 class AdminSend(BaseModel):
@@ -176,6 +198,9 @@ async def lanes_list(hub_session: str | None = Cookie(default=None)) -> dict:
         # Every chat any bot has seen, with the lanes that saw it — the
         # "New chat" picker lists the groups nobody is bound to yet.
         "seenChats": db.seen_chats_with_lanes(),
+        # Names the operator gave chats; the panel shows them instead of the
+        # Telegram title.
+        "chatNames": db.chat_names(),
     }
 
 
@@ -241,6 +266,16 @@ async def lanes_update(slug: str, req: LaneUpdate, hub_session: str | None = Coo
         fields["enabled"] = int(req.enabled)
     if req.operator_chat_id is not None:
         db.set_lane_state(slug, "operator_chat_id", req.operator_chat_id.strip())
+    if req.autopilot_owner is not None:
+        db.set_lane_state(slug, "autopilot_owner", req.autopilot_owner.lstrip("@").strip())
+    if req.autopilot is not None:
+        if req.autopilot.on is False:
+            await set_autopilot_off(lane, reason="from the panel", now=int(time.time()))
+        elif req.autopilot.on is True:
+            raise HTTPException(
+                status_code=422,
+                detail="autopilot can only be switched on from the bot's computer",
+            )
     if req.bot_token is not None:
         token = req.bot_token.strip()
         try:

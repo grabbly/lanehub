@@ -125,6 +125,13 @@ concurrent `--resume` of the same id corrupt the session.
 
 ## Run it as a service (systemd)
 
+Since 0.8 the watcher answers only while the lane's **autopilot is ON** and
+exits with code 0 when it is off, so the unit restarts it only after a crash
+(`Restart=on-failure`). Start it together with autopilot — e.g. the agent runs
+`./tg-autopilot.sh on 8` and then `sudo systemctl start lanehub-watch` — and
+it stops by itself when autopilot ends (timer, `/autopilot @bot off`, panel).
+With `Restart=always` it would be restarted every few seconds while off.
+
 One project (env mode):
 
 ```ini
@@ -138,7 +145,7 @@ Environment=LANEHUB_BASE=https://hub.example.com/backend
 Environment=LANEHUB_KEY=...
 Environment=CLAUDE_PROJECT_DIR=/srv/projects/backend
 ExecStart=/usr/bin/python3 /srv/lanehub/telegram_watch.py
-Restart=always
+Restart=on-failure
 RestartSec=5
 
 [Install]
@@ -249,3 +256,45 @@ nohup python3 watcher.py > watcher.log 2>&1 &
 
 Всё — пиши @имя_бота в группе, и твоя сессия Claude Code продолжится и ответит.
 ```
+
+## Autopilot mode (no always-running software)
+
+Starting with LaneHub 0.8.0, bot owners do not need to keep background software
+permanently running. The core invariant is: **no autopilot → no process**. The
+watcher only runs while autopilot is ON and automatically terminates itself
+(code 0, `autopilot is off — exiting`) within ~5 seconds of autopilot turning OFF.
+
+### How it works
+
+1. **Request from chat**: Anyone in the group writes `/autopilot @<bot>`.
+   If off, the hub asks the bot owner (configured in the panel) to start it:
+   `🤖 @<owner>, @<sender> asks to switch on autopilot for @<bot>. Press Start in LaneHub Autopilot or ask your Claude to switch it on.`
+2. **Starting**: The owner clicks **Start (8 h)** in the macOS menu-bar app
+   [LaneHub Autopilot](../macos/README.md) or runs `./tg-autopilot.sh on [hours]`.
+   The hub announces:
+   `🤖 Autopilot ON for @<bot> until HH:MM UTC. Mentions get automatic replies, marked 🤖 auto.`
+3. **Stopping**: Autopilot turns off from:
+   - Chat command: `/autopilot @<bot> off`
+   - Menu-bar app Stop/Quit or `./tg-autopilot.sh off`
+   - Panel ("Turn off" button on the bot card)
+   - Expiration timer (default 8 h, max 72 h)
+   - Offline detection: if the watcher stops polling `/wake` for 120 s while ON,
+     the hub disarms autopilot automatically.
+   Every OFF transition is announced in chat with the specific reason.
+
+### Reply-only safety defaults
+
+In env mode, `telegram_watch.py` runs `claude` with restricted, reply-only permissions:
+```bash
+--setting-sources project,local --permission-mode default \
+--allowedTools "Bash(./tg-fetch.sh:*)" "Bash(./tg-report.sh:*)" "Bash(./tg-file.sh:*)" "Bash(./tg-send-file.sh:*)" "Bash(./ask-operator.sh:*)" "Read"
+```
+Override these with the `CLAUDE_ARGS` environment variable if your agent requires
+additional tools.
+
+### Automatic reply marking
+
+All replies sent during an active wake window (`/send` text and `/sendFile` captions)
+are automatically stamped with the prefix `🤖 auto · ` by the hub. The agent should
+not add its own marker.
+

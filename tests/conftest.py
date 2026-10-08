@@ -73,6 +73,8 @@ class FakeTG:
         if method == "setWebhook":
             self.webhooks[bot_token] = payload.get("url", "")
             return True
+        if method == "setMyCommands":
+            return True
         if method == "deleteWebhook":
             self.webhooks.pop(bot_token, None)
             return True

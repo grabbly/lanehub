@@ -182,7 +182,10 @@ def test_wake_flow(client):
 
     # first poll seeds the cursor to "now" and returns nothing
     w = client.get("/backend/wake", headers=headers).json()
-    assert w == {"wake": False, "sessionId": None}
+    assert w["wake"] is False and w["sessionId"] is None and w["autopilot"] is False
+
+    # switch autopilot ON
+    client.post("/backend/autopilot", headers=headers, json={"on": True})
 
     # a non-mention does not wake
     _push_human(client, "backend", update_id=10, message_id=600, text="просто болтовня")
@@ -201,7 +204,7 @@ def test_wake_flow(client):
     ack = client.post("/backend/wake/ack", json={"wakeId": 11, "sessionId": "sess-1"}, headers=headers)
     assert ack.status_code == 200 and ack.json() == {"ok": True}
     w = client.get("/backend/wake", headers=headers).json()
-    assert w == {"wake": False, "sessionId": "sess-1"}
+    assert w["wake"] is False and w["sessionId"] == "sess-1"
 
     # next mention carries the now-stored session id
     _push_human(client, "backend", update_id=12, message_id=602, text="@test_bot ещё раз")
@@ -220,6 +223,7 @@ def test_wake_skips_stale_mentions_and_tells_the_owner(client, monkeypatch):
     lane = make_lane(client)
     headers = {"X-Bridge-Token": lane["apiKey"]}
     client.get("/backend/wake", headers=headers)  # seed
+    client.post("/backend/autopilot", headers=headers, json={"on": True})
     now = int(time.time())
     _push_human(client, "backend", update_id=10, message_id=600, text="@test_bot старое", date=now - 194 * 3600)
     w = client.get("/backend/wake", headers=headers).json()
@@ -244,7 +248,9 @@ def test_wake_ignores_history_before_first_poll(client):
     # mention exists BEFORE the watcher ever polled -> must not be replayed
     _push_human(client, "backend", update_id=5, message_id=500, text="@test_bot старое")
     assert client.get("/backend/wake", headers=headers).json()["wake"] is False
-    # and a mention arriving AFTER the seed still fires
+
+    # switch autopilot ON; a mention arriving AFTER the seed still fires
+    client.post("/backend/autopilot", headers=headers, json={"on": True})
     _push_human(client, "backend", update_id=6, message_id=501, text="@test_bot новое")
     assert client.get("/backend/wake", headers=headers).json()["wakeId"] == 6
 
@@ -808,6 +814,7 @@ def test_send_only_lane_wakes_on_mentions_seen_by_other_bots(client):
     frai = make_lane(client, slug="frai", receiveMode="send_only")
     db.update_lane("frai", {"bot_username": "frai_bot"})
     h = {"X-Bridge-Token": frai["apiKey"]}
+    client.post("/frai/autopilot", headers=h, json={"on": True})
     _push_human(client, "gabbs", update_id=1, message_id=1, text="old @frai_bot")
     assert client.get("/frai/wake", headers=h).json()["wake"] is False  # seeds 'from now'
 
@@ -842,6 +849,7 @@ def test_wake_ignores_mentions_in_other_chats(client):
     login(client)
     lane = make_lane(client)  # bound to -100500
     h = {"X-Bridge-Token": lane["apiKey"]}
+    client.post("/backend/autopilot", headers=h, json={"on": True})
     client.get("/backend/wake", headers=h)  # seed
     _push_human(client, "backend", update_id=5, message_id=5, text="@test_bot hi", chat_id=-100600)
     assert client.get("/backend/wake", headers=h).json()["wake"] is False

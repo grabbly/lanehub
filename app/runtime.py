@@ -28,6 +28,7 @@ import logging
 import time
 
 from . import db, operator, telegram
+from .autopilot import autopilot_check_pass, handle_incoming_update_commands
 from .config import settings
 
 LOG = logging.getLogger("lanehub.runtime")
@@ -103,11 +104,14 @@ class LaneRuntime:
     def __init__(self) -> None:
         self._pollers: dict[str, asyncio.Task] = {}
         self._watchdog: asyncio.Task | None = None
+        self._autopilot_task: asyncio.Task | None = None
 
     def webhook_url(self, slug: str) -> str:
         return f"{settings.public_base_url}/{slug}/webhook"
 
     async def sync_all(self) -> None:
+        if self._autopilot_task is None or self._autopilot_task.done():
+            self._autopilot_task = asyncio.create_task(self._autopilot_loop(), name="autopilot_check")
         for lane in db.list_lanes():
             await canonicalize_binding(lane)
         done: set[str] = set()
@@ -215,6 +219,7 @@ class LaneRuntime:
                 db.update_lane(lane["slug"], {"receive_mode": "hub"})
                 db.delete_lane_state(lane["slug"], "wake_cursor")  # hub mode counts in update_ids
                 LOG.info("lane %s: the hub receives its bot's updates — back to hub", lane["slug"])
+        await self.register_commands(lanes)
         receiver = self.receiver(bot_token)
         if receiver is None:  # every lane of this bot is disabled
             try:
@@ -268,6 +273,9 @@ class LaneRuntime:
         return any((task := self._pollers.get(s)) and not task.done() for s in slugs)
 
     async def stop_all(self) -> None:
+        if self._autopilot_task:
+            self._autopilot_task.cancel()
+            self._autopilot_task = None
         for slug in list(self._pollers):
             self._stop_poller(slug)
         if self._watchdog:
@@ -372,6 +380,30 @@ class LaneRuntime:
         if task:
             task.cancel()
 
+    async def register_commands(self, lanes: list[dict]) -> None:
+        """Show /autopilot_on_<bot> and /autopilot_off_<bot> in the command menu
+        of each enabled hub-mode lane's bound chat. Best effort."""
+        from .autopilot import bot_commands
+        for lane in lanes:
+            chat_id = (lane.get("default_chat_id") or "").strip()
+            if not chat_id or not lane.get("enabled") or lane.get("receive_mode") == "send_only":
+                continue
+            try:
+                await telegram.set_chat_commands(lane["bot_token"], chat_id, bot_commands(lane))
+            except telegram.TelegramError as exc:
+                LOG.warning("lane %s: setMyCommands failed: %s", lane["slug"], exc)
+
+    async def _autopilot_loop(self) -> None:
+        LOG.info("autopilot background loop started (interval=30s)")
+        while True:
+            try:
+                await autopilot_check_pass()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                LOG.warning("autopilot loop error: %s", exc)
+            await asyncio.sleep(30)
+
     async def _poll_loop(self, slug: str) -> None:
         LOG.info("poller started for lane %s (interval=%.1fs)", slug, settings.poll_interval)
         while True:
@@ -394,6 +426,7 @@ class LaneRuntime:
             return
         for upd in updates:
             ingest_update(slug, upd)
+            await handle_incoming_update_commands(slug, upd)
         db.set_lane_state(slug, "next_offset", str(updates[-1]["update_id"] + 1))
         LOG.info("lane %s: ingested %d updates", slug, len(updates))
 

@@ -284,6 +284,19 @@ def test_explicit_send_only_on_create(client, monkeypatch):
     assert _webhook_calls(client, "frai-token:abc") == []
 
 
+def test_rename_chat_and_lane(client):
+    login(client)
+    make_lane(client, slug="alpha", chat_id="-100500")
+    r = client.patch("/admin/api/chats/-100500", json={"name": "Merch team"})
+    assert r.status_code == 200 and r.json()["name"] == "Merch team"
+    assert client.get("/admin/api/lanes").json()["chatNames"] == {"-100500": "Merch team"}
+    client.patch("/admin/api/chats/-100500", json={"name": ""})
+    assert client.get("/admin/api/lanes").json()["chatNames"] == {}
+    assert client.patch("/admin/api/chats/abc", json={"name": "x"}).status_code == 422
+    lane = client.patch("/admin/api/lanes/alpha", json={"title": "Designer agent"}).json()
+    assert lane["title"] == "Designer agent" and lane["slug"] == "alpha"
+
+
 def test_root_stamps_sign_in_state(client):
     page = client.get("/")
     assert page.status_code == 200

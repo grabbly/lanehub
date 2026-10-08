@@ -75,6 +75,13 @@ Special boxes on the Chats tab:
   chips let you rebind the bot to another group with one click.
 - **Debug chat** (formerly Operator chat) — a private dev chat ID for previews,
   `/status`, and developer testing.
+- **Autopilot** — displays current status: `ON until HH:MM · computer online/offline`
+  or `OFF`. When ON, a **Turn off** button allows the operator to turn it off from the panel.
+  (Turning ON cannot be done from the panel since nothing runs on the owner's machine
+  without their computer initiating it).
+- **Owner** — Telegram username of the bot's owner (without `@`). When someone in the chat
+  requests autopilot via `/autopilot @<bot>`, the hub tags this owner asking them to
+  start it.
 - **Connection** — click **Check** to verify Telegram webhook health and inspect
   recent delivery errors.
 - **Same bot also in** — lists sibling chats where this same bot operates.

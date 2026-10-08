@@ -23,6 +23,16 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from . import db, operator, telegram
+from .autopilot import (
+    AUTO_PREFIX,
+    get_autopilot_state,
+    handle_incoming_update_commands,
+    is_autopilot_command,
+    is_autopilot_on,
+    record_outgoing,
+    set_autopilot_off,
+    set_autopilot_on,
+)
 from .config import settings
 from .runtime import canonicalize_binding, ingest_update, runtime, webhook_lost
 
@@ -89,28 +99,7 @@ def _send_failed(lane: dict, exc: telegram.TelegramError) -> HTTPException:
     return HTTPException(status_code=502, detail=str(exc))
 
 
-def _record_outgoing(lane: dict, result: dict, text: str, media: dict | None = None) -> dict:
-    """Store a sent message as a synthetic outgoing row so other lanes' readers
-    see it in /feed (Telegram never delivers a bot's messages to other bots)."""
-    db.set_lane_state(lane["slug"], "last_send_ok", str(int(time.time())))
-    db.set_lane_state(lane["slug"], "last_send_error", "")
-    chat = result.get("chat", {})
-    sender = result.get("from", {})
-    return db.store_message(
-        lane_slug=lane["slug"],
-        update_id=None,  # takes the hub-wide seq
-        message_id=result.get("message_id"),
-        chat_id=chat.get("id"),
-        chat_title=chat.get("title") or chat.get("username"),
-        from_user=sender.get("username") or lane["bot_username"] or lane["slug"],
-        text=text,
-        date=result.get("date") or int(time.time()),
-        is_outgoing=True,
-        media=media,
-        from_id=sender.get("id") or telegram.bot_id_from_token(lane["bot_token"]),
-        from_username=sender.get("username") or lane["bot_username"] or None,
-        from_is_bot=True,
-    )
+_record_outgoing = record_outgoing
 
 
 async def perform_send(
@@ -155,7 +144,12 @@ async def perform_send(
 @router.post("/{lane_slug}/send")
 async def send(lane_slug: str, req: SendRequest, x_bridge_token: str = Header(default="")) -> dict:
     lane = _auth_lane(lane_slug, x_bridge_token)
-    return await perform_send(lane, req.text, req.chat_id, req.parse_mode, req.reply_to_message_id,
+    now = int(time.time())
+    auto_until = int(db.get_lane_state(lane_slug, "auto_window_until") or 0)
+    text = req.text
+    if auto_until > now and not text.startswith(AUTO_PREFIX):
+        text = f"{AUTO_PREFIX}{text}"
+    return await perform_send(lane, text, req.chat_id, req.parse_mode, req.reply_to_message_id,
                               req.disable_web_page_preview)
 
 
@@ -180,6 +174,14 @@ async def send_file(
         raise HTTPException(status_code=422, detail="empty file")
     if len(content) > telegram.UPLOAD_MAX:
         raise HTTPException(status_code=413, detail="file is larger than Telegram's 50 MB bot upload limit")
+    now = int(time.time())
+    auto_until = int(db.get_lane_state(lane_slug, "auto_window_until") or 0)
+    if auto_until > now:
+        if caption:
+            if not caption.startswith(AUTO_PREFIX):
+                caption = f"{AUTO_PREFIX}{caption}"[:1024]
+        else:
+            caption = AUTO_PREFIX.rstrip()
     name = (file.filename or "file").rsplit("/", 1)[-1] or "file"
     mime = file.content_type or "application/octet-stream"
     try:
@@ -320,10 +322,15 @@ def _scan_mention(lane: dict, cursor: int) -> tuple[dict | None, list[dict]]:
         bound = (lane.get("default_chat_id") or "").strip()
         candidates = [r for r in scanned if str(r.get("chatId")) == bound]
     for r in candidates:
+        if is_autopilot_command(r.get("text") or ""):
+            continue
         sender = (r.get("from") or "").lstrip("@").lower()
         if sender == bot_username.lstrip("@").lower():
             continue
-        if telegram.mentions_bot(r.get("text") or "", bot_username):
+        # A reply to the bot counts as a mention: answering its clarifying
+        # question in Telegram resumes the same session.
+        replied_to_bot = bool(bot_username) and (r.get("replyToUsername") or "").lower() == bot_username.lstrip("@").lower()
+        if replied_to_bot or telegram.mentions_bot(r.get("text") or "", bot_username):
             return r, scanned
     return None, scanned
 
@@ -338,14 +345,25 @@ async def wake(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
     watcher acks via POST /wake/ack after running claude (which also reports the
     resulting session id back)."""
     lane = _auth_lane(lane_slug, x_bridge_token)
+    now = int(time.time())
+    db.set_lane_state(lane_slug, "watcher_seen", str(now))
     session_id = db.get_lane_state(lane_slug, "claude_session_id")
+    on = is_autopilot_on(lane_slug, now)
+    until = int(db.get_lane_state(lane_slug, "autopilot_until") or 0) if on else None
 
     cursor_raw = db.get_lane_state(lane_slug, "wake_cursor")
     if cursor_raw is None:
         seed = _wake_seed(lane)
         db.set_lane_state(lane_slug, "wake_cursor", str(seed))
-        return {"wake": False, "sessionId": session_id}
+        return {"wake": False, "sessionId": session_id, "autopilot": on, "autopilotUntil": until}
     cursor = int(cursor_raw)
+
+    if not on:
+        # If OFF -> wake:false and advance the cursor past everything scanned, including mentions
+        mention, incoming = _scan_mention(lane, cursor)
+        if incoming:
+            db.set_lane_state(lane_slug, "wake_cursor", str(max(_wake_id(lane, r) for r in incoming)))
+        return {"wake": False, "sessionId": session_id, "autopilot": False, "autopilotUntil": None}
 
     skipped: list[dict] = []
     while True:
@@ -360,6 +378,7 @@ async def wake(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
         skipped.append({"from": mention.get("from"), "date": mention.get("date"), "text": mention.get("text")})
     extra = {"skippedStale": skipped} if skipped else {}
     if mention:
+        db.set_lane_state(lane_slug, "auto_window_until", str(now + 1800))
         return {
             "wake": True,
             "wakeId": _wake_id(lane, mention),
@@ -367,13 +386,15 @@ async def wake(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
             "text": mention.get("text"),
             "chatId": mention.get("chatId"),
             "sessionId": session_id,
+            "autopilot": True,
+            "autopilotUntil": until,
             **extra,
         }
     # No mention in this window: advance past the incoming messages we scanned
     # (never past outgoing high-namespace ids) so we don't rescan them.
     if incoming:
         db.set_lane_state(lane_slug, "wake_cursor", str(max(_wake_id(lane, r) for r in incoming)))
-    return {"wake": False, "sessionId": session_id, **extra}
+    return {"wake": False, "sessionId": session_id, "autopilot": True, "autopilotUntil": until, **extra}
 
 
 def _too_old(row: dict) -> bool:
@@ -398,6 +419,7 @@ async def wake_ack(lane_slug: str, req: WakeAck, x_bridge_token: str = Header(de
     how the watcher reports which session to resume next time."""
     _auth_lane(lane_slug, x_bridge_token)
     db.set_lane_state(lane_slug, "wake_cursor", str(req.wake_id))
+    db.delete_lane_state(lane_slug, "auto_window_until")
     if req.session_id:
         db.set_lane_state(lane_slug, "claude_session_id", req.session_id)
     return {"ok": True}
@@ -675,4 +697,37 @@ async def webhook(
             return {"ok": True}
     if "update_id" in update:
         ingest_update(lane_slug, update)
+        await handle_incoming_update_commands(lane_slug, update)
     return {"ok": True}
+
+
+class AutopilotSetRequest(BaseModel):
+    on: bool
+    hours: float = Field(default=8.0, ge=0.01, le=72.0)
+    # Who flips it, for the chat announcement: the agent (tg-autopilot.sh) or
+    # the menu-bar app on the bot's computer.
+    by: Literal["agent", "app"] = "agent"
+
+
+@router.get("/{lane_slug}/autopilot")
+async def lane_autopilot_get(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict:
+    _auth_lane(lane_slug, x_bridge_token)
+    now = int(time.time())
+    return get_autopilot_state(lane_slug, now)
+
+
+@router.post("/{lane_slug}/autopilot")
+async def lane_autopilot_set(
+    lane_slug: str,
+    req: AutopilotSetRequest,
+    x_bridge_token: str = Header(default=""),
+) -> dict:
+    lane = _auth_lane(lane_slug, x_bridge_token)
+    now = int(time.time())
+    if req.on:
+        until, _ = await set_autopilot_on(lane, hours=req.hours, by=req.by, now=now)
+        return {"ok": True, "on": True, "until": until}
+    else:
+        reason = "stopped on the bot's computer" if req.by == "app" else "by the agent"
+        await set_autopilot_off(lane, reason=reason, now=now)
+        return {"ok": True, "on": False, "until": None}
