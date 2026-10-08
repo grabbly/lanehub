@@ -17,6 +17,7 @@ class FakeTG:
         self.next_message_id = 100
         self.member_status = "member"
         self.webhooks: dict[str, str] = {}  # bot token -> webhook url (Telegram's single slot)
+        self.basic_groups: set[str] = set()  # chat ids getChat reports as type "group"
 
     async def upload(self, bot_token, method, field, filename, content, mime, data, timeout=120):
         self.calls.append((bot_token, method, {**data, "field": field, "filename": filename,
@@ -59,6 +60,8 @@ class FakeTG:
             # Only proper supergroup ids (-100…), @channels and user DMs exist;
             # a stripped "-4388…" form is unknown, like on real Telegram.
             cid = str(payload["chat_id"])
+            if cid in self.basic_groups:
+                return {"id": int(cid), "title": "Basic group", "type": "group"}
             if cid.startswith("@"):
                 return {"id": -100777, "title": cid, "type": "channel"}
             if cid.startswith("-100") or cid.lstrip("-").isdigit() and not cid.startswith("-"):
@@ -97,6 +100,9 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "admin_password", ADMIN_PASSWORD)
     monkeypatch.setattr(settings, "delivery_mode", "off")
     monkeypatch.setattr(settings, "public_base_url", "")
+    monkeypatch.setattr(settings, "previous_base_urls", ())
+    monkeypatch.setattr(settings, "webhook_check_interval", 0)
+    monkeypatch.setattr(settings, "wake_max_age_hours", 0)  # test messages are dated 2023
 
     fake = FakeTG()
     monkeypatch.setattr("app.telegram.tg_call", fake)

@@ -23,10 +23,11 @@ touched: the hub doesn't set, delete or poll its webhook.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-from urllib.parse import urlsplit
+import time
 
-from . import db, telegram
+from . import db, operator, telegram
 from .config import settings
 
 LOG = logging.getLogger("lanehub.runtime")
@@ -101,6 +102,7 @@ async def canonicalize_binding(lane: dict) -> dict:
 class LaneRuntime:
     def __init__(self) -> None:
         self._pollers: dict[str, asyncio.Task] = {}
+        self._watchdog: asyncio.Task | None = None
 
     def webhook_url(self, slug: str) -> str:
         return f"{settings.public_base_url}/{slug}/webhook"
@@ -116,13 +118,19 @@ class LaneRuntime:
 
     def hub_lane_of(self, url: str | None, slugs: list[str]) -> str | None:
         """Which of `slugs` the webhook `url` belongs to — at the hub's current
-        address, or at a previous one (same `/{slug}/webhook` path, e.g. after
-        a domain move). None for an empty or foreign url."""
+        address or at one listed in HUB_PREVIOUS_BASE_URLS. None for an empty
+        or foreign url.
+
+        Only an exact address counts: another hub with the same lane slugs and
+        the same bot token (an old server brought back by a reboot) has the
+        same `/{slug}/webhook` path, and must not pass for this one — or the
+        two re-take the webhook from each other on every restart."""
         if not url:
             return None
-        path = urlsplit(url).path.rstrip("/")
+        url = url.rstrip("/")
+        bases = (settings.public_base_url, *settings.previous_base_urls)
         for slug in slugs:
-            if url == self.webhook_url(slug) or path.endswith(f"/{slug}/webhook"):
+            if any(base and url == f"{base}/{slug}/webhook" for base in bases):
                 return slug
         return None
 
@@ -194,6 +202,9 @@ class LaneRuntime:
                 for lane in hub_lanes:
                     db.update_lane(lane["slug"], {"receive_mode": "send_only"})
                     db.delete_lane_state(lane["slug"], "wake_cursor")  # mentions are now found via the chat feed
+                    db.delete_lane_state(lane["slug"], "webhook_lost")
+                    db.add_lane_log(lane["slug"], "warn", f"the bot's updates go to {foreign}, not to this hub — "
+                                    "the lane was switched to send-only", int(time.time()))
                 LOG.warning("lanes %s: bot's updates go to %s — switched to send-only",
                             [lane["slug"] for lane in hub_lanes], foreign)
                 return (f"this bot's updates already go to {foreign} — the lane was set to send-only so that "
@@ -220,6 +231,7 @@ class LaneRuntime:
             except telegram.TelegramError as exc:
                 LOG.warning("lane %s: setWebhook failed: %s", slug, exc)
                 return f"setWebhook failed: {exc}"
+            await self._delivery_restored(lanes)
             return None
         # polling: one poller per bot (a second getUpdates on the same token gets 409)
         try:
@@ -227,6 +239,7 @@ class LaneRuntime:
         except telegram.TelegramError as exc:
             LOG.warning("lane %s: deleteWebhook failed (poller may 409): %s", slug, exc)
         self._pollers[slug] = asyncio.create_task(self._poll_loop(slug), name=f"poller:{slug}")
+        await self._delivery_restored(lanes)
         return None
 
     async def remove_lane(self, lane: dict) -> None:
@@ -257,6 +270,102 @@ class LaneRuntime:
     async def stop_all(self) -> None:
         for slug in list(self._pollers):
             self._stop_poller(slug)
+        if self._watchdog:
+            self._watchdog.cancel()
+            self._watchdog = None
+
+    # --- webhook watchdog ------------------------------------------------
+    #
+    # The hub sets each bot's webhook at startup and when a lane is saved —
+    # and nothing tells it when another system (an old copy of the hub with
+    # the same bot token, revived by a reboot) sets its own afterwards. From
+    # then on Telegram delivers every update there and the lane silently
+    # receives nothing. The watchdog asks Telegram every few minutes and
+    # raises the alarm. It never takes the webhook back from a foreign
+    # address by itself: two systems doing that would fight over the bot.
+
+    def start_watchdog(self) -> None:
+        if settings.webhook_check_interval > 0 and settings.resolved_delivery_mode() != "off":
+            self._watchdog = asyncio.create_task(self._watchdog_loop(), name="webhook-watchdog")
+
+    async def _watchdog_loop(self) -> None:
+        while True:
+            await asyncio.sleep(settings.webhook_check_interval)
+            try:
+                await self.check_webhooks()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                LOG.warning("webhook check failed: %s", exc)
+
+    async def check_webhooks(self) -> None:
+        """One watchdog round over every bot the hub receives for."""
+        if settings.resolved_delivery_mode() == "off":
+            return
+        done: set[str] = set()
+        for lane in db.list_lanes():
+            if lane["bot_token"] in done:
+                continue
+            done.add(lane["bot_token"])
+            try:
+                await self.check_bot(lane["bot_token"])
+            except telegram.TelegramError as exc:
+                LOG.warning("lane %s: getWebhookInfo failed: %s", lane["slug"], exc)
+
+    async def check_bot(self, bot_token: str) -> None:
+        receiver = self.receiver(bot_token)
+        if receiver is None:  # send-only or disabled: the hub doesn't receive for it
+            return
+        lanes = db.bot_lanes(bot_token)
+        mode = settings.resolved_delivery_mode()
+        if mode == "webhook" and not settings.public_base_url:
+            return  # misconfigured: sync_bot already warns that nothing is received
+        info = await telegram.get_webhook_info(bot_token) or {}
+        url = (info.get("url") or "").rstrip("/")
+        expected = self.webhook_url(receiver["slug"]) if mode == "webhook" else ""
+        if url == expected:
+            if mode == "webhook" and self._secret_rejected(info):
+                # Our address, someone else's secret: another copy of the hub
+                # at this very address re-registered it. Re-register ours.
+                LOG.warning("lanes %s: Telegram's deliveries are rejected (%s) — re-registering the webhook",
+                            [lane["slug"] for lane in lanes], info.get("last_error_message"))
+                await telegram.set_webhook(bot_token, expected, receiver["webhook_secret"])
+            await self._delivery_restored(lanes)
+            return
+        if url and self.hub_lane_of(url, [lane["slug"] for lane in lanes]):
+            # Ours, at a previous address or another lane of the bot: move it.
+            await self.sync_bot(bot_token)
+            return
+        await self._delivery_lost(lanes, url)
+
+    @staticmethod
+    def _secret_rejected(info: dict) -> bool:
+        """Telegram's last delivery failed with our 403 (bad secret token) recently."""
+        recent = time.time() - 2 * max(settings.webhook_check_interval, 60)
+        return (info.get("last_error_date") or 0) >= recent and "403" in (info.get("last_error_message") or "")
+
+    async def _delivery_lost(self, lanes: list[dict], url: str) -> None:
+        where = url or "nowhere: the webhook was deleted (something may be polling this bot)"
+        now = int(time.time())
+        text = (f"Telegram delivers this bot's updates to {where}, not to this hub — the lane receives "
+                "nothing. Stop the other system (or revoke the bot's token in @BotFather), then press "
+                "Take back on the lane card.")
+        for lane in lanes:
+            known = webhook_lost(lane["slug"])
+            if known and known["url"] == url:
+                continue  # already reported
+            LOG.error("lane %s: %s", lane["slug"], text)
+            db.set_lane_state(lane["slug"], "webhook_lost", json.dumps({"url": url, "since": now}))
+            db.add_lane_log(lane["slug"], "error", text, now)
+            await operator.notify(lane["slug"], f"⚠️ {text}")
+
+    async def _delivery_restored(self, lanes: list[dict]) -> None:
+        for lane in lanes:
+            if webhook_lost(lane["slug"]):
+                db.delete_lane_state(lane["slug"], "webhook_lost")
+                text = "Telegram delivers this bot's updates to the hub again."
+                db.add_lane_log(lane["slug"], "info", text, int(time.time()))
+                await operator.notify(lane["slug"], f"✅ {text}")
 
     def _stop_poller(self, slug: str) -> None:
         task = self._pollers.pop(slug, None)
@@ -287,6 +396,12 @@ class LaneRuntime:
             ingest_update(slug, upd)
         db.set_lane_state(slug, "next_offset", str(updates[-1]["update_id"] + 1))
         LOG.info("lane %s: ingested %d updates", slug, len(updates))
+
+
+def webhook_lost(slug: str) -> dict | None:
+    """{url, since} while the watchdog sees the lane's bot delivering elsewhere."""
+    raw = db.get_lane_state(slug, "webhook_lost")
+    return json.loads(raw) if raw else None
 
 
 runtime = LaneRuntime()

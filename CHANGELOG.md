@@ -30,6 +30,45 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.7.1 — 2026-10-08
+
+From a real incident: an old server of a moved hub came back after a reboot,
+still holding the same bot tokens, re-set both bots' webhooks to itself, and
+the live hub received nothing for a day — with nothing anywhere saying so.
+
+- **A second hub with the same lane slugs is no longer mistaken for this
+  one.** Until now any webhook ending in `/{slug}/webhook` counted as the
+  hub's own (meant for domain moves), so two hubs holding one bot token took
+  the webhook from each other on every restart. Now only this hub's exact
+  address counts, plus addresses you list in the new
+  `HUB_PREVIOUS_BASE_URLS`; anything else is another system and the lane goes
+  send-only as for any foreign webhook.
+- **Webhook watchdog.** Every 5 minutes (`HUB_WEBHOOK_CHECK_INTERVAL`, `0` =
+  off) the hub asks Telegram where each bot's updates go. If somewhere else,
+  the lane card shows a red **updates go elsewhere** badge with a
+  **Take back** button, `/info` and the admin API carry `webhookLost: {url,
+  since}`, the lane's session log gets an error line, and the bot's debug chat
+  gets a message. The hub never takes the bot back by itself — two systems
+  doing that would fight over it. Left at one of `HUB_PREVIOUS_BASE_URLS`,
+  the webhook is moved to the current address; at this very address but with
+  deliveries failing our secret check (another copy of the hub at the same
+  URL), it is re-registered.
+- **Stale @mentions don't wake the agent.** A mention older than
+  `HUB_WAKE_MAX_AGE_HOURS` (default 24, `0` = no limit) — e.g. after the
+  watcher was off for days — is consumed without waking anyone; the owner
+  gets a session-log line and a debug-chat message, and `/wake` returns it in
+  `skippedStale`.
+- **`/file` reaches attachments only another bot saw.** When the lane has no
+  copy of the message (its bot didn't receive it, or the chat is a basic group
+  where every bot numbers messages its own way), a file posted in the lane's
+  bound chat is downloaded with the bot of the lane that recorded it.
+- **`/info` names the chat type** (`chatType`) and lists `warnings` — a lost
+  webhook, or a **basic group**: there the merged feed shows a message once
+  per bot and replies/files can't be matched across bots. Convert such a chat
+  to a supergroup; the hub follows it to the new id.
+- **Docs:** moving a hub to another server now says to stop *and disable* the
+  old container and to revoke the bot tokens ([UPDATE.md](docs/UPDATE.md#moving-the-hub-to-another-server)).
+
 ## 0.7.0 — 2026-10-06
 
 - **Redesigned panel, chat first.** The Chats tab is a list of your Telegram

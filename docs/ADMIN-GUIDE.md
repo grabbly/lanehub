@@ -66,6 +66,10 @@ Special boxes on the Chats tab:
   warning that whatever receives the bot's messages now will stop getting them.
   If the same bot is used across multiple chats, changing this mode updates all
   lanes of that bot.
+- **updates go elsewhere** (red badge) — the hub's watchdog saw Telegram
+  sending this bot's updates to another address, so the hub receives nothing
+  for it. The card shows where and since when. Stop that system (or revoke the
+  bot's token in @BotFather and paste the new one), then click **Take back**.
 - **Chat** — shows the bound chat with an **Unbind** button (unbinding stops the
   bot from posting until bound again). If the bot has seen other chats, **Move to**
   chips let you rebind the bot to another group with one click.

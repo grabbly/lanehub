@@ -49,7 +49,44 @@ git pull
 # then restart your uvicorn / systemd service
 ```
 
+## Moving the hub to another server
+
+A Telegram bot has one webhook, and whoever holds the bot's token can set it.
+A copy of the hub left on the old server — stopped, but with a restart policy
+— comes back after the next reboot of that machine, sets the webhook to
+itself and silently takes every update away from the new hub. So:
+
+1. **Back up** `data/hub.db` on the old server (`sqlite3 data/hub.db ".backup hub.db.bak"`).
+2. **Stop and disable the old hub** — `docker compose down` in its directory,
+   or for a single container `docker update --restart=no <container>` and
+   `docker stop <container>`. A plain `docker stop` is not enough: the
+   container keeps its restart policy.
+3. Copy `data/hub.db` and `.env` to the new server, set `HUB_PUBLIC_BASE_URL`
+   to the new address and, if the old address was different, list it in
+   `HUB_PREVIOUS_BASE_URLS` so the new hub moves the webhooks to itself.
+   Start it.
+4. **Revoke every bot token** — @BotFather → the bot → API Token → Revoke —
+   and paste the new one into the lane card (**More settings** → **Bot token
+   → Replace token**). Only this makes the old copy harmless for good, and it
+   also retires tokens that pre-0.5 versions wrote into `docker logs`.
+5. Check each lane card: no red **updates go elsewhere** badge. The watchdog
+   (0.7.1+) raises it within minutes if anything takes a bot later.
+
 ## Version-specific notes
+
+### 0.7.1 — webhook watchdog
+
+- **Nothing to do** for a hub that stays where it is.
+- **If you moved the hub to a new domain** and Telegram may still send to the
+  old one: list the old origin in `HUB_PREVIOUS_BASE_URLS` before updating.
+  Earlier versions recognised any address ending in `/{slug}/webhook` as
+  their own; 0.7.1 only trusts its exact address and that list, and treats
+  any other one as another system (the lane goes send-only — press
+  **Take back** on its card to fix it).
+- New optional settings: `HUB_PREVIOUS_BASE_URLS`, `HUB_WEBHOOK_CHECK_INTERVAL`
+  (300 s), `HUB_WAKE_MAX_AGE_HOURS` (24 h) — see [.env.example](../.env.example).
+- Mentions older than 24 h no longer wake the agent; set
+  `HUB_WAKE_MAX_AGE_HOURS=0` to keep the old behaviour.
 
 ### 0.6.0 — one bot, many chats
 

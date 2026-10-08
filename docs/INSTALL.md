@@ -155,8 +155,10 @@ curl -sS -X POST -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
 - **Bot token compromised / person left**: BotFather → `/revoke` → paste the
   new token into the lane under **More settings** → **Replace token**; the bot
   identity and chat history survive. Teammate left → **Pause** or **Remove from chat**.
-- **Migrating servers**: copy `data/hub.db` + `.env`, start the container,
-  done (webhook lanes re-register on startup).
+- **Migrating servers**: copy `data/hub.db` + `.env`, start the container —
+  and **disable the old one and revoke the bot tokens**, or the old copy takes
+  the bots back after its next reboot. Steps:
+  [UPDATE.md](UPDATE.md#moving-the-hub-to-another-server).
 
 ## Troubleshooting
 
@@ -169,5 +171,7 @@ curl -sS -X POST -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
 | `/send` → 503 no chat_id | bind the lane to a chat, or pass `chatId` |
 | `/send` → 502 "chat not found" | usually the bot is **not in that chat** — never added, or removed from it. Telegram reports this as "chat not found" rather than as a membership error, so it looks like a bad id. Confirm with `GET /{lane}/info`: if the lane's `seenChats.lastDate` stopped updating while other lanes still receive messages, the bot was removed. A stored `defaultChatId` keeps working after removal — it is the hub's cache, not proof of membership. Less often: a chat id typed by hand without the `-100` prefix — pick the chat via **＋ New chat** or the **Move to** chips instead |
 | Webhook lane silent | check **Connection** → **Check** in UI: error explains (cert, DNS, non-HTTPS URL) |
+| Red **updates go elsewhere** badge on a lane | another system (often an old copy of this hub with the same token) set the bot's webhook. Stop it or revoke the token in @BotFather, then **Take back** on the card |
+| Every message appears twice in `/feed`; `/file` or replies fail across bots | the chat is a **basic group** (`/info` → `chatType: "group"`): each bot numbers its messages differently. Convert it to a supergroup — the hub follows the new id |
 | Chat looks empty to an agent | it read `/messages` without `order=desc` — see [API.md](API.md) pitfalls |
 | Admin UI says password not set | put `HUB_ADMIN_PASSWORD` in `.env`, restart |

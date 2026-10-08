@@ -162,7 +162,9 @@ def test_existing_lane_protected_on_startup(client, monkeypatch):
 
 
 def test_own_webhook_and_previous_hub_address_are_ours(client, monkeypatch):
+    from app.config import settings
     _webhook_mode(monkeypatch)
+    monkeypatch.setattr(settings, "previous_base_urls", ("https://old-hub.example.org",))
     login(client)
     client.fake_tg.webhooks["back-token:abc"] = "https://old-hub.example.org/back/webhook"
     lane = make_lane(client, slug="back")
@@ -171,6 +173,93 @@ def test_own_webhook_and_previous_hub_address_are_ours(client, monkeypatch):
     # delete releases OUR webhook
     client.delete("/admin/api/lanes/back")
     assert "back-token:abc" not in client.fake_tg.webhooks
+
+
+def test_other_hub_with_same_slug_is_not_ours(client, monkeypatch):
+    """Two hubs holding one bot token (an old server revived by a reboot) share
+    the /{slug}/webhook path. The other one's address is foreign unless listed
+    in HUB_PREVIOUS_BASE_URLS — otherwise they re-take the webhook from each
+    other on every restart."""
+    _webhook_mode(monkeypatch)
+    login(client)
+    other = "https://old-hub.example.org/back/webhook"
+    client.fake_tg.webhooks["back-token:abc"] = other
+    lane = make_lane(client, slug="back")
+    assert lane["receiveMode"] == "send_only"
+    assert client.fake_tg.webhooks["back-token:abc"] == other
+
+
+def _lane_logs(slug):
+    from app import db
+    return [entry["message"] for entry in db.query_lane_logs(slug)]
+
+
+def test_watchdog_reports_a_stolen_webhook_and_its_return(client, monkeypatch):
+    import asyncio
+    from app.runtime import runtime, webhook_lost
+    _webhook_mode(monkeypatch)
+    login(client)
+    lane = make_lane(client, slug="back")
+    ours = "https://hub.example.com/back/webhook"
+    assert client.fake_tg.webhooks["back-token:abc"] == ours
+    asyncio.run(runtime.check_webhooks())
+    assert webhook_lost("back") is None
+
+    # an old copy of the hub comes back and sets its own webhook
+    other = "https://old-hub.example.org/back/webhook"
+    client.fake_tg.webhooks["back-token:abc"] = other
+    asyncio.run(runtime.check_webhooks())
+    asyncio.run(runtime.check_webhooks())  # reported once, not every round
+    assert webhook_lost("back")["url"] == other
+    assert client.fake_tg.webhooks["back-token:abc"] == other  # never taken back by itself
+    assert sum(other in m for m in _lane_logs("back")) == 1
+    info = client.get("/back/info", headers={"X-Bridge-Token": lane["apiKey"]}).json()
+    assert info["webhookLost"]["url"] == other
+    card = next(lane for lane in client.get("/admin/api/lanes").json()["lanes"] if lane["slug"] == "back")
+    assert card["webhookLost"]["url"] == other
+
+    # the operator stops the other system and takes the bot back
+    client.patch("/admin/api/lanes/back", json={"receiveMode": "hub"})
+    assert client.fake_tg.webhooks["back-token:abc"] == ours
+    assert webhook_lost("back") is None
+    assert "Telegram delivers this bot's updates to the hub again." in _lane_logs("back")
+
+
+def test_watchdog_moves_a_webhook_left_at_a_previous_address(client, monkeypatch):
+    import asyncio
+    from app.config import settings
+    from app.runtime import runtime, webhook_lost
+    _webhook_mode(monkeypatch)
+    monkeypatch.setattr(settings, "previous_base_urls", ("https://old-hub.example.org",))
+    login(client)
+    make_lane(client, slug="back")
+    client.fake_tg.webhooks["back-token:abc"] = "https://old-hub.example.org/back/webhook"
+    asyncio.run(runtime.check_webhooks())
+    assert client.fake_tg.webhooks["back-token:abc"] == "https://hub.example.com/back/webhook"
+    assert webhook_lost("back") is None
+
+
+def test_watchdog_reregisters_when_deliveries_hit_a_bad_secret(client, monkeypatch):
+    """Same address, another secret: a copy of the hub at our own URL set its
+    webhook — Telegram's deliveries now fail our secret check with 403."""
+    import asyncio
+    import time
+    from app.runtime import runtime
+    _webhook_mode(monkeypatch)
+    login(client)
+    make_lane(client, slug="back")
+    real = client.fake_tg.__call__
+
+    async def fake(bot_token, method, payload=None, timeout=15):
+        if method == "getWebhookInfo":
+            return {"url": client.fake_tg.webhooks.get(bot_token, ""), "last_error_date": int(time.time()),
+                    "last_error_message": "Wrong response from the webhook: 403 Forbidden"}
+        return await real(bot_token, method, payload, timeout)
+
+    monkeypatch.setattr("app.telegram.tg_call", fake)
+    before = len(_webhook_calls(client, "back-token:abc"))
+    asyncio.run(runtime.check_webhooks())
+    assert len(_webhook_calls(client, "back-token:abc")) == before + 1
 
 
 def test_operator_can_explicitly_take_over(client, monkeypatch):

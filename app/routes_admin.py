@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from . import db, telegram
 from .config import settings
 from .routes_bridge import _receiver_url, perform_send
-from .runtime import runtime
+from .runtime import runtime, webhook_lost
 
 router = APIRouter(prefix="/admin/api")
 
@@ -81,6 +81,7 @@ def _lane_view(lane: dict) -> dict:
         "operatorChatId": db.get_lane_state(lane["slug"], "operator_chat_id") or "",
         "webhookUrl": _receiver_url(lane) if mode == "webhook" else None,
         "polling": runtime.polling(lane["slug"]),
+        "webhookLost": webhook_lost(lane["slug"]),  # {url, since} while updates go elsewhere
         "storedMessages": db.count_messages(lane["slug"]),
         # Lanes of the same bot (one per chat) — and the chats it was seen in by
         # any of them, so a new lane of an existing bot can be bound by a click.
@@ -261,6 +262,8 @@ async def lanes_update(slug: str, req: LaneUpdate, hub_session: str | None = Coo
             db.update_lane(other["slug"], {"receive_mode": req.receive_mode})
             db.delete_lane_state(other["slug"], "wake_cursor")  # the two modes find mentions differently
         take_over = req.receive_mode == "hub"  # the operator chose to take the webhook
+    elif req.receive_mode == "hub" and webhook_lost(slug):
+        take_over = True  # a hub lane the watchdog saw lose its webhook: take it back
     old_token = lane["bot_token"]
     lane = db.update_lane(slug, fields)
     assert lane is not None

@@ -155,6 +155,19 @@ Already running an older version? See [docs/UPDATE.md](docs/UPDATE.md) — it's
 `git pull` + `docker compose up -d --build`; any schema migration runs by
 itself on start.
 
+## What's new in 0.7.1
+
+- **Webhook watchdog:** if another system — typically an old copy of the hub
+  revived by a reboot — takes a bot's webhook, the lane card turns red
+  (**updates go elsewhere**, with **Take back**), `/info` says so and the
+  debug chat gets a message. Two hubs with the same lane names no longer
+  pass for one another.
+- **Old @mentions don't wake the agent** after a long pause (24 h by default).
+- **`/file`** fetches attachments only another lane's bot received; `/info`
+  warns about **basic groups** (convert them to supergroups).
+- **Moving a hub:** disable the old container and revoke the bot tokens —
+  [steps](docs/UPDATE.md#moving-the-hub-to-another-server).
+
 ## What's new in 0.5 — read before updating
 
 - **Each lane's `/feed` shows only its bound chat** plus its own bot's DMs
@@ -204,6 +217,9 @@ Russian overview: [docs/README.ru.md](docs/README.ru.md).
 | `HUB_PORT` | `8080` | Host port docker publishes on 127.0.0.1 (compose only) |
 | `HUB_DB_PATH` | `./data/hub.db` (`/data/hub.db` in Docker) | SQLite location |
 | `HUB_POLL_INTERVAL` | `2` | Seconds between getUpdates rounds (polling mode) |
+| `HUB_PREVIOUS_BASE_URLS` | *(empty)* | Earlier origins of this hub, comma-separated (after a domain move). A webhook still pointing there is moved here; any other address is another system |
+| `HUB_WEBHOOK_CHECK_INTERVAL` | `300` | Seconds between webhook watchdog checks; `0` = off |
+| `HUB_WAKE_MAX_AGE_HOURS` | `24` | Older @mentions don't wake the agent (the owner is told instead); `0` = no limit |
 | `HUB_TELEGRAM_API` | `https://api.telegram.org` | Bot API origin (override for tests) |
 
 ## Development

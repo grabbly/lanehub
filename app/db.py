@@ -585,33 +585,41 @@ def migrate_chat(old_chat_id: int, new_chat_id: int) -> list[str]:
     return [r["slug"] for r in rows]
 
 
-def resolve_media_file(lane_slug: str, file_id: str) -> str:
-    """Map a file_id seen in the feed onto one this lane's bot can download.
+def resolve_media_file(lane_slug: str, file_id: str, bound_chat: str = "") -> tuple[str, str]:
+    """Map a file_id seen in the feed onto (lane whose bot downloads it, file_id).
 
     A file_id is only valid for the bot that received the update. The merged
     feed may hand the agent another lane's copy of the same message, so when
-    `file_id` isn't ours, find our own row for the same (chat, message) and
-    return its file_id. Falls back to `file_id` unchanged."""
+    `file_id` isn't ours: use our own row for the same (chat, message) if we
+    have one; otherwise — the other lane's bot alone saw the message, or the
+    chat is a basic group where every bot numbers messages its own way —
+    download it with the bot of the lane that recorded it, provided that row
+    is in `bound_chat`, the chat the asking lane is bound to. Falls back to
+    (lane_slug, file_id) unchanged."""
+    pattern = f'%"fileId": "{file_id}"%'
     with connect() as conn:
         own = conn.execute(
-            "SELECT 1 FROM messages WHERE lane_slug = ? AND media LIKE ?",
-            (lane_slug, f'%"fileId": "{file_id}"%'),
+            "SELECT 1 FROM messages WHERE lane_slug = ? AND media LIKE ?", (lane_slug, pattern),
         ).fetchone()
         if own:
-            return file_id
+            return lane_slug, file_id
         other = conn.execute(
-            "SELECT chat_id, message_id FROM messages WHERE media LIKE ? AND message_id IS NOT NULL",
-            (f'%"fileId": "{file_id}"%',),
+            "SELECT lane_slug, chat_id, message_id FROM messages WHERE media LIKE ? ORDER BY message_id IS NULL",
+            (pattern,),
         ).fetchone()
         if not other:
-            return file_id
-        mine = conn.execute(
-            "SELECT media FROM messages WHERE lane_slug = ? AND chat_id = ? AND message_id = ? AND media IS NOT NULL",
-            (lane_slug, other["chat_id"], other["message_id"]),
-        ).fetchone()
-        if not mine:
-            return file_id
-        return json.loads(mine["media"]).get("fileId") or file_id
+            return lane_slug, file_id
+        if other["message_id"] is not None:
+            mine = conn.execute(
+                "SELECT media FROM messages WHERE lane_slug = ? AND chat_id = ? AND message_id = ? "
+                "AND media IS NOT NULL",
+                (lane_slug, other["chat_id"], other["message_id"]),
+            ).fetchone()
+            if mine and json.loads(mine["media"]).get("fileId"):
+                return lane_slug, json.loads(mine["media"])["fileId"]
+        if bound_chat and str(other["chat_id"]) == bound_chat.strip():
+            return other["lane_slug"], file_id
+        return lane_slug, file_id
 
 
 def count_messages(lane_slug: str | None = None) -> int:

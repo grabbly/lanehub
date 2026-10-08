@@ -844,7 +844,9 @@ function createLaneRow(l, chatId, titleOf, isUnboundBlock) {
   const recvPill = l.receiveMode === 'hub'
     ? '<span class="pill ok">reads &amp; posts</span>'
     : '<span class="pill">posts only</span>';
-  const statusPill = l.enabled ? recvPill : '<span class="pill warn">paused</span>';
+  const statusPill = !l.enabled ? '<span class="pill warn">paused</span>'
+    : l.webhookLost ? '<span class="pill danger" title="Telegram delivers this bot\'s updates somewhere else">updates go elsewhere</span>'
+    : recvPill;
 
   rowWrap.innerHTML = `
     <button class="bot-row" data-toggle-lane="${esc(l.slug)}" aria-expanded="${isOpen}">
@@ -904,6 +906,12 @@ function createLaneDetailHTML(l, chatId, titleOf, isUnboundBlock) {
           <button data-val="send_only" aria-pressed="${l.receiveMode === 'send_only'}">Posts only</button>
         </span>
       </span>
+      ${l.webhookLost ? `
+      <span></span>
+      <span class="inline">
+        <span class="pill danger" style="white-space:normal;overflow-wrap:anywhere;border-radius:10px">Since ${esc(new Date(l.webhookLost.since * 1000).toLocaleString())} Telegram sends this bot's updates to ${esc(l.webhookLost.url || 'nowhere (webhook deleted)')} — nothing reaches the hub</span>
+        <button class="btn sm danger" data-act="take-back">Take back</button>
+      </span>` : ''}
 
       <span>Chat</span>
       <span class="inline">
@@ -1012,9 +1020,22 @@ function wireLaneDetailEvents(wrap, l, titleOf) {
     const btn = e.target.closest('button[data-val]');
     if (!btn) return;
     const nextMode = btn.dataset.val;
-    if (nextMode === l.receiveMode) return;
+    await changeMode(nextMode);
+  });
+  wrap.querySelector('[data-act="take-back"]')?.addEventListener('click', () => changeMode('hub'));
 
-    if (nextMode === 'hub') {
+  async function changeMode(nextMode) {
+    // a hub lane whose webhook was taken elsewhere can be switched to hub again: that takes it back
+    if (nextMode === l.receiveMode && !(nextMode === 'hub' && l.webhookLost)) return;
+
+    if (nextMode === 'hub' && l.webhookLost) {
+      const ok = await confirmDlg({
+        title: 'Take the bot back',
+        message: `Telegram now sends @${l.botUsername || l.slug}'s updates to\n${l.webhookLost.url || '(no webhook — something may be polling the bot)'}\n\nStop that system first (or revoke the bot's token in @BotFather and paste the new one here). Otherwise it may take the bot again on its next restart.`,
+        confirmText: 'Take back',
+      });
+      if (!ok) return;
+    } else if (nextMode === 'hub') {
       const ok = await confirmDlg({
         title: 'Switch to Hub',
         message: `Let the hub receive @${l.botUsername || l.slug}'s updates?\n\nThe hub will set the bot's webhook. Whatever receives the bot's messages now (e.g. its own app / product backend) will STOP getting them, including users' private messages.`,
@@ -1034,7 +1055,7 @@ function wireLaneDetailEvents(wrap, l, titleOf) {
       toast(nextMode === 'hub' ? 'The hub now receives this bot\'s messages' : 'Posts only: another app keeps receiving messages');
       await loadLanes();
     } catch (err) { setErr(err.message); }
-  });
+  }
 
   // Move chat
   wrap.querySelectorAll('[data-move-chat]').forEach(btn => {

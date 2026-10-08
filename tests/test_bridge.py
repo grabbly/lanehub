@@ -209,6 +209,33 @@ def test_wake_flow(client):
     assert w["wake"] is True and w["wakeId"] == 12 and w["sessionId"] == "sess-1"
 
 
+def test_wake_skips_stale_mentions_and_tells_the_owner(client, monkeypatch):
+    """After a long pause the watcher must not answer a days-old tag as if it
+    were new: it is consumed, logged and reported; a fresh one still wakes."""
+    import time
+    from app import db
+    from app.config import settings
+    monkeypatch.setattr(settings, "wake_max_age_hours", 24)
+    login(client)
+    lane = make_lane(client)
+    headers = {"X-Bridge-Token": lane["apiKey"]}
+    client.get("/backend/wake", headers=headers)  # seed
+    now = int(time.time())
+    _push_human(client, "backend", update_id=10, message_id=600, text="@test_bot старое", date=now - 194 * 3600)
+    w = client.get("/backend/wake", headers=headers).json()
+    assert w["wake"] is False
+    assert [s["text"] for s in w["skippedStale"]] == ["@test_bot старое"]
+    assert any("194 h old mention from alice" in e["message"] for e in db.query_lane_logs("backend"))
+    assert "skippedStale" not in client.get("/backend/wake", headers=headers).json()  # reported once
+
+    _push_human(client, "backend", update_id=11, message_id=601, text="@test_bot ещё одно старое",
+                date=now - 30 * 3600)
+    _push_human(client, "backend", update_id=12, message_id=602, text="@test_bot новое", date=now - 60)
+    w = client.get("/backend/wake", headers=headers).json()
+    assert w["wake"] is True and w["wakeId"] == 12
+    assert len(w["skippedStale"]) == 1
+
+
 def test_wake_ignores_history_before_first_poll(client):
     login(client)
     lane = make_lane(client)
@@ -389,6 +416,38 @@ def test_feed_prefers_own_lane_copy_and_file_maps_foreign_id(client):
     assert resp.status_code == 200
     getfile = [c for c in client.fake_tg.calls if c[1] == "getFile"][-1]
     assert getfile == ("front-token:abc", "getFile", {"file_id": "FRONTfid"})
+
+
+def test_file_only_another_lane_saw_is_fetched_with_its_bot(client):
+    """A photo only `back`'s bot captured (or a basic group, where each bot has
+    its own message_ids): `front`, bound to the same chat, downloads it through
+    back's bot. A lane bound elsewhere does not."""
+    login(client)
+    make_lane(client, slug="back")
+    front = make_lane(client, slug="front")
+    elsewhere = make_lane(client, slug="other", chat_id="-100600")
+    _push_photo(client, "back", update_id=11, message_id=900, caption="pic", file_id="BACKfid")
+
+    resp = client.get("/front/file/BACKfid", headers={"X-Bridge-Token": front["apiKey"]})
+    assert resp.status_code == 200
+    getfile = [c for c in client.fake_tg.calls if c[1] == "getFile"][-1]
+    assert getfile == ("back-token:abc", "getFile", {"file_id": "BACKfid"})
+
+    client.get("/other/file/BACKfid", headers={"X-Bridge-Token": elsewhere["apiKey"]})
+    getfile = [c for c in client.fake_tg.calls if c[1] == "getFile"][-1]
+    assert getfile == ("other-token:abc", "getFile", {"file_id": "BACKfid"})
+
+
+def test_info_warns_about_a_basic_group(client):
+    login(client)
+    client.fake_tg.basic_groups.add("-5297")
+    lane = make_lane(client, chat_id="-5297")
+    info = client.get("/backend/info", headers={"X-Bridge-Token": lane["apiKey"]}).json()
+    assert info["chatType"] == "group"
+    assert any("basic group" in w for w in info["warnings"])
+    other = make_lane(client, slug="front")
+    info = client.get("/front/info", headers={"X-Bridge-Token": other["apiKey"]}).json()
+    assert info["chatType"] == "supergroup" and info["warnings"] == []
 
 
 def test_helper_scripts_served(client):

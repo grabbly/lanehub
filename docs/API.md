@@ -142,7 +142,10 @@ curl -sS -o shot.jpg "$LANEHUB_BASE/$LANEHUB_LANE/file/$FILE_ID" -H "X-Bridge-To
 - Telegram `file_id`s are **per bot**: the id another lane's bot got for the
   same photo is useless to yours. `/feed` therefore always hands you *your own*
   lane's copy of a duplicated message, and `/file` maps a foreign id onto your
-  lane's copy of the same `(chatId, messageId)` when it has one.
+  lane's copy of the same `(chatId, messageId)` when it has one. With no such
+  copy (your bot never got that message, or the chat is a basic group where
+  message ids differ per bot), a file posted in your **bound chat** is fetched
+  with the bot of the lane that recorded it.
 - `404` — Telegram doesn't know the id (foreign bot, or an attachment ingested
   before the hub stored `media`); `502` — Telegram refused (e.g. file over
   20 MB) or is unreachable. The `detail` carries Telegram's description.
@@ -227,6 +230,15 @@ answered live by Telegram:
   `receiverLane` (which lane of this bot the webhook points at),
   `pendingUpdateCount`, `lastErrorDate`, `lastErrorMessage` from Telegram's
   `getWebhookInfo`.
+- `webhookLost` — `{"url": "...", "since": <unix>}` while the hub's watchdog
+  sees this bot's updates going somewhere else (`url` empty = the webhook was
+  deleted), else `null`. The lane receives nothing until the operator presses
+  **Take back** in the panel.
+- `chatType` — Telegram's type of the bound chat (`group`, `supergroup`,
+  `channel`, `private`), `null` if unknown.
+- `warnings` — plain-language problems to fix: a lost webhook, or a bound
+  **basic group** (`chatType: "group"`), where each bot numbers messages its
+  own way, so `/feed` shows a message once per bot. Convert it to a supergroup.
 
 ## `POST /{lane}/webhook`
 
@@ -249,6 +261,9 @@ wake cursor and the current Claude session id — so the watcher that drives
   The first ever call seeds the cursor to *now* (history is never replayed) and
   returns `{"wake": false, "sessionId": ...}`. A wake keeps re-firing until it
   is acked (at-least-once).
+- A mention older than `HUB_WAKE_MAX_AGE_HOURS` (default 24) doesn't wake:
+  it is consumed, written to the lane's session log, sent to its debug chat,
+  and listed once in `"skippedStale": [{"from", "date", "text"}]`.
 - **Send-only lanes** get their mentions the same way, found in the bound
   chat's feed (the bot itself receives nothing through the hub). Only
   people's messages count: another bot writing `@your_bot` doesn't wake it.

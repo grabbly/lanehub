@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 from . import db, operator, telegram
 from .config import settings
-from .runtime import canonicalize_binding, ingest_update, runtime
+from .runtime import canonicalize_binding, ingest_update, runtime, webhook_lost
 
 router = APIRouter()
 
@@ -247,15 +247,18 @@ async def get_file(lane_slug: str, file_id: str, x_bridge_token: str = Header(de
     Bot API lets a bot fetch any file it received (up to 20 MB); the hub does
     getFile + download with the lane's bot token and streams the bytes back.
     file_ids are per-bot, so an id copied from another lane's feed row is
-    first mapped onto this lane's own copy of the same message."""
+    first mapped onto this lane's own copy of the same message; with no such
+    copy, a file posted in the lane's bound chat is fetched with the bot of
+    the lane that recorded it."""
     lane = _auth_lane(lane_slug, x_bridge_token)
-    own_id = db.resolve_media_file(lane_slug, file_id)
+    via_slug, fid = db.resolve_media_file(lane_slug, file_id, lane["default_chat_id"] or "")
+    via = lane if via_slug == lane_slug else (db.get_lane(via_slug) or lane)
     try:
-        info = await telegram.get_file(lane["bot_token"], own_id)
+        info = await telegram.get_file(via["bot_token"], fid)
         file_path = info.get("file_path")
         if not file_path:
             raise telegram.TelegramError("telegram returned no file_path")
-        data, ctype = await telegram.download_file(lane["bot_token"], file_path)
+        data, ctype = await telegram.download_file(via["bot_token"], file_path)
     except telegram.TelegramError as exc:
         # Telegram phrases an unknown id as "wrong file_id…", "invalid file_id" or "file not found".
         desc = exc.description.lower()
@@ -344,7 +347,18 @@ async def wake(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
         return {"wake": False, "sessionId": session_id}
     cursor = int(cursor_raw)
 
-    mention, incoming = _scan_mention(lane, cursor)
+    skipped: list[dict] = []
+    while True:
+        mention, incoming = _scan_mention(lane, cursor)
+        if not mention or not _too_old(mention):
+            break
+        # Stale (the watcher was off for long): don't wake the agent on it —
+        # consume it and tell the owner, who decides whether it still matters.
+        cursor = _wake_id(lane, mention)
+        db.set_lane_state(lane_slug, "wake_cursor", str(cursor))
+        await _report_stale(lane, mention)
+        skipped.append({"from": mention.get("from"), "date": mention.get("date"), "text": mention.get("text")})
+    extra = {"skippedStale": skipped} if skipped else {}
     if mention:
         return {
             "wake": True,
@@ -353,12 +367,27 @@ async def wake(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
             "text": mention.get("text"),
             "chatId": mention.get("chatId"),
             "sessionId": session_id,
+            **extra,
         }
     # No mention in this window: advance past the incoming messages we scanned
     # (never past outgoing high-namespace ids) so we don't rescan them.
     if incoming:
         db.set_lane_state(lane_slug, "wake_cursor", str(max(_wake_id(lane, r) for r in incoming)))
-    return {"wake": False, "sessionId": session_id}
+    return {"wake": False, "sessionId": session_id, **extra}
+
+
+def _too_old(row: dict) -> bool:
+    max_age = settings.wake_max_age_hours * 3600
+    return max_age > 0 and (row.get("date") or 0) < time.time() - max_age
+
+
+async def _report_stale(lane: dict, row: dict) -> None:
+    hours = int((time.time() - (row.get("date") or 0)) // 3600)
+    text = (f"Did not wake the agent on a {hours} h old mention from {row.get('from') or 'someone'} "
+            f"(older than HUB_WAKE_MAX_AGE_HOURS={settings.wake_max_age_hours:g}) — answer it by hand "
+            f"if it still matters: {(row.get('text') or '')[:300]}")
+    db.add_lane_log(lane["slug"], "warn", text, int(time.time()))
+    await operator.notify(lane["slug"], f"⏰ {text}")
 
 
 @router.post("/{lane_slug}/wake/ack")
@@ -510,10 +539,37 @@ async def _webhook_status(lane: dict) -> dict:
     }
 
 
+BASIC_GROUP_WARNING = (
+    "the bound chat is a basic group, not a supergroup: there every bot numbers messages its own way, so the "
+    "merged feed shows a message once per bot, and replies and files can't be matched across bots. Convert "
+    "the chat to a supergroup (Telegram does it when you make it public for a moment, or turn on chat "
+    "history for new members) — the hub follows the chat to its new id by itself."
+)
+
+
+async def _chat_type(lane: dict) -> str | None:
+    """Telegram's type of the bound chat: private | group | supergroup | channel."""
+    chat = (lane["default_chat_id"] or "").strip()
+    if not chat:
+        return None
+    try:
+        return (await telegram.get_chat(lane["bot_token"], chat)).get("type")
+    except telegram.TelegramError:
+        return None
+
+
 @router.get("/{lane_slug}/info")
 async def info(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict:
     lane = _auth_lane(lane_slug, x_bridge_token)
     mode = settings.resolved_delivery_mode()
+    chat_type = await _chat_type(lane)
+    lost = webhook_lost(lane_slug)
+    warnings = []
+    if lost:
+        warnings.append(f"Telegram delivers this bot's updates to {lost['url'] or 'nowhere'}, not to this hub "
+                        "— the lane receives nothing until the operator takes the bot back")
+    if chat_type == "group":
+        warnings.append(BASIC_GROUP_WARNING)
 
     # Wake state — visible from the server, so you can see what the (remote,
     # stateless) watcher is working against without shelling into its machine.
@@ -529,6 +585,8 @@ async def info(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
         "lane": lane["slug"],
         "botUsername": lane["bot_username"],
         "defaultChatId": lane["default_chat_id"] or None,
+        "chatType": chat_type,
+        "warnings": warnings,
         "deliveryMode": mode,
         # hub = the hub receives this bot's updates; send_only = another system
         # owns them (the hub never touches its webhook) and the lane reads the
@@ -539,6 +597,8 @@ async def info(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
         "lastSendOk": int(db.get_lane_state(lane_slug, "last_send_ok") or 0) or None,
         "lastSendError": db.get_lane_state(lane_slug, "last_send_error") or None,
         "webhook": await _webhook_status(lane) if mode == "webhook" or _send_only(lane) else None,
+        # set by the hub's watchdog while the bot's updates go somewhere else
+        "webhookLost": lost,
         "polling": runtime.polling(lane["slug"]),
         "storedMessages": db.count_messages(lane["slug"]),
         "seenChats": db.seen_chats(lane["slug"]),

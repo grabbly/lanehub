@@ -9,7 +9,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 
 
 def _env(name: str, default: str = "") -> str:
@@ -27,6 +27,25 @@ class Settings:
     # Public HTTPS origin of this hub, e.g. https://hub.example.com.
     # Required for webhook mode (Telegram must be able to reach it).
     public_base_url: str = field(default_factory=lambda: _env("HUB_PUBLIC_BASE_URL").rstrip("/"))
+
+    # Earlier public origins of THIS hub (comma-separated), e.g. after a domain
+    # move. A webhook Telegram still sends to one of them counts as the hub's
+    # own and is moved to the current address. Any other URL — even one with
+    # the same /{slug}/webhook path — belongs to another system: a second hub
+    # holding the same bot token must never be mistaken for this one.
+    previous_base_urls: tuple[str, ...] = field(default_factory=lambda: tuple(
+        u.strip().rstrip("/") for u in _env("HUB_PREVIOUS_BASE_URLS").split(",") if u.strip()
+    ))
+
+    # How often (seconds) the hub asks Telegram where each bot's updates go,
+    # to notice another system taking the webhook. 0 = never.
+    webhook_check_interval: float = field(
+        default_factory=lambda: float(_env("HUB_WEBHOOK_CHECK_INTERVAL", "300"))
+    )
+
+    # An @mention older than this many hours does not wake the agent (the
+    # watcher was off, the chat moved on); the owner is told instead. 0 = no limit.
+    wake_max_age_hours: float = field(default_factory=lambda: float(_env("HUB_WAKE_MAX_AGE_HOURS", "24")))
 
     # webhook | polling | off. Default: webhook when public_base_url is set,
     # polling otherwise. "off" disables Telegram delivery (used in tests).
