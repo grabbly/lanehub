@@ -168,3 +168,25 @@ itself and silently takes every update away from the new hub. So:
   CLAUDE.md agent-prompt block includes start/stop commands. Nothing on the hub
   needs to run for existing behaviour (reading `/feed`, posting to `/send`) to
   keep working. To enable it, see [WATCHER.md](WATCHER.md).
+
+## Moving messages from another hub
+
+When migrating to a new LaneHub deployment or moving between servers, you can copy message history from an old hub's SQLite database (`hub.db`) into this hub:
+
+1. Copy the old database file (e.g. `old-hub.db`) into the new hub's `./data` directory on the host.
+2. Run the import script inside the container:
+
+```bash
+docker compose exec lanehub python scripts/import_messages.py /data/old-hub.db --since <unix>
+```
+
+Options:
+- `--since <unix>`: import only messages newer than this timestamp (default: `0`, all history).
+- `--lane OLD_SLUG[=NEW_SLUG]`: import specific lanes, optionally renaming the slug. Repeatable. If omitted, all lanes whose slugs exist in the target database are imported; rows of non-existent lanes are skipped.
+- `--dry-run`: simulate the import and report message counts without modifying the database.
+
+Notes:
+- **Deduplication:** messages with the same `(lane_slug, update_id)` already present in the target database are automatically skipped.
+- **Feed cursor:** imported messages are stored with `store_message()`, which assigns a new monotonic `seq` cursor so imported rows show up to downstream agents following the feed cursor.
+- **Media attachments:** Telegram `media.fileId` attachments remain downloadable through the hub's file proxy only if the same bot token is still used.
+
