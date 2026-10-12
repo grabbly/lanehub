@@ -455,6 +455,7 @@
   <div class="dlg-bd" style="max-height:75vh; overflow-y:auto;">
     <div id="rec-status"></div>
     <textarea readonly rows="16" class="txt mono" id="rec-prompt" style="font-size:12.5px;"></textarea>
+    <div id="rec-admin-warn"></div>
   </div>
   <div class="dlg-ft"><button class="btn" id="rec-done">Close</button><button class="btn primary" id="rec-copy-prompt">Copy</button></div>
 </dialog>
@@ -1430,6 +1431,16 @@ function openNewChatWizard(preselectedGroupId) {
 $('new-chat-btn').onclick = () => openNewChatWizard();
 $('nc-close').onclick = () => $('new-chat-dlg').close();
 
+// Telegram only guarantees a bot every group message when it is a group admin.
+// Promoting it in a basic group upgrades the group to a supergroup with a new id,
+// so ask for it before the group is picked.
+function botAdminWarning(lang) {
+  const text = lang === 'ru'
+    ? '⚠️ Бот должен быть администратором группы, иначе он не видит обычные сообщения людей. Назначьте его админом в Telegram до того, как добавлять группу в хаб: при первом назначении Telegram превращает группу в супергруппу и меняет её номер. Никаких прав, кроме самого статуса админа, не нужно.'
+    : '⚠️ The bot must be a group admin, or it will not see people\'s ordinary messages. Make it an admin in Telegram before you add the group to the hub: the first promotion turns the group into a supergroup with a new chat id. It needs no admin rights beyond the admin status itself.';
+  return `<p class="error" style="margin:10px 0 0; font-weight:600;">${text}</p>`;
+}
+
 function renderWizard() {
   const isStep1 = (wizardState.step === 1);
   $('nc-st1').className = 'on';
@@ -1447,7 +1458,8 @@ function renderWizard() {
     if (unboundGroups.length === 0) {
       $('nc-body').innerHTML = `
         <label class="lbl">Step 1 · Which Telegram group?</label>
-        <div class="note">Don't see your group? Add any of your bots to it in Telegram and post one message there. It shows up here within seconds.</div>`;
+        <div class="note">Don't see your group? Add any of your bots to it in Telegram and post one message there. It shows up here within seconds.</div>
+        ${botAdminWarning('en')}`;
       $('nc-next').disabled = true;
     } else {
       $('nc-body').innerHTML = `
@@ -1469,7 +1481,8 @@ function renderWizard() {
             </button>`;
           }).join('')}
         </div>
-        <div class="note">Don't see your group? Add any of your bots to it in Telegram and post one message there. It shows up here within seconds.</div>`;
+        <div class="note">Don't see your group? Add any of your bots to it in Telegram and post one message there. It shows up here within seconds.</div>
+        ${botAdminWarning('en')}`;
     }
   } else {
     $('nc-back').textContent = 'Back';
@@ -1603,6 +1616,7 @@ function renderRecipesDialog() {
   } else {
     statusBox.innerHTML = `<p class="error" style="margin:0 0 10px;">⚠️ This lane is not bound to a chat yet, so it cannot post. Bind it to a chat first.</p>`;
   }
+  $('rec-admin-warn').innerHTML = botAdminWarning(activeRecipesLang);
   $('rec-prompt').value = promptText(laneBase, hubBase, activeRecipesLang, {
     apiKey: l.apiKey, chatId: l.defaultChatId, bot: l.botUsername ? '@' + l.botUsername : '/' + l.slug,
     chatName: (chatNames[String(l.defaultChatId)] || ((l.seenChats || []).find(c => String(c.chatId) === String(l.defaultChatId)) || {}).title || ''),
