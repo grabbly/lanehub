@@ -58,7 +58,7 @@ def redirect_to_trailing_slash(board_slug: str, token: str) -> Response:
     if not TOKEN_RE.match(token):
         return _not_found_response()  # never echo arbitrary text into Location
     # Relative target: behind a proxy that maps another prefix onto this path
-    # (clients.srv.acebox.eu/yl/<token> → /yl/b/<token>) the visitor stays on
+    # (e.g. clients.example.com/yl/<token> → /yl/b/<token>) the visitor stays on
     # the address they were given.
     return RedirectResponse(
         url=f"./{token}/",

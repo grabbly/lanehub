@@ -76,6 +76,20 @@ itself and silently takes every update away from the new hub. So:
 
 ## Version-specific notes
 
+### 0.9.0 — Boards (optional)
+
+- **Nothing to do** if you don't want boards: the module is off by default,
+  no routes, no panel tab. The update only adds new tables (`boards`,
+  `board_tasks`, `board_ledger`, `board_events`); existing data is untouched.
+- **To use boards:** set `HUB_BOARDS=1` in `.env` and recreate the container
+  (`docker compose up -d`). A **Boards** tab appears in the panel. See
+  [BOARDS.md](BOARDS.md).
+- **Client links** are `/{board}/b/{token}/` on the hub's own domain. To serve
+  them on another domain (or keep an older link), proxy that domain to the hub —
+  example in [BOARDS.md](BOARDS.md#the-client-link).
+- Importing an existing board: `scripts/import_board.py` (back up
+  `data/hub.db` first).
+
 ### 0.8.0 — Autopilot
 
 - **Mentions are answered only while a lane's autopilot is ON** — after the
