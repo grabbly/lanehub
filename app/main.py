@@ -95,6 +95,14 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(admin_router)
+    if settings.boards_enabled:
+        from .boards.routes_admin import router as boards_admin_router
+        from .boards.routes_agent import router as boards_agent_router
+        from .boards.routes_client import router as boards_client_router
+
+        app.include_router(boards_admin_router)
+        app.include_router(boards_client_router)
+        app.include_router(boards_agent_router)
     app.include_router(bridge_router)
     return app
 

@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<title>LaneHub Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Read-only client board: summary ledger on top, five status columns that stack on phones. */
+:root {
+  --bg: #f4f2f5; --surface: #ffffff; --surface-2: #ece8ee; --fg: #221d26; --muted: #6c6472; --line: #ddd6e0;
+  --accent: #b5135f; --accent-soft: #f6dce8;
+  --ok: #1f7a46; --ok-soft: #dcefe3; --warn: #8a5a00; --warn-soft: #f6ead0; --info: #3b4fa3; --info-soft: #e1e5f5;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --radius: 8px; color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #17141a; --surface: #221e26; --surface-2: #2c2731; --fg: #eee9f1; --muted: #a59cab; --line: #3a3340;
+  --accent: #f0619f; --accent-soft: #4a2236;
+  --ok: #6fcf97; --ok-soft: #1f3a2a; --warn: #e6b45a; --warn-soft: #3f321a; --info: #9aa9ee; --info-soft: #262d4d;
+  color-scheme: dark; } }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45; }
+.wrap { padding-inline: 16px; padding-block: calc(20px + env(safe-area-inset-top, 0px)) calc(40px + env(safe-area-inset-bottom, 0px)); max-width: 1500px; margin: 0 auto; display: grid; gap: 18px; }
+header.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.brand { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); font-weight: 600; margin: 0 0 4px; }
+h1 { font-size: 24px; font-weight: 600; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+.sub { color: var(--muted); margin: 4px 0 0; }
+.lang-switch { display: inline-flex; gap: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 2px; }
+.lang-btn { background: transparent; border: none; border-radius: calc(var(--radius) - 2px); padding: 4px 9px; font-family: var(--font-body); font-size: 11.5px; font-weight: 500; color: var(--muted); cursor: pointer; transition: all .1s ease; }
+.lang-btn:hover { color: var(--fg); background: var(--surface-2); }
+.lang-btn.active { background: var(--accent); color: #ffffff; font-weight: 600; }
+.ledger { display: flex; flex-wrap: wrap; gap: 8px; font-variant-numeric: tabular-nums; }
+.ledger .cell { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 12px; }
+.ledger .k { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.ledger .v { font-family: var(--font-mono); font-size: 16px; font-weight: 500; }
+.ledger .cell.rest .v { color: var(--ok); }
+.info { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; color: var(--muted); display: grid; gap: 4px; }
+.info strong { color: var(--fg); font-weight: 500; }
+.board { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; align-items: start; }
+.col { background: var(--surface-2); border-radius: var(--radius); padding: 10px; display: grid; gap: 8px; min-width: 0; }
+.col > summary { list-style: none; cursor: default; }
+.col > summary::-webkit-details-marker { display: none; }
+.col > summary .chev { display: none; }
+@media (max-width: 759px) {
+  .header-right { align-items: stretch; width: 100%; }
+  .lang-switch { align-self: flex-start; }
+  .col > summary { cursor: pointer; padding: 4px 2px; -webkit-tap-highlight-color: transparent; }
+  .col > summary .chev { display: inline-block; transition: transform .15s; color: var(--muted); }
+  .col[open] > summary .chev { transform: rotate(90deg); }
+  .col:not([open]) { padding-block: 8px; }
+}
+.col > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.col .body { display: grid; gap: 8px; }
+.col h2 { font-size: 13px; font-weight: 600; margin: 0; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; text-transform: uppercase; letter-spacing: .05em; }
+.col h2 .name { display: inline-flex; align-items: baseline; gap: 6px; }
+.col h2 .meta { font-family: var(--font-mono); font-weight: 400; color: var(--muted); text-transform: none; letter-spacing: 0; font-size: 12px; }
+.col .hint { font-size: 12px; color: var(--muted); margin: -2px 0 2px; }
+.col .empty { color: var(--muted); font-size: 13px; padding: 8px 2px; }
+.col.waiting { box-shadow: inset 0 3px 0 var(--warn); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; display: grid; gap: 6px; min-width: 0; }
+.card .title { font-weight: 500; overflow-wrap: anywhere; }
+.card .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+.card .note { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.chip { border-radius: 999px; padding: 1px 8px; font-size: 11.5px; font-weight: 500; white-space: nowrap; background: var(--surface-2); color: var(--muted); }
+.chip.deposit { background: var(--accent-soft); color: var(--accent); }
+.chip.free { background: var(--ok-soft); color: var(--ok); }
+.chip.paid { background: var(--info-soft); color: var(--info); }
+.chip.estimate { background: var(--warn-soft); color: var(--warn); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
+.err { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <p class="brand" id="brand"></p>
+      <h1 id="board-title"></h1>
+      <p class="sub" id="updated">...</p>
+    </div>
+    <div class="header-right">
+      <nav class="lang-switch" aria-label="Language" id="lang-switch"></nav>
+      <div class="ledger" id="ledger-box" aria-label="Ledger">
+        <div class="cell"><span class="k" id="lbl-paid">Paid</span><span class="v" id="lg-paid">—</span></div>
+        <div class="cell"><span class="k" id="lbl-dep">Deposit</span><span class="v" id="lg-dep">—</span></div>
+        <div class="cell"><span class="k" id="lbl-used">Allocated</span><span class="v" id="lg-used">—</span></div>
+        <div class="cell rest"><span class="k" id="lbl-rest">Remaining</span><span class="v" id="lg-rest">—</span></div>
+      </div>
+    </div>
+  </header>
+
+  <div class="info">
+    <span><strong id="info-title"></strong> <span id="info-backlog"></span></span>
+    <span id="info-waiting"></span>
+  </div>
+
+  <main class="board" id="board"></main>
+
+  <footer>
+    <span><strong id="footer-q-title"></strong> <span id="footer-q-text"></span></span>
+    <span id="footer-notice"></span>
+  </footer>
+</div>
+<script>
+(() => {
+  const COLS = [
+    { id: "backlog", titleKey: "col_backlog", hintKey: "col_backlog_hint" },
+    { id: "queue", titleKey: "col_queue", hintKey: "col_queue_hint" },
+    { id: "doing", titleKey: "col_doing", hintKey: "col_doing_hint" },
+    { id: "waiting", titleKey: "col_waiting", hintKey: "col_waiting_hint" },
+    { id: "done", titleKey: "col_done", hintKey: "col_done_hint" },
+  ];
+  const $ = (id) => document.getElementById(id);
+  const mobile = window.matchMedia("(max-width: 759px)");
+  const DEFAULT_OPEN = { backlog: false, queue: true, doing: true, waiting: true, done: false };
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem("yl-client-cols") || "{}"); } catch (e) {}
+  const isOpen = (id, count) => !mobile.matches || (id in saved ? saved[id] : DEFAULT_OPEN[id] && count > 0);
+  const remember = (id, open) => { saved[id] = open; try { localStorage.setItem("yl-client-cols", JSON.stringify(saved)); } catch (e) {} };
+  
+  let lastLang = null, lastData = null;
+  mobile.addEventListener("change", () => { if (lastData) render(lastData, lastLang); });
+
+  const el = (tag, cls, text) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  };
+
+  function fmtMoney(n, lang, currency) {
+    const num = Math.round((Number(n) || 0) * 100) / 100;
+    try {
+      const loc = lang === "uk" ? "uk-UA" : (lang === "pl" ? "pl-PL" : (lang === "ru" ? "ru-RU" : "en-US"));
+      const formatted = new Intl.NumberFormat(loc, { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(num);
+      return currency ? formatted + " " + currency : formatted;
+    } catch (e) {
+      return num + (currency ? " " + currency : "");
+    }
+  }
+
+  function priceChip(c, ui, lang, currency) {
+    const p = Number(c.price) || 0;
+    const formattedPrice = fmtMoney(p, lang, currency);
+    switch (c.pay) {
+      case "deposit":
+        return el("span", "chip deposit", p ? formattedPrice + (c.status === "backlog" ? " · " + ui.pay_deposit_estimate : " · " + ui.pay_deposit) : ui.pay_deposit);
+      case "paid":
+        return el("span", "chip paid", p ? formattedPrice + " · " + ui.pay_paid : ui.pay_paid);
+      case "bonus":
+        return el("span", "chip free", ui.pay_free + " · " + ui.pay_bonus);
+      case "rework":
+        return el("span", "chip free", ui.pay_free + " · " + ui.pay_rework);
+      case "separate":
+        return el("span", "chip estimate", ui.pay_separate);
+      default:
+        return el("span", "chip estimate", ui.pay_estimate);
+    }
+  }
+
+  function getActiveLang(availableLangs, fallbackLang) {
+    const p = new URLSearchParams(window.location.search);
+    const urlLang = p.get("lang");
+    if (urlLang && availableLangs.includes(urlLang)) return urlLang;
+    try {
+      const stored = localStorage.getItem("lh-board-lang");
+      if (stored && availableLangs.includes(stored)) return stored;
+    } catch (e) {}
+    return fallbackLang || "en";
+  }
+
+  function updateUrlLang(lang) {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("lang", lang);
+      window.history.replaceState({}, "", url.toString());
+    } catch (e) {}
+  }
+
+  function renderLangSwitch(langs, currentLang) {
+    const container = $("lang-switch");
+    container.replaceChildren(...langs.map(l => {
+      const btn = el("button", "lang-btn" + (l === currentLang ? " active" : ""), l.toUpperCase());
+      btn.type = "button";
+      btn.addEventListener("click", () => {
+        if (l !== currentLang) {
+          try { localStorage.setItem("lh-board-lang", l); } catch (e) {}
+          updateUrlLang(l);
+          loadData(l);
+        }
+      });
+      return btn;
+    }));
+  }
+
+  function render(data, lang) {
+    lastData = data;
+    lastLang = lang;
+    const ui = data.ui;
+    const currency = data.currency;
+
+    document.documentElement.lang = lang;
+    document.title = [data.title, ui.page_title].filter(Boolean).join(" — ");
+    $("brand").textContent = data.title || "";
+    $("board-title").textContent = ui.page_title || "";
+
+    $("lbl-paid").textContent = ui.ledger_paid;
+    $("lbl-dep").textContent = ui.ledger_deposit;
+    $("lbl-used").textContent = ui.ledger_allocated;
+    $("lbl-rest").textContent = ui.ledger_remaining;
+
+    $("lg-paid").textContent = fmtMoney(data.ledger.paid, lang, currency);
+    $("lg-dep").textContent = fmtMoney(data.ledger.deposit, lang, currency);
+    $("lg-used").textContent = fmtMoney(data.ledger.allocated, lang, currency);
+    $("lg-rest").textContent = fmtMoney(data.ledger.remaining, lang, currency);
+
+    if (data.updatedAt) {
+      const d = new Date(data.updatedAt);
+      const loc = lang === "uk" ? "uk-UA" : (lang === "pl" ? "pl-PL" : (lang === "ru" ? "ru-RU" : "en-US"));
+      $("updated").textContent = (ui.updated_at_prefix || "") + d.toLocaleString(loc, { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+      $("updated").className = "sub";
+    }
+
+    $("info-title").textContent = ui.info_title;
+    $("info-backlog").textContent = ui.info_backlog;
+    $("info-waiting").textContent = ui.info_waiting;
+
+    $("footer-q-title").textContent = ui.footer_question_title;
+    $("footer-q-text").textContent = ui.footer_question_text;
+    $("footer-notice").textContent = ui.footer_private_notice;
+
+    renderLangSwitch(data.langs, lang);
+
+    const cards = data.cards || data.tasks || [];
+    $("board").replaceChildren(...COLS.map(col => {
+      const colName = ui[col.titleKey] || col.id;
+      const colHint = ui[col.hintKey] || "";
+      const list = cards.filter(c => c.status === col.id).sort((a, b) => a.position - b.position);
+
+      const sec = el("details", "col " + col.id);
+      sec.setAttribute("aria-label", colName);
+      sec.open = isOpen(col.id, list.length);
+
+      const sum = el("summary");
+      const h = el("h2");
+      const name = el("span", "name");
+      name.append(el("span", "chev", "›"), el("span", null, colName));
+      h.append(name);
+
+      const total = list.filter(c => c.pay === "deposit" || c.pay === "paid").reduce((s, c) => s + (Number(c.price) || 0), 0);
+      h.append(el("span", "meta", list.length + (total ? " · " + fmtMoney(total, lang, currency) : "")));
+      sum.append(h);
+
+      sum.addEventListener("click", (e) => { if (!mobile.matches) e.preventDefault(); });
+      sec.addEventListener("toggle", () => { if (mobile.matches) remember(col.id, sec.open); });
+      sec.append(sum);
+
+      const body = el("div", "body");
+      if (colHint) body.append(el("p", "hint", colHint));
+      if (!list.length) body.append(el("div", "empty", ui.empty_column));
+      list.forEach(c => {
+        const card = el("article", "card");
+        card.append(el("div", "title", c.title));
+        const row = el("div", "row");
+        row.append(priceChip(c, ui, lang, currency));
+        card.append(row);
+        if (c.note) card.append(el("div", "note", c.note));
+        body.append(card);
+      });
+      sec.append(body);
+      return sec;
+    }));
+  }
+
+  function loadData(lang) {
+    const url = "data.json" + (lang ? "?lang=" + encodeURIComponent(lang) : "");
+    fetch(url, { cache: "no-store" })
+      .then(r => {
+        if (!r.ok) throw new Error(r.status);
+        return r.json();
+      })
+      .then(data => {
+        const resolvedLang = lang || getActiveLang(data.langs, data.clientLang);
+        if (!lang) {
+          updateUrlLang(resolvedLang);
+          if (resolvedLang !== data.clientLang) {
+            loadData(resolvedLang);
+            return;
+          }
+        }
+        render(data, resolvedLang);
+      })
+      .catch(() => {
+        const errText = (lastData && lastData.ui && lastData.ui.error_load) || "Failed to load board. Please refresh the page in a moment.";
+        $("updated").textContent = errText;
+        $("updated").className = "sub err";
+      });
+  }
+
+  const p = new URLSearchParams(window.location.search);
+  const initialLang = p.get("lang");
+  loadData(initialLang);
+})();
+</script>
+</body>
+</html>

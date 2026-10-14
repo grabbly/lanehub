@@ -94,8 +94,7 @@ class FakeTG:
         raise AssertionError(f"unexpected Bot API method {method}")
 
 
-@pytest.fixture
-def client(tmp_path, monkeypatch):
+def _make_client(tmp_path, monkeypatch, boards_enabled: bool = False):
     from app.config import settings
 
     monkeypatch.setattr(settings, "db_path", tmp_path / "hub.db")
@@ -105,6 +104,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "previous_base_urls", ())
     monkeypatch.setattr(settings, "webhook_check_interval", 0)
     monkeypatch.setattr(settings, "wake_max_age_hours", 0)  # test messages are dated 2023
+    monkeypatch.setattr(settings, "boards_enabled", boards_enabled)
 
     fake = FakeTG()
     monkeypatch.setattr("app.telegram.tg_call", fake)
@@ -121,6 +121,16 @@ def client(tmp_path, monkeypatch):
     with TestClient(create_app()) as c:
         c.fake_tg = fake
         yield c
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    yield from _make_client(tmp_path, monkeypatch, boards_enabled=False)
+
+
+@pytest.fixture
+def boards_client(tmp_path, monkeypatch):
+    yield from _make_client(tmp_path, monkeypatch, boards_enabled=True)
 
 
 def login(client):

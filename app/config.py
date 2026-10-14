@@ -59,6 +59,11 @@ class Settings:
         default_factory=lambda: _env("HUB_TELEGRAM_API", "https://api.telegram.org").rstrip("/")
     )
 
+    # Boards module feature flag (HUB_BOARDS="1" or "true").
+    boards_enabled: bool = field(
+        default_factory=lambda: _env("HUB_BOARDS").lower() in ("1", "true")
+    )
+
     def resolved_delivery_mode(self) -> str:
         if self.delivery_mode in ("webhook", "polling", "off"):
             return self.delivery_mode
