@@ -248,6 +248,12 @@ Russian overview: [docs/README.ru.md](docs/README.ru.md).
 | `HUB_WAKE_MAX_AGE_HOURS` | `24` | Older @mentions don't wake the agent (the owner is told instead); `0` = no limit |
 | `HUB_TELEGRAM_API` | `https://api.telegram.org` | Bot API origin (override for tests) |
 | `HUB_BOARDS` | `0` | `1` turns on the Boards module ([docs/BOARDS.md](docs/BOARDS.md)) |
+| `HUB_STT_URL` | *(empty)* | Speech-to-text endpoint for voice messages (multipart `file` → JSON `text`): OpenAI `/v1/audio/transcriptions` or a self-hosted Whisper server; empty = off |
+| `HUB_STT_KEY` | *(empty)* | Optional key, sent as `Authorization: Bearer` |
+| `HUB_STT_MODEL` | *(empty)* | Optional `model` field (OpenAI: `whisper-1`) |
+| `HUB_STT_LANGUAGE` | *(empty)* | Optional language code passed as form field `language`; empty = auto |
+| `HUB_STT_MAX_SECONDS` | `900` | Maximum media duration in seconds for transcription; longer is marked `skipped` |
+| `HUB_STT_TIMEOUT` | `600` | Timeout in seconds for transcription requests |
 
 ## Development
 

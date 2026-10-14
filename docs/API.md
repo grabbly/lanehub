@@ -95,6 +95,13 @@ deleting or disabling the receiver moves the webhook to the next lane.
   `video_note`, `voice`, `audio`, `sticker`, `animation`. Download it with
   `GET /{lane}/file/{fileId}` (below) or `./tg-file.sh <fileId>`.
 
+- **Speech-to-text (`voice`, `audio`, `video_note`):** messages with voice, audio or video notes
+  carry transcription fields:
+  - `transcript`: transcribed text (string) or `null`.
+  - `transcriptStatus`: `"pending"` | `"done"` | `"failed"` | `"skipped"` | `null`.
+  When `done`, the returned `text` is rewritten to `[voice m:ss] <transcript>` (with any caption
+  preserved on a new line). While pending, `[voice m:ss · transcribing…]`. The stored message in the database is never mutated.
+
 ## `GET /{lane}/feed` — the whole chat (USE THIS to read)
 
 Merged history across lanes: humans + every bot, one row per Telegram
@@ -151,6 +158,27 @@ curl -sS -o shot.jpg "$LANEHUB_BASE/$LANEHUB_LANE/file/$FILE_ID" -H "X-Bridge-To
   20 MB) or is unreachable. The `detail` carries Telegram's description.
 - Helper: `./tg-file.sh <fileId>` saves to `./tg-files/<name>` and prints the
   path (`--last` takes the newest attachment in `tg-chat-log.jsonl`).
+
+## `POST /{lane}/transcribe/{fileId}` — trigger or query transcription
+
+Enqueues transcription for a voice/audio/video_note attachment (or returns the existing transcript status).
+Reuses the same chat-isolation rules as `/file/{fileId}`.
+
+```bash
+curl -sS -X POST "$LANEHUB_BASE/$LANEHUB_LANE/transcribe/$FILE_ID" -H "X-Bridge-Token: $KEY"
+```
+
+Response:
+```json
+{
+  "status": "done",
+  "transcript": "У нас сайт – это больше визитка…"
+}
+```
+
+- Returns 503 if STT is not configured (`HUB_STT_URL` not set).
+- Returns 404 if the file is unknown or belongs to another chat.
+- Returns 400 if the media attachment is not transcribable (e.g. photo or document).
 
 ## `GET /{lane}/messages` — this lane only
 

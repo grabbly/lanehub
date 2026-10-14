@@ -285,7 +285,7 @@ def extract_media(msg: dict) -> dict | None:
             "voice": "audio/ogg", "video_note": "video/mp4",
             "sticker": "image/webp", "animation": "video/mp4",
         }.get(kind)
-        return {
+        res = {
             "kind": kind,
             "fileId": obj["file_id"],
             "fileUniqueId": obj.get("file_unique_id"),
@@ -293,6 +293,9 @@ def extract_media(msg: dict) -> dict | None:
             "mime": mime,
             "name": obj.get("file_name") or f"{obj.get('file_unique_id') or kind}{_ext_for(mime)}",
         }
+        if kind in ("voice", "audio", "video_note", "video") and obj.get("duration") is not None:
+            res["duration"] = int(obj["duration"])
+        return res
     return None
 
 

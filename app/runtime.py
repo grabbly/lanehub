@@ -63,6 +63,7 @@ def ingest_update(lane_slug: str, upd: dict) -> None:
         moved = db.migrate_chat(chat["id"], msg["migrate_to_chat_id"])
         if moved:
             LOG.info("chat %s migrated to %s; rebound lanes %s", chat["id"], msg["migrate_to_chat_id"], moved)
+    media = telegram.extract_media(msg)
     for slug in targets:
         db.store_message(
             lane_slug=slug,
@@ -74,8 +75,31 @@ def ingest_update(lane_slug: str, upd: dict) -> None:
             text=telegram.extract_text(msg),
             date=msg.get("date", 0),
             is_outgoing=False,
-            media=telegram.extract_media(msg),
+            media=media,
             **telegram.extract_author(msg),
+        )
+    if targets and settings.stt_enabled and media and media.get("kind") in ("voice", "audio", "video_note") and media.get("fileUniqueId"):
+        fuid = media["fileUniqueId"]
+        fid = media["fileId"]
+        kind = media["kind"]
+        size = media.get("size")
+        duration = media.get("duration")
+        status = "pending"
+        error = None
+        if size and size > 20 * 1024 * 1024:
+            status = "skipped"
+            error = "file size exceeds 20 MB limit"
+        elif duration is not None and duration > settings.stt_max_seconds:
+            status = "skipped"
+            error = f"media duration ({duration}s) exceeds maximum ({settings.stt_max_seconds}s)"
+        db.enqueue_transcript(
+            file_unique_id=fuid,
+            lane_slug=targets[0],
+            file_id=fid,
+            kind=kind,
+            duration=duration,
+            status=status,
+            error=error,
         )
 
 
@@ -105,6 +129,7 @@ class LaneRuntime:
         self._pollers: dict[str, asyncio.Task] = {}
         self._watchdog: asyncio.Task | None = None
         self._autopilot_task: asyncio.Task | None = None
+        self._stt_task: asyncio.Task | None = None
 
     def webhook_url(self, slug: str) -> str:
         return f"{settings.public_base_url}/{slug}/webhook"
@@ -273,6 +298,9 @@ class LaneRuntime:
         return any((task := self._pollers.get(s)) and not task.done() for s in slugs)
 
     async def stop_all(self) -> None:
+        if self._stt_task:
+            self._stt_task.cancel()
+            self._stt_task = None
         if self._autopilot_task:
             self._autopilot_task.cancel()
             self._autopilot_task = None
@@ -281,6 +309,10 @@ class LaneRuntime:
         if self._watchdog:
             self._watchdog.cancel()
             self._watchdog = None
+
+    def start_stt_worker(self) -> None:
+        if settings.stt_enabled and (self._stt_task is None or self._stt_task.done()):
+            self._stt_task = asyncio.create_task(self._stt_loop(), name="stt-worker")
 
     # --- webhook watchdog ------------------------------------------------
     #
@@ -430,6 +462,63 @@ class LaneRuntime:
         db.set_lane_state(slug, "next_offset", str(updates[-1]["update_id"] + 1))
         LOG.info("lane %s: ingested %d updates", slug, len(updates))
 
+    async def _stt_loop(self) -> None:
+        LOG.info("STT background worker started")
+        while True:
+            try:
+                processed = await self.stt_step()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                LOG.warning("STT worker loop error: %s", exc)
+                processed = False
+            if not processed:
+                await asyncio.sleep(3)
+
+    async def stt_step(self) -> bool:
+        if not settings.stt_enabled:
+            return False
+        now = int(time.time())
+        row = db.get_next_pending_transcript(now)
+        if not row:
+            return False
+        fuid = row["file_unique_id"]
+        lane_slug = row["lane_slug"]
+        file_id = row["file_id"]
+        attempts = row["attempts"]
+        lane = db.get_lane(lane_slug)
+        if not lane or not lane.get("enabled"):
+            db.update_transcript_failed(fuid, attempts=attempts + 1, error="lane missing or disabled")
+            return True
+        try:
+            info = await telegram.get_file(lane["bot_token"], file_id)
+            file_path = info.get("file_path")
+            if not file_path:
+                raise telegram.TelegramError("telegram returned no file_path")
+            data, ctype = await telegram.download_file(lane["bot_token"], file_path)
+            filename = file_path.rsplit("/", 1)[-1] if "/" in file_path else file_path
+            from . import stt
+            result = await stt.transcribe(data, filename, ctype)
+            text = (result.get("text") or "").strip()
+            language = result.get("language")
+            db.update_transcript_done(fuid, text=text, language=language)
+            return True
+        except Exception as exc:
+            new_attempts = attempts + 1
+            short_err = str(exc)
+            if lane.get("bot_token"):
+                short_err = short_err.replace(lane["bot_token"], "<token>")
+            if settings.stt_key:
+                short_err = short_err.replace(settings.stt_key, "<key>")
+            short_err = short_err[:500]
+            LOG.warning("STT transcription error for %s (attempt %d): %s", fuid, new_attempts, short_err)
+            if new_attempts >= 3:
+                db.update_transcript_failed(fuid, attempts=new_attempts, error=short_err)
+            else:
+                backoff = 60 if new_attempts == 1 else (300 if new_attempts == 2 else 1800)
+                db.update_transcript_retry(fuid, attempts=new_attempts, next_try_at=now + backoff, error=short_err)
+            return True
+
 
 def webhook_lost(slug: str) -> dict | None:
     """{url, since} while the watchdog sees the lane's bot delivering elsewhere."""
@@ -438,3 +527,4 @@ def webhook_lost(slug: str) -> dict | None:
 
 
 runtime = LaneRuntime()
+stt_step = runtime.stt_step

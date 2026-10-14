@@ -46,6 +46,21 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.10.0 — 2026-10-15
+
+- **Speech-to-text (optional, `HUB_STT_URL`).** Automatic transcription of voice,
+  audio, and video-note messages using a Whisper service.
+- **Rewritten message text in feeds for agents:** `text` displays `[voice m:ss] <transcript>`
+  when done (or `[voice m:ss · transcribing…]` while pending), keeping captions on a new line;
+  underlying database message rows remain untouched.
+- **Single deduplicated transcription:** multiple lanes holding copies of the same Telegram
+  message share a single transcription job keyed by `file_unique_id`.
+- **Background worker:** sequential processing with retry backoff and failure isolation.
+- **On-demand transcription:** `POST /{lane}/transcribe/{fileId}` to enqueue or inspect
+  transcription state for a file.
+- **Admin backfill & diagnostics:** `POST /admin/api/transcripts/backfill` and
+  `GET /admin/api/transcripts`.
+
 ## 0.9.0 — 2026-10-14
 
 - **Boards (optional, `HUB_BOARDS=1`).** A task board per chat: five columns

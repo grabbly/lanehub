@@ -46,6 +46,7 @@ async def lifespan(app: FastAPI):
     db.connect().close()  # create schema up front
     await runtime.sync_all()
     runtime.start_watchdog()
+    runtime.start_stt_worker()
     try:
         yield
     finally:

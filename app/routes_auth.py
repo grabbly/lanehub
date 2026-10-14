@@ -64,4 +64,5 @@ async def session(hub_session: str | None = Cookie(default=None)) -> dict:
         "publicBaseUrl": settings.public_base_url or None,
         "adminPasswordSet": bool(settings.admin_password),
         "boardsEnabled": settings.boards_enabled,
+        "sttEnabled": settings.stt_enabled,
     }

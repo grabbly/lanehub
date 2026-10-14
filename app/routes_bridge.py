@@ -13,6 +13,7 @@ which Telegram authenticates with X-Telegram-Bot-Api-Secret-Token).
 """
 from __future__ import annotations
 
+import json
 import secrets as pysecrets
 import time
 
@@ -272,6 +273,56 @@ async def get_file(lane_slug: str, file_id: str, x_bridge_token: str = Header(de
         media_type=ctype,
         headers={"Content-Disposition": f'inline; filename="{name}"', "Cache-Control": "private, max-age=3600"},
     )
+
+
+@router.post("/{lane_slug}/transcribe/{file_id}")
+async def transcribe_file(lane_slug: str, file_id: str, x_bridge_token: str = Header(default="")) -> dict:
+    """Trigger or query transcription for a voice/audio/video_note attachment."""
+    lane = _auth_lane(lane_slug, x_bridge_token)
+    if not settings.stt_enabled:
+        raise HTTPException(status_code=503, detail="STT service is not configured (HUB_STT_URL is not set)")
+
+    via_slug, fid = db.resolve_media_file(lane_slug, file_id, lane["default_chat_id"] or "")
+    msg = db.find_media_message(fid)
+    if not msg:
+        raise HTTPException(status_code=404, detail="file not found")
+    bound = (lane.get("default_chat_id") or "").strip()
+    is_own = (msg["lane_slug"] == lane_slug)
+    in_bound = bool(bound and str(msg["chat_id"]) == bound)
+    if not is_own and not in_bound:
+        raise HTTPException(status_code=404, detail="file not found")
+
+    media = json.loads(msg["media"]) if msg.get("media") else {}
+    fuid = media.get("fileUniqueId")
+    kind = media.get("kind")
+    if not fuid or kind not in ("voice", "audio", "video_note"):
+        raise HTTPException(status_code=400, detail="media is not transcribable")
+
+    existing = db.get_transcript(fuid)
+    if existing:
+        return {"status": existing["status"], "transcript": existing.get("text")}
+
+    duration = media.get("duration")
+    size = media.get("size")
+    status = "pending"
+    error = None
+    if size and size > 20 * 1024 * 1024:
+        status = "skipped"
+        error = "file size exceeds 20 MB limit"
+    elif duration is not None and duration > settings.stt_max_seconds:
+        status = "skipped"
+        error = f"media duration ({duration}s) exceeds maximum ({settings.stt_max_seconds}s)"
+
+    db.enqueue_transcript(
+        file_unique_id=fuid,
+        lane_slug=via_slug,
+        file_id=fid,
+        kind=kind,
+        duration=duration,
+        status=status,
+        error=error,
+    )
+    return {"status": status, "transcript": None}
 
 
 class WakeAck(BaseModel):
@@ -630,6 +681,7 @@ async def info(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict
             "claudeSessionId": session_id,
             "pendingMention": pending,  # a mention waiting to be handled, if any
         },
+        "sttEnabled": settings.stt_enabled,
     }
 
 

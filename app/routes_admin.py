@@ -13,7 +13,7 @@ import re
 import secrets as pysecrets
 import time
 
-from fastapi import APIRouter, Cookie, HTTPException
+from fastapi import APIRouter, Body, Cookie, HTTPException
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -419,3 +419,54 @@ async def admin_feed(
         order = "desc"
     rows = db.query_feed(sinceDate, limit, order, chatId)
     return {"messages": rows, "count": len(rows), "chats": db.seen_chats()}
+
+
+# --- speech-to-text transcripts ------------------------------------------
+
+
+class BackfillRequest(BaseModel):
+    hours: int = Field(default=72, ge=1, le=720)
+
+
+@router.post("/transcripts/backfill")
+async def backfill_transcripts(
+    req: BackfillRequest = Body(default_factory=BackfillRequest),
+    hub_session: str | None = Cookie(default=None),
+) -> dict:
+    require_admin(hub_session)
+    if not settings.stt_enabled:
+        raise HTTPException(status_code=503, detail="STT service is not configured (HUB_STT_URL is not set)")
+    since_ts = int(time.time()) - req.hours * 3600
+    queued = db.backfill_transcripts(since_ts, settings.stt_max_seconds)
+    return {"queued": queued}
+
+
+@router.get("/transcripts")
+async def list_transcripts(
+    status: str | None = None,
+    limit: int = 50,
+    hub_session: str | None = Cookie(default=None),
+) -> dict:
+    require_admin(hub_session)
+    if not settings.stt_enabled:
+        raise HTTPException(status_code=503, detail="STT service is not configured (HUB_STT_URL is not set)")
+    rows = db.list_transcripts(status=status, limit=limit)
+    out = [
+        {
+            "fileUniqueId": r["file_unique_id"],
+            "laneSlug": r["lane_slug"],
+            "fileId": r["file_id"],
+            "kind": r["kind"],
+            "duration": r["duration"],
+            "status": r["status"],
+            "text": r["text"],
+            "language": r["language"],
+            "error": r["error"],
+            "attempts": r["attempts"],
+            "nextTryAt": r["next_try_at"],
+            "createdAt": r["created_at"],
+            "updatedAt": r["updated_at"],
+        }
+        for r in rows
+    ]
+    return {"transcripts": out, "count": len(out)}

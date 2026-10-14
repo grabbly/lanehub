@@ -84,6 +84,22 @@ CREATE TABLE IF NOT EXISTS operator_inbox (
     status TEXT NOT NULL DEFAULT 'pending'
 );
 CREATE INDEX IF NOT EXISTS idx_operator_inbox ON operator_inbox(lane_slug, status, id);
+CREATE TABLE IF NOT EXISTS transcripts (
+    file_unique_id TEXT PRIMARY KEY,
+    lane_slug TEXT NOT NULL,
+    file_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    duration INTEGER,
+    status TEXT NOT NULL CHECK(status IN ('pending','done','failed','skipped')),
+    text TEXT,
+    language TEXT,
+    error TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_try_at INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_transcripts_pending ON transcripts(status, next_try_at, created_at);
 """
 
 # Keep at most this many log lines per lane (a rolling watcher-activity buffer).
@@ -103,6 +119,23 @@ def connect() -> sqlite3.Connection:
 def _ensure_columns(conn: sqlite3.Connection) -> None:
     """Idempotent column adds for tables that predate a field (SQLite has no
     ADD COLUMN IF NOT EXISTS)."""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS transcripts ("
+        "file_unique_id TEXT PRIMARY KEY, "
+        "lane_slug TEXT NOT NULL, "
+        "file_id TEXT NOT NULL, "
+        "kind TEXT NOT NULL, "
+        "duration INTEGER, "
+        "status TEXT NOT NULL CHECK(status IN ('pending','done','failed','skipped')), "
+        "text TEXT, "
+        "language TEXT, "
+        "error TEXT, "
+        "attempts INTEGER NOT NULL DEFAULT 0, "
+        "next_try_at INTEGER NOT NULL DEFAULT 0, "
+        "created_at INTEGER NOT NULL, "
+        "updated_at INTEGER NOT NULL)"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_transcripts_pending ON transcripts(status, next_try_at, created_at)")
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(lanes)")}
     if "receive_mode" not in cols:
         # 'hub' = the hub owns the bot's updates (webhook/polling); 'send_only' =
@@ -500,8 +533,48 @@ def max_incoming_update_id(lane_slug: str) -> int:
         return row["m"]
 
 
+def _format_message_text(
+    raw_text: str,
+    kind: str,
+    status: str | None,
+    transcript: str | None,
+    duration: int | None,
+) -> str:
+    if kind == "voice":
+        kind_label = "voice"
+        prefix = "[voice]"
+    elif kind == "audio":
+        kind_label = "audio"
+        prefix = "[audio]"
+    elif kind == "video_note":
+        kind_label = "video note"
+        prefix = "[video note]"
+    else:
+        return raw_text
+
+    caption = ""
+    if raw_text.startswith(prefix):
+        caption = raw_text[len(prefix):].strip()
+    else:
+        caption = raw_text.strip()
+
+    dur_str = f" {duration // 60}:{duration % 60:02d}" if (duration is not None and duration >= 0) else ""
+
+    if status == "done":
+        tag = f"[{kind_label}{dur_str}]"
+        t_text = (transcript or "").strip()
+        body = f"{tag} {t_text}".strip() if t_text else tag
+        return f"{body}\n{caption}" if caption else body
+    elif status == "pending":
+        tag = f"[{kind_label}{dur_str} · transcribing…]"
+        return f"{tag}\n{caption}" if caption else tag
+    else:
+        return raw_text
+
+
 def _msg_to_dict(r: sqlite3.Row) -> dict:
-    return {
+    media = json.loads(r["media"]) if r["media"] else None
+    res = {
         "lane": r["lane_slug"],
         "updateId": r["update_id"],
         "messageId": r["message_id"],
@@ -515,19 +588,35 @@ def _msg_to_dict(r: sqlite3.Row) -> dict:
         "fromUsername": r["from_username"],
         "fromIsBot": None if r["from_is_bot"] is None else bool(r["from_is_bot"]),
         "replyToUsername": r["reply_to_username"],
-        "media": json.loads(r["media"]) if r["media"] else None,
+        "media": media,
         "seq": r["seq"],
     }
+    is_transcribable = bool(media and media.get("kind") in ("voice", "audio", "video_note"))
+    if is_transcribable:
+        r_keys = r.keys()
+        status = r["transcript_status"] if "transcript_status" in r_keys else None
+        transcript = r["transcript_text"] if "transcript_text" in r_keys else None
+        duration = r["transcript_duration"] if "transcript_duration" in r_keys else None
+        if duration is None and media:
+            duration = media.get("duration")
+        res["transcript"] = transcript
+        res["transcriptStatus"] = status
+        res["text"] = _format_message_text(r["text"] or "", media.get("kind", ""), status, transcript, duration)
+    return res
 
 
 def query_messages(lane_slug: str, since: int, limit: int, order: str) -> list[dict]:
     direction = "DESC" if order == "desc" else "ASC"
+    sql = (
+        "SELECT m.*, t.status AS transcript_status, t.text AS transcript_text, "
+        "t.language AS transcript_language, t.duration AS transcript_duration "
+        "FROM messages m "
+        "LEFT JOIN transcripts t ON t.file_unique_id = json_extract(m.media, '$.fileUniqueId') "
+        f"WHERE m.lane_slug = ? AND m.update_id > ? "
+        f"ORDER BY m.update_id {direction} LIMIT ?"
+    )
     with connect() as conn:
-        rows = conn.execute(
-            "SELECT * FROM messages WHERE lane_slug = ? AND update_id > ? "
-            f"ORDER BY update_id {direction} LIMIT ?",
-            (lane_slug, since, limit),
-        ).fetchall()
+        rows = conn.execute(sql, (lane_slug, since, limit)).fetchall()
         return [_msg_to_dict(r) for r in rows]
 
 
@@ -576,10 +665,14 @@ def query_feed(
         params += [bound_id, lane_slug]
     direction = "DESC" if order == "desc" else "ASC"
     sql = (
-        "SELECT * FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY COALESCE(seq, -rowid) "
+        "SELECT m.*, t.status AS transcript_status, t.text AS transcript_text, "
+        "t.language AS transcript_language, t.duration AS transcript_duration "
+        "FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY COALESCE(seq, -rowid) "
         "ORDER BY (lane_slug = ?) DESC, lane_slug) AS rn "
-        f"FROM messages WHERE {' AND '.join(where)}) WHERE rn = 1 "
-        f"ORDER BY seq {direction} LIMIT ?"
+        f"FROM messages WHERE {' AND '.join(where)}) m "
+        "LEFT JOIN transcripts t ON t.file_unique_id = json_extract(m.media, '$.fileUniqueId') "
+        "WHERE m.rn = 1 "
+        f"ORDER BY m.seq {direction} LIMIT ?"
     )
     with connect() as conn:
         rows = conn.execute(sql, [prefer_lane or "", *params, limit]).fetchall()
@@ -681,3 +774,148 @@ def seen_chats_with_lanes() -> list[dict]:
              "lanes": sorted((r["lanes"] or "").split(",")) if r["lanes"] else []}
             for r in rows
         ]
+
+
+# --- speech-to-text transcripts ------------------------------------------
+
+
+def enqueue_transcript(
+    file_unique_id: str,
+    lane_slug: str,
+    file_id: str,
+    kind: str,
+    duration: int | None = None,
+    status: str = "pending",
+    error: str | None = None,
+) -> bool:
+    """Insert a transcript row (INSERT OR IGNORE). Returns True if a new row was inserted."""
+    now = int(time.time())
+    with connect() as conn:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO transcripts ("
+            "file_unique_id, lane_slug, file_id, kind, duration, status, "
+            "text, language, error, attempts, next_try_at, created_at, updated_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, 0, 0, ?, ?)",
+            (file_unique_id, lane_slug, file_id, kind, duration, status, error, now, now),
+        )
+        return cur.rowcount > 0
+
+
+def get_transcript(file_unique_id: str) -> dict | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM transcripts WHERE file_unique_id = ?", (file_unique_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_next_pending_transcript(now: int) -> dict | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM transcripts WHERE status = 'pending' AND next_try_at <= ? "
+            "ORDER BY created_at ASC, rowid ASC LIMIT 1",
+            (now,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def update_transcript_done(file_unique_id: str, text: str, language: str | None = None) -> None:
+    now = int(time.time())
+    with connect() as conn:
+        conn.execute(
+            "UPDATE transcripts SET status = 'done', text = ?, language = ?, error = NULL, updated_at = ? "
+            "WHERE file_unique_id = ?",
+            (text, language, now, file_unique_id),
+        )
+
+
+def update_transcript_retry(file_unique_id: str, attempts: int, next_try_at: int, error: str) -> None:
+    now = int(time.time())
+    with connect() as conn:
+        conn.execute(
+            "UPDATE transcripts SET attempts = ?, next_try_at = ?, error = ?, updated_at = ? "
+            "WHERE file_unique_id = ?",
+            (attempts, next_try_at, error, now, file_unique_id),
+        )
+
+
+def update_transcript_failed(file_unique_id: str, attempts: int, error: str) -> None:
+    now = int(time.time())
+    with connect() as conn:
+        conn.execute(
+            "UPDATE transcripts SET status = 'failed', attempts = ?, error = ?, updated_at = ? "
+            "WHERE file_unique_id = ?",
+            (attempts, error, now, file_unique_id),
+        )
+
+
+def list_transcripts(status: str | None = None, limit: int = 50) -> list[dict]:
+    limit = max(1, min(limit, 200))
+    with connect() as conn:
+        if status:
+            rows = conn.execute(
+                "SELECT * FROM transcripts WHERE status = ? ORDER BY created_at DESC LIMIT ?",
+                (status, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM transcripts ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def find_media_message(file_id: str) -> dict | None:
+    pattern = f'%"fileId": "{file_id}"%'
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM messages WHERE media LIKE ? ORDER BY message_id IS NULL LIMIT 1",
+            (pattern,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def backfill_transcripts(since_ts: int, max_seconds: int = 900) -> int:
+    """Enqueue stored voice/audio/video_note messages since since_ts without a transcript row.
+    Returns count of newly queued rows."""
+    now = int(time.time())
+    queued = 0
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT lane_slug, media FROM messages WHERE date >= ? AND media IS NOT NULL "
+            "ORDER BY date ASC",
+            (since_ts,),
+        ).fetchall()
+        for r in rows:
+            try:
+                media = json.loads(r["media"])
+            except Exception:
+                continue
+            kind = media.get("kind")
+            if kind not in ("voice", "audio", "video_note"):
+                continue
+            fuid = media.get("fileUniqueId")
+            fid = media.get("fileId")
+            if not fuid or not fid:
+                continue
+            size = media.get("size")
+            duration = media.get("duration")
+            status = "pending"
+            error = None
+            if size and size > 20 * 1024 * 1024:
+                status = "skipped"
+                error = "file size exceeds 20 MB limit"
+            elif duration is not None and duration > max_seconds:
+                status = "skipped"
+                error = f"media duration ({duration}s) exceeds maximum ({max_seconds}s)"
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO transcripts ("
+                "file_unique_id, lane_slug, file_id, kind, duration, status, "
+                "text, language, error, attempts, next_try_at, created_at, updated_at"
+                ") VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, 0, 0, ?, ?)",
+                (fuid, r["lane_slug"], fid, kind, duration, status, error, now, now),
+            )
+            if cur.rowcount > 0:
+                queued += 1
+        conn.commit()
+    return queued

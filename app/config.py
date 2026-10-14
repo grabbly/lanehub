@@ -9,7 +9,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-VERSION = "0.9.0"
+VERSION = "0.10.0"
 
 
 def _env(name: str, default: str = "") -> str:
@@ -63,6 +63,30 @@ class Settings:
     boards_enabled: bool = field(
         default_factory=lambda: _env("HUB_BOARDS").lower() in ("1", "true")
     )
+
+    # Speech-to-text endpoint (multipart POST, field `file`, JSON reply with
+    # `text`), e.g. https://api.openai.com/v1/audio/transcriptions or a
+    # self-hosted Whisper server. Empty = voice messages are not transcribed.
+    stt_url: str = field(default_factory=lambda: _env("HUB_STT_URL"))
+
+    # Optional API key, sent as `Authorization: Bearer <key>`.
+    stt_key: str = field(default_factory=lambda: _env("HUB_STT_KEY"))
+
+    # Optional `model` form field (OpenAI needs one, e.g. whisper-1).
+    stt_model: str = field(default_factory=lambda: _env("HUB_STT_MODEL"))
+
+    # Optional language hint for transcription (form field `language`). Empty = auto.
+    stt_language: str = field(default_factory=lambda: _env("HUB_STT_LANGUAGE"))
+
+    # Maximum media duration in seconds for automatic transcription (longer is skipped).
+    stt_max_seconds: int = field(default_factory=lambda: int(_env("HUB_STT_MAX_SECONDS", "900")))
+
+    # Request timeout in seconds for transcription calls.
+    stt_timeout: float = field(default_factory=lambda: float(_env("HUB_STT_TIMEOUT", "600")))
+
+    @property
+    def stt_enabled(self) -> bool:
+        return bool(self.stt_url)
 
     def resolved_delivery_mode(self) -> str:
         if self.delivery_mode in ("webhook", "polling", "off"):

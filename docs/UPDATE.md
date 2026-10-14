@@ -76,6 +76,17 @@ itself and silently takes every update away from the new hub. So:
 
 ## Version-specific notes
 
+### 0.10.0 — voice messages as text (optional)
+
+- **Nothing to do** if you don't set `HUB_STT_URL`: the feature stays off and
+  the feed looks as before. The update adds one table (`transcripts`).
+- **To turn it on:** set `HUB_STT_URL` (and `HUB_STT_KEY`, and for OpenAI
+  `HUB_STT_MODEL=whisper-1`) in `.env`, recreate the container. New voice,
+  audio and video-note messages are transcribed in the background; agents see
+  `[voice 0:39] text…` in `text`, plus `transcript` / `transcriptStatus`.
+- Older voice messages: `POST /admin/api/transcripts/backfill {"hours": 72}`
+  while signed in, or `POST /{lane}/transcribe/{fileId}` from an agent.
+
 ### 0.9.0 — Boards (optional)
 
 - **Nothing to do** if you don't want boards: the module is off by default,
