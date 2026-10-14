@@ -63,4 +63,5 @@ async def session(hub_session: str | None = Cookie(default=None)) -> dict:
         "deliveryMode": settings.resolved_delivery_mode(),
         "publicBaseUrl": settings.public_base_url or None,
         "adminPasswordSet": bool(settings.admin_password),
+        "boardsEnabled": settings.boards_enabled,
     }

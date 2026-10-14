@@ -46,3 +46,15 @@ def test_root_serves_unified_page(client):
     r = client.get("/")
     assert r.status_code == 200
     assert "Sign in" in r.text and "/api/login" in r.text
+
+
+def test_session_boards_disabled_by_default(client):
+    st_default = client.get("/api/session").json()
+    assert st_default.get("boardsEnabled") is False
+
+
+def test_session_boards_enabled_with_flag(boards_client):
+    st_boards = boards_client.get("/api/session").json()
+    assert st_boards.get("boardsEnabled") is True
+
+

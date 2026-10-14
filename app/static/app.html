@@ -309,6 +309,88 @@
   [data-skin="metro"] .add-row { border-top: 1px solid var(--line); }
   [data-skin="metro"] .pill { border-radius: 4px; font-weight: 700; }
   [data-skin="metro"] dialog { border-radius: 14px; }
+
+  /* ================= BOARDS MODULE ================= */
+  .bd-main { max-width: 1400px; }
+  .bd-top-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+  .bd-picker-wrap { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .bd-freshness-wrap { display: flex; align-items: center; }
+  .bd-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; padding: 16px; background: var(--panel); border-radius: 16px; box-shadow: var(--shadow); }
+  .bd-hd-left { min-width: 0; flex: 1 1 300px; }
+  .bd-hd-left h1 { font-size: 22px; font-weight: 700; margin: 0; word-break: break-word; }
+  .bd-sub { color: var(--muted); margin: 4px 0 0; font-size: 13.5px; }
+  .bd-hd-right { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+  @media (max-width: 759px) { .bd-hd-right { align-items: stretch; width: 100%; } }
+  .bd-hd-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .bd-ledger { display: flex; flex-wrap: wrap; gap: 8px; font-variant-numeric: tabular-nums; }
+  .bd-ledger .bd-cell { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px; min-width: 90px; }
+  .bd-ledger .bd-k { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 500; }
+  .bd-ledger .bd-v { font-family: var(--mono); font-size: 16px; font-weight: 600; }
+  .bd-ledger .bd-cell.bd-rest .bd-v { color: var(--ok); }
+  .bd-ledger .bd-cell.bd-rest.bd-neg .bd-v { color: var(--danger); }
+
+  .bd-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 4px 0; }
+  .bd-toolbar .spacer { flex: 1; }
+
+  .bd-board { display: grid; grid-template-columns: repeat(5, minmax(220px, 1fr)); gap: 14px; align-items: start; }
+  @media (max-width: 1240px) and (min-width: 760px) {
+    .bd-board { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  }
+  .bd-col { background: var(--panel-2); border-radius: 14px; padding: 10px; display: grid; gap: 8px; min-width: 0; min-height: 120px; transition: outline .15s ease; }
+  .bd-col.bd-drop { outline: 2px dashed var(--accent); outline-offset: -2px; }
+  .bd-col > summary { list-style: none; cursor: default; }
+  .bd-col > summary::-webkit-details-marker { display: none; }
+  .bd-col > summary .bd-chev { display: none; }
+  .bd-col h2 { font-size: 13px; font-weight: 700; margin: 0; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; text-transform: uppercase; letter-spacing: .05em; }
+  .bd-col h2 .bd-name { display: inline-flex; align-items: center; gap: 6px; }
+  .bd-col h2 .bd-meta { font-family: var(--mono); font-weight: 500; color: var(--muted); text-transform: none; letter-spacing: 0; font-size: 12px; }
+  .bd-col-body { display: grid; gap: 8px; min-height: 40px; }
+  .bd-col .bd-empty { color: var(--muted); font-size: 13px; padding: 12px 6px; text-align: center; font-style: italic; }
+
+  @media (max-width: 759px) {
+    .bd-board { grid-template-columns: 1fr; }
+    .bd-col { min-height: 0; }
+    .bd-col > summary { cursor: pointer; padding: 6px 4px; border-radius: 8px; }
+    .bd-col > summary .bd-chev { display: inline-block; transition: transform .15s; color: var(--muted); font-weight: 700; font-size: 14px; }
+    .bd-col[open] > summary .bd-chev { transform: rotate(90deg); }
+    .bd-col:not([open]) { padding-block: 8px; }
+  }
+
+  .bd-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 7px; cursor: grab; min-width: 0; box-shadow: 0 1px 3px rgba(0,0,0,.03); transition: border-color .15s, box-shadow .15s, opacity .15s; }
+  .bd-card:hover { border-color: var(--accent); }
+  .bd-card:active { cursor: grabbing; }
+  .bd-card.bd-dragging { opacity: .4; }
+  .bd-card.bd-drop-before { border-top: 3px solid var(--accent) !important; }
+  .bd-card.bd-drop-after { border-bottom: 3px solid var(--accent) !important; }
+  .bd-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .bd-card-title { font-weight: 500; font-size: 14.5px; overflow-wrap: anywhere; line-height: 1.35; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+  .bd-card-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+  .bd-chip { border-radius: 999px; padding: 1.5px 8px; font-size: 11.5px; font-weight: 500; white-space: nowrap; background: var(--panel-2); color: var(--muted); }
+  .bd-chip.bd-pay-deposit { background: var(--accent-soft); color: var(--accent); }
+  .bd-chip.bd-pay-bonus, .bd-chip.bd-pay-rework { background: var(--ok-soft); color: var(--ok); }
+  .bd-chip.bd-pay-paid { background: var(--panel-2); color: var(--c-blue); border: 1px solid var(--c-blue); }
+  .bd-chip.bd-pay-estimate { background: var(--warn-soft); color: var(--warn); }
+  .bd-chip.bd-pay-separate { background: var(--panel-2); color: var(--muted); }
+  .bd-chip.bd-chip-hidden { background: transparent; border: 1px dashed var(--muted); color: var(--muted); }
+  .bd-chip.bd-chip-muted { background: var(--panel-2); color: var(--muted); font-size: 10px; opacity: 0.8; font-style: italic; }
+  .bd-card-note { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35; }
+  .bd-card-moves { display: none; gap: 6px; margin-top: 4px; }
+  @media (hover: none) {
+    .bd-card-moves { display: flex; }
+    .bd-card { cursor: pointer; }
+  }
+
+  .bd-lang-tabs { display: flex; gap: 4px; background: var(--panel-2); padding: 3px; border-radius: 8px; margin-bottom: 10px; }
+  .bd-lang-tab { border: 0; background: none; padding: 4px 12px; border-radius: 6px; font-size: 13px; font-weight: 500; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+  .bd-lang-tab[aria-selected="true"] { background: var(--panel); color: var(--fg); box-shadow: var(--shadow); }
+  .bd-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); display: inline-block; }
+
+  .bd-ledger-table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 10px 0; }
+  .bd-ledger-table th, .bd-ledger-table td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--line); }
+  .bd-ledger-table th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  [data-skin="metro"] .bd-col { border-radius: 8px; }
+  [data-skin="metro"] .bd-card { border-radius: 6px; }
+  [data-skin="metro"] .bd-header { border-radius: 8px; }
 </style>
 </head>
 <body>
@@ -337,6 +419,7 @@
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" aria-selected="true" data-tab="chats">Chats</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="feed">Feed</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="boards" id="tab-btn-boards" hidden>Boards</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="settings">Settings</button>
     </div>
     <span class="spacer"></span>
@@ -386,6 +469,65 @@
         <button class="btn primary" id="feed-send-btn">Send</button>
       </div>
       <div class="error" id="feed-send-error"></div>
+    </div>
+  </main>
+
+  <!-- Tab: Boards -->
+  <main id="tab-boards" class="bd-main" hidden>
+    <div class="bd-top-bar">
+      <div class="bd-picker-wrap">
+        <select id="bd-board-select" class="btn" aria-label="Select board"></select>
+        <button class="btn primary" id="bd-btn-new-board" type="button">＋ New board</button>
+      </div>
+      <div class="bd-freshness-wrap">
+        <span class="help" id="bd-freshness"></span>
+      </div>
+    </div>
+
+    <!-- Active board content -->
+    <div id="bd-board-view" style="display:grid; gap:16px;">
+      <header class="bd-header">
+        <div class="bd-hd-left">
+          <h1 id="bd-title"></h1>
+          <p class="bd-sub" id="bd-sub"></p>
+        </div>
+        <div class="bd-hd-right">
+          <div class="bd-hd-actions">
+            <button class="btn sm" id="bd-btn-ledger" type="button">Ledger</button>
+            <button class="btn sm" id="bd-btn-client-link" type="button">Client link</button>
+            <button class="btn sm" id="bd-btn-settings" type="button">Settings</button>
+          </div>
+          <div class="bd-ledger" aria-label="Ledger totals">
+            <div class="bd-cell"><span class="bd-k">Paid</span><span class="bd-v" id="bd-lg-paid">—</span></div>
+            <div class="bd-cell"><span class="bd-k">Deposit</span><span class="bd-v" id="bd-lg-dep">—</span></div>
+            <div class="bd-cell"><span class="bd-k">Allocated</span><span class="bd-v" id="bd-lg-alloc">—</span></div>
+            <div class="bd-cell bd-rest" id="bd-lg-rest-cell"><span class="bd-k">Remaining</span><span class="bd-v" id="bd-lg-rest">—</span></div>
+          </div>
+        </div>
+      </header>
+
+      <div class="bd-toolbar">
+        <button class="btn primary" id="bd-btn-new-task" type="button">＋ New task</button>
+        <select class="btn" id="bd-flt-group" aria-label="Group filter">
+          <option value="">All groups</option>
+        </select>
+        <span class="spacer"></span>
+        <div class="seg" id="bd-lang-seg" aria-label="Language view">
+          <button type="button" class="bd-lbtn" data-lang="en">EN</button>
+          <button type="button" class="bd-lbtn" data-lang="pl">PL</button>
+          <button type="button" class="bd-lbtn" data-lang="ru">RU</button>
+          <button type="button" class="bd-lbtn" data-lang="uk">UK</button>
+        </div>
+      </div>
+
+      <div class="bd-board" id="bd-board-cols"></div>
+    </div>
+
+    <!-- Empty boards state -->
+    <div class="empty" id="bd-empty-state" hidden>
+      <h3>No boards yet</h3>
+      <p class="help" style="margin:0;">Create a task board for a Telegram chat to track client tasks, estimates and deposits.</p>
+      <div><button class="btn primary" id="bd-btn-empty-new-board" type="button">＋ New board</button></div>
     </div>
   </main>
 
@@ -493,6 +635,336 @@
   <div class="dlg-hd"><h2 id="alert-title">Notice</h2><button class="ghost" id="alert-x" aria-label="Close">✕</button></div>
   <div class="dlg-bd"><div id="alert-msg" style="white-space:pre-wrap;"></div></div>
   <div class="dlg-ft"><button class="btn primary" id="alert-ok">OK</button></div>
+</dialog>
+
+<!-- ================= BOARD DIALOGS ================= -->
+
+<!-- New board dialog -->
+<dialog id="bd-new-board-dlg">
+  <div class="dlg-hd"><h2>New board</h2><button class="ghost" id="bd-nb-close" aria-label="Close">✕</button></div>
+  <form id="bd-nb-form">
+    <div class="dlg-bd">
+      <label class="lbl" for="bd-nb-chat">Telegram chat</label>
+      <select class="txt" id="bd-nb-chat" required></select>
+
+      <label class="lbl" for="bd-nb-slug">Board slug (used in URL)</label>
+      <input class="txt mono" id="bd-nb-slug" required pattern="[a-z0-9][a-z0-9_-]{0,31}" placeholder="e.g. you-look" maxlength="32">
+      <div class="help">Lowercase letters, numbers, hyphens or underscores. Must be unique.</div>
+
+      <label class="lbl" for="bd-nb-title">Title</label>
+      <input class="txt" id="bd-nb-title" placeholder="e.g. You Look" maxlength="100" required>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+        <div>
+          <label class="lbl" for="bd-nb-team-lang">Team language</label>
+          <select class="txt" id="bd-nb-team-lang">
+            <option value="en">English (EN)</option>
+            <option value="pl">Polski (PL)</option>
+            <option value="ru">Русский (RU)</option>
+            <option value="uk">Українська (UK)</option>
+          </select>
+        </div>
+        <div>
+          <label class="lbl" for="bd-nb-client-lang">Client language</label>
+          <select class="txt" id="bd-nb-client-lang">
+            <option value="en">English (EN)</option>
+            <option value="pl">Polski (PL)</option>
+            <option value="ru">Русский (RU)</option>
+            <option value="uk">Українська (UK)</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+        <div>
+          <label class="lbl" for="bd-nb-rate">Hourly rate</label>
+          <input class="txt mono" id="bd-nb-rate" type="number" step="any" min="0" placeholder="e.g. 40">
+        </div>
+        <div>
+          <label class="lbl" for="bd-nb-currency">Currency</label>
+          <input class="txt" id="bd-nb-currency" value="zł" placeholder="zł">
+        </div>
+      </div>
+
+      <div class="error" id="bd-nb-error"></div>
+    </div>
+    <div class="dlg-ft">
+      <button type="button" class="btn" id="bd-nb-cancel">Cancel</button>
+      <button type="submit" class="btn primary" id="bd-nb-submit">Create board</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Client link shown once dialog -->
+<dialog id="bd-link-once-dlg">
+  <div class="dlg-hd"><h2>Client link</h2><button class="ghost" id="bd-lo-close" aria-label="Close">✕</button></div>
+  <div class="dlg-bd">
+    <p class="help" style="margin:0 0 10px;">Share this secret link with the client. It provides read-only access to client-visible tasks and deposit status without login.</p>
+    <label class="lbl" for="bd-lo-url">Full client URL</label>
+    <div style="display:flex; gap:8px;">
+      <input class="txt mono" id="bd-lo-url" readonly style="flex:1;">
+      <button class="btn primary" id="bd-lo-copy" type="button">Copy</button>
+    </div>
+    <div style="margin-top:12px; padding:10px; background:var(--warn-soft); border-radius:8px; color:var(--warn); font-size:13px; font-weight:500;">
+      ⚠️ Shown once. Rotate to get a new link (the old one stops working).
+    </div>
+  </div>
+  <div class="dlg-ft">
+    <button class="btn primary" id="bd-lo-done" type="button">Done</button>
+  </div>
+</dialog>
+
+<!-- Client link info / rotate dialog -->
+<dialog id="bd-client-link-dlg">
+  <div class="dlg-hd"><h2>Client link</h2><button class="ghost" id="bd-cl-close" aria-label="Close">✕</button></div>
+  <div class="dlg-bd">
+    <p class="help" style="margin:0 0 14px; line-height:1.6;">
+      The secret client link gives read-only access to client-visible tasks.
+      For security, the full link with its token is not stored on the server (only its hash).
+    </p>
+    <div style="background:var(--panel-2); border-radius:10px; padding:12px; display:grid; gap:8px;">
+      <div style="font-weight:600; font-size:14px;">Need a link for the client?</div>
+      <div class="help" style="margin:0;">
+        If you haven't saved the link or want to revoke the old one, you can generate a new link.
+        The previous link will immediately stop working.
+      </div>
+      <div>
+        <button class="btn danger" id="bd-cl-rotate" type="button">Rotate link</button>
+      </div>
+    </div>
+  </div>
+  <div class="dlg-ft">
+    <button class="btn" id="bd-cl-done" type="button">Close</button>
+  </div>
+</dialog>
+
+<!-- Board settings dialog -->
+<dialog id="bd-settings-dlg">
+  <div class="dlg-hd"><h2>Board settings</h2><button class="ghost" id="bd-st-close" aria-label="Close">✕</button></div>
+  <form id="bd-st-form">
+    <div class="dlg-bd" style="max-height:75vh; overflow-y:auto;">
+      <label class="lbl" for="bd-st-title">Title</label>
+      <input class="txt" id="bd-st-title" maxlength="100" required>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+        <div>
+          <label class="lbl" for="bd-st-team-lang">Team language</label>
+          <select class="txt" id="bd-st-team-lang">
+            <option value="en">English (EN)</option>
+            <option value="pl">Polski (PL)</option>
+            <option value="ru">Русский (RU)</option>
+            <option value="uk">Українська (UK)</option>
+          </select>
+        </div>
+        <div>
+          <label class="lbl" for="bd-st-client-lang">Client language</label>
+          <select class="txt" id="bd-st-client-lang">
+            <option value="en">English (EN)</option>
+            <option value="pl">Polski (PL)</option>
+            <option value="ru">Русский (RU)</option>
+            <option value="uk">Українська (UK)</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+        <div>
+          <label class="lbl" for="bd-st-rate">Hourly rate</label>
+          <input class="txt mono" id="bd-st-rate" type="number" step="any" min="0">
+        </div>
+        <div>
+          <label class="lbl" for="bd-st-currency">Currency</label>
+          <input class="txt" id="bd-st-currency" placeholder="zł">
+        </div>
+      </div>
+
+      <div class="error" id="bd-st-error"></div>
+
+      <div style="margin-top:20px; border-top:1px solid var(--line); padding-top:16px;">
+        <h4 style="margin:0 0 6px; color:var(--danger); font-size:14px;">Danger zone: Delete board</h4>
+        <p class="help" style="margin:0 0 10px;">This will permanently delete this board, all its tasks, ledger history and events.</p>
+        <label class="lbl" id="bd-st-del-label" for="bd-st-del-confirm"></label>
+        <input class="txt mono" id="bd-st-del-confirm" placeholder="Type slug to confirm" autocomplete="off">
+        <div style="margin-top:8px;">
+          <button type="button" class="btn danger" id="bd-st-del-btn" disabled>Delete this board</button>
+        </div>
+      </div>
+    </div>
+    <div class="dlg-ft">
+      <button type="button" class="btn" id="bd-st-cancel">Cancel</button>
+      <button type="submit" class="btn primary" id="bd-st-save">Save settings</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Ledger dialog -->
+<dialog id="bd-ledger-dlg" style="width:min(640px, calc(100vw - 32px));">
+  <div class="dlg-hd"><h2 id="bd-lg-title">Ledger</h2><button class="ghost" id="bd-lg-close" aria-label="Close">✕</button></div>
+  <div class="dlg-bd" style="max-height:75vh; overflow-y:auto;">
+    <div id="bd-lg-entries-wrap">
+      <table class="bd-ledger-table" id="bd-lg-table">
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>Amount</th>
+            <th>Date</th>
+            <th>Note</th>
+            <th style="text-align:right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="bd-lg-tbody"></tbody>
+      </table>
+      <div id="bd-lg-empty" class="help" style="padding:12px; text-align:center;" hidden>No ledger entries yet.</div>
+    </div>
+
+    <form id="bd-lg-form" style="margin-top:16px; padding:12px; background:var(--panel-2); border-radius:10px; display:grid; gap:10px;">
+      <div style="font-weight:600; font-size:13.5px;" id="bd-lg-form-title">Add ledger entry</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;">
+        <div>
+          <label class="lbl" for="bd-lg-kind">Kind</label>
+          <select class="txt" id="bd-lg-kind">
+            <option value="deposit">Deposit</option>
+            <option value="payment">Payment</option>
+            <option value="refund">Refund</option>
+          </select>
+        </div>
+        <div>
+          <label class="lbl" for="bd-lg-amount">Amount</label>
+          <input class="txt mono" id="bd-lg-amount" type="number" step="any" min="0" required placeholder="0">
+        </div>
+        <div>
+          <label class="lbl" for="bd-lg-at">Date</label>
+          <input class="txt mono" id="bd-lg-at" required placeholder="YYYY-MM-DD">
+        </div>
+      </div>
+      <div>
+        <label class="lbl" for="bd-lg-note">Note</label>
+        <input class="txt" id="bd-lg-note" placeholder="e.g. Stage 1 prepayment" maxlength="200">
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:8px;">
+        <button type="button" class="btn sm" id="bd-lg-cancel-edit" hidden>Cancel edit</button>
+        <button type="submit" class="btn sm primary" id="bd-lg-submit">Add entry</button>
+      </div>
+    </form>
+  </div>
+  <div class="dlg-ft">
+    <button class="btn primary" id="bd-lg-done" type="button">Done</button>
+  </div>
+</dialog>
+
+<!-- Task Card dialog -->
+<dialog id="bd-card-dlg" style="width:min(600px, calc(100vw - 32px));">
+  <div class="dlg-hd"><h2 id="bd-cd-title">Task</h2><button class="ghost" id="bd-cd-close" aria-label="Close">✕</button></div>
+  <form id="bd-cd-form">
+    <div class="dlg-bd" style="max-height:75vh; overflow-y:auto; display:grid; gap:12px;">
+      <!-- Language tabs for Title and Client Note -->
+      <fieldset style="border:1px solid var(--line); border-radius:10px; padding:12px; margin:0;">
+        <legend style="font-size:12px; font-weight:600; color:var(--muted); padding:0 6px;">Languages (EN / PL / RU / UK)</legend>
+        <div class="bd-lang-tabs" role="tablist" id="bd-cd-lang-strip">
+          <button type="button" class="bd-lang-tab" data-cd-lang="en">EN <span class="bd-dot" data-cd-dot="en" hidden></span></button>
+          <button type="button" class="bd-lang-tab" data-cd-lang="pl">PL <span class="bd-dot" data-cd-dot="pl" hidden></span></button>
+          <button type="button" class="bd-lang-tab" data-cd-lang="ru">RU <span class="bd-dot" data-cd-dot="ru" hidden></span></button>
+          <button type="button" class="bd-lang-tab" data-cd-lang="uk">UK <span class="bd-dot" data-cd-dot="uk" hidden></span></button>
+        </div>
+
+        <div id="bd-cd-lang-panels">
+          <div class="bd-cd-lang-box" data-lang-box="en">
+            <label class="lbl" for="bd-cd-title-en">Title (EN)</label>
+            <input class="txt" id="bd-cd-title-en" maxlength="200" placeholder="Task title in English">
+            <label class="lbl" for="bd-cd-note-en">Note for client (EN)</label>
+            <textarea class="txt" id="bd-cd-note-en" rows="2" maxlength="600" placeholder="Visible to client in English (e.g. Waiting for...)"></textarea>
+          </div>
+          <div class="bd-cd-lang-box" data-lang-box="pl" hidden>
+            <label class="lbl" for="bd-cd-title-pl">Title (PL)</label>
+            <input class="txt" id="bd-cd-title-pl" maxlength="200" placeholder="Tytuł zadania po polsku">
+            <label class="lbl" for="bd-cd-note-pl">Note for client (PL)</label>
+            <textarea class="txt" id="bd-cd-note-pl" rows="2" maxlength="600" placeholder="Widoczne dla klienta po polsku"></textarea>
+          </div>
+          <div class="bd-cd-lang-box" data-lang-box="ru" hidden>
+            <label class="lbl" for="bd-cd-title-ru">Title (RU)</label>
+            <input class="txt" id="bd-cd-title-ru" maxlength="200" placeholder="Название задачи по-русски">
+            <label class="lbl" for="bd-cd-note-ru">Note for client (RU)</label>
+            <textarea class="txt" id="bd-cd-note-ru" rows="2" maxlength="600" placeholder="Заметка для клиента по-русски"></textarea>
+          </div>
+          <div class="bd-cd-lang-box" data-lang-box="uk" hidden>
+            <label class="lbl" for="bd-cd-title-uk">Title (UK)</label>
+            <input class="txt" id="bd-cd-title-uk" maxlength="200" placeholder="Назва завдання українською">
+            <label class="lbl" for="bd-cd-note-uk">Note for client (UK)</label>
+            <textarea class="txt" id="bd-cd-note-uk" rows="2" maxlength="600" placeholder="Замітка для клієнта (напр. Від вас: …)"></textarea>
+          </div>
+        </div>
+      </fieldset>
+
+      <!-- Task details -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+        <div>
+          <label class="lbl" for="bd-cd-status">Status</label>
+          <select class="txt" id="bd-cd-status">
+            <option value="backlog">Backlog</option>
+            <option value="queue">Queue</option>
+            <option value="doing">In progress</option>
+            <option value="waiting">Waiting on client</option>
+            <option value="done">Done</option>
+          </select>
+        </div>
+        <div>
+          <label class="lbl" for="bd-cd-group">Group</label>
+          <input class="txt" id="bd-cd-group" list="bd-groups-list" maxlength="60" placeholder="e.g. Chat, BaseLinker">
+          <datalist id="bd-groups-list"></datalist>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+        <div>
+          <label class="lbl" for="bd-cd-source">Source</label>
+          <input class="txt" id="bd-cd-source" maxlength="60" placeholder="e.g. #69, TZ-2 p.3">
+        </div>
+        <div>
+          <label class="lbl" for="bd-cd-pay">Payment</label>
+          <select class="txt" id="bd-cd-pay">
+            <option value="estimate">Estimate</option>
+            <option value="deposit">Deposit</option>
+            <option value="paid">Paid</option>
+            <option value="rework">Rework</option>
+            <option value="bonus">Bonus</option>
+            <option value="separate">Separate</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+        <div>
+          <label class="lbl" for="bd-cd-price">Price</label>
+          <input class="txt mono" id="bd-cd-price" inputmode="decimal" placeholder="0">
+        </div>
+        <div>
+          <label class="lbl" for="bd-cd-hours">Hours</label>
+          <input class="txt mono" id="bd-cd-hours" inputmode="decimal" placeholder="e.g. 1.25">
+        </div>
+      </div>
+
+      <div>
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:14px; user-select:none;">
+          <input type="checkbox" id="bd-cd-client-visible" checked style="width:auto;">
+          <span>Visible to client</span>
+        </label>
+      </div>
+
+      <div>
+        <label class="lbl" for="bd-cd-internal-note">Internal note (team only)</label>
+        <textarea class="txt" id="bd-cd-internal-note" rows="3" maxlength="1000" placeholder="Internal notes, technical specs, context..."></textarea>
+      </div>
+
+      <div class="error" id="bd-cd-error"></div>
+    </div>
+    <div class="dlg-ft" style="display:flex; justify-content:space-between; gap:8px;">
+      <button type="button" class="btn danger" id="bd-cd-delete" hidden>Delete</button>
+      <div style="display:flex; gap:8px; margin-left:auto;">
+        <button type="button" class="btn" id="bd-cd-cancel">Cancel</button>
+        <button type="submit" class="btn primary" id="bd-cd-save">Save</button>
+      </div>
+    </div>
+  </form>
 </dialog>
 
 <div class="toast" id="toast"></div>
@@ -648,14 +1120,17 @@ function showAdmin() {
 
 function showTab(n) {
   currentTab = n;
-  ['chats', 'feed', 'settings'].forEach(k => {
-    $('tab-' + k).hidden = k !== n;
+  ['chats', 'feed', 'boards', 'settings'].forEach(k => {
+    const el = $('tab-' + k);
+    if (el) el.hidden = k !== n;
   });
   document.querySelectorAll('.tab').forEach(t => {
     t.setAttribute('aria-selected', t.dataset.tab === n);
   });
   if (n === 'feed') loadFeed();
+  if (n === 'boards') renderBoardsTab();
   if (n === 'settings') renderSettings();
+  if (n !== 'boards') stopBoardFreshness();
 }
 document.querySelectorAll('.tab').forEach(t => {
   t.onclick = () => showTab(t.dataset.tab);
@@ -802,6 +1277,10 @@ function createChatSection(chatId, chatTitle, groupLanes, titleOf) {
   const cIni = getInitials(chatTitle, 'TG');
   sec.style.setProperty('--cc', cColor);
 
+  const boardBtnHtml = (sessionState && sessionState.boardsEnabled)
+    ? `<button class="btn sm" data-open-board="${esc(chatId)}">Board</button>`
+    : '';
+
   sec.innerHTML = `
     <div class="chat-hd">
       <span class="chat-ava" style="--av:${cColor}">${cIni}</span>
@@ -815,12 +1294,18 @@ function createChatSection(chatId, chatTitle, groupLanes, titleOf) {
         <div class="chat-sub">${groupLanes.length} bot${groupLanes.length > 1 ? 's' : ''} · <span class="mono">${esc(chatId)}</span></div>
       </div>
       <button class="btn sm" data-open-feed="${esc(chatId)}">Open feed</button>
+      ${boardBtnHtml}
     </div>
     <div class="bots"></div>
     <div class="add-row">
       <button class="link-btn" data-add-bot="${esc(chatId)}">＋ Add bot</button>
       <div class="picker-container" data-picker-for="${esc(chatId)}"></div>
     </div>`;
+
+  const bdBtn = sec.querySelector(`[data-open-board="${chatId}"]`);
+  if (bdBtn) {
+    bdBtn.onclick = () => openBoardForChat(chatId);
+  }
 
   const botsContainer = sec.querySelector('.bots');
   groupLanes.forEach(l => {
@@ -1940,6 +2425,1061 @@ howtoEl.addEventListener('toggle', () => {
   try { localStorage.setItem('lanehub.howto', howtoEl.open ? 'open' : 'closed'); } catch (e) {}
 });
 
+// ================= BOARDS MODULE =================
+const BD_COLS = [
+  { id: 'backlog', name: 'Backlog' },
+  { id: 'queue', name: 'Queue' },
+  { id: 'doing', name: 'In progress' },
+  { id: 'waiting', name: 'Waiting on client' },
+  { id: 'done', name: 'Done' },
+];
+
+const BD_PAY_LABELS = {
+  estimate: 'estimate',
+  deposit: 'deposit',
+  paid: 'paid',
+  rework: 'rework',
+  bonus: 'bonus',
+  separate: 'separate',
+};
+
+const BD_LANGS = ['en', 'pl', 'ru', 'uk'];
+
+let boardsList = null;
+let currentBoard = null;
+let currentBoardId = null;
+let currentTasks = [];
+let boardViewLang = 'en';
+let boardSelectedGroup = '';
+let isBoardDragging = false;
+let boardFreshnessTimer = null;
+let lastBoardUpdatedTime = null;
+let editingTaskId = null;
+let editingTask = null;
+let bdTaskDelArmed = false;
+let cardDialogActiveLang = 'en';
+let editingLedgerEntryId = null;
+
+async function boardApi(path, opts = {}) {
+  const res = await fetch(path, {
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    ...opts,
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (res.status === 401) {
+    showLogin();
+    throw new Error('login required');
+  }
+  return { ok: res.ok, status: res.status, data };
+}
+
+function bdFmtCur(val, cur = 'zł') {
+  const n = Math.round((Number(val) || 0) * 100) / 100;
+  return n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' ' + (cur || 'zł');
+}
+
+function getChatTitle(chatId) {
+  const idStr = String(chatId);
+  if (chatNames[idStr]) return chatNames[idStr];
+  const fromHub = (seenChatsHub || []).find(c => String(c.chatId) === idStr);
+  if (fromHub && fromHub.title) return fromHub.title;
+  for (const l of lanes) {
+    const sc = (l.seenChats || []).find(c => String(c.chatId) === idStr);
+    if (sc && sc.title) return sc.title;
+  }
+  return idStr;
+}
+
+function getBoundChats() {
+  const seen = new Set();
+  const res = [];
+  (lanes || []).forEach(l => {
+    const cid = String(l.defaultChatId || '').trim();
+    if (cid && !seen.has(cid)) {
+      seen.add(cid);
+      res.push({ id: cid, title: getChatTitle(cid) });
+    }
+  });
+  return res;
+}
+
+const bdMobileQuery = window.matchMedia('(max-width: 759px)');
+const BD_DEFAULT_OPEN = { backlog: false, queue: true, doing: true, waiting: true, done: false };
+function getColOpen(colId) {
+  if (!bdMobileQuery.matches) return true;
+  try {
+    const saved = JSON.parse(localStorage.getItem('lanehub.board.cols') || '{}');
+    if (colId in saved) return saved[colId];
+  } catch (e) {}
+  return BD_DEFAULT_OPEN[colId] ?? true;
+}
+function setColOpen(colId, isOpen) {
+  try {
+    const saved = JSON.parse(localStorage.getItem('lanehub.board.cols') || '{}');
+    saved[colId] = isOpen;
+    localStorage.setItem('lanehub.board.cols', JSON.stringify(saved));
+  } catch (e) {}
+}
+bdMobileQuery.addEventListener('change', () => {
+  if (currentTab === 'boards' && currentBoard) renderBoardTasks();
+});
+
+async function loadBoardsList() {
+  try {
+    boardsList = await api('/admin/api/boards');
+  } catch (e) {
+    boardsList = [];
+  }
+  return boardsList;
+}
+
+async function renderBoardsTab() {
+  if (!sessionState?.boardsEnabled) return;
+  await loadBoardsList();
+
+  if (!boardsList || boardsList.length === 0) {
+    currentBoard = null;
+    currentBoardId = null;
+    $('bd-board-view').hidden = true;
+    $('bd-empty-state').hidden = false;
+    $('bd-board-select').replaceChildren();
+    stopBoardFreshness();
+    return;
+  }
+
+  $('bd-empty-state').hidden = true;
+  $('bd-board-view').hidden = false;
+
+  let savedId = null;
+  try { savedId = parseInt(localStorage.getItem('lanehub.board'), 10); } catch (e) {}
+  if (savedId && boardsList.some(b => b.id === savedId)) {
+    currentBoardId = savedId;
+  } else if (!currentBoardId || !boardsList.some(b => b.id === currentBoardId)) {
+    currentBoardId = boardsList[0].id;
+  }
+  try { localStorage.setItem('lanehub.board', currentBoardId); } catch (e) {}
+
+  $('bd-board-select').replaceChildren(...boardsList.map(b => {
+    const cName = getChatTitle(b.chatId);
+    return new Option(`${b.title || b.slug} · ${cName}`, b.id);
+  }));
+  $('bd-board-select').value = currentBoardId;
+
+  await loadBoardDetails(currentBoardId);
+  startBoardFreshness();
+}
+
+async function loadBoardDetails(boardId, silent = false) {
+  try {
+    const data = await api(`/admin/api/boards/${boardId}`);
+    currentBoard = data;
+    currentBoardId = data.id;
+    currentTasks = data.tasks || [];
+    lastBoardUpdatedTime = Date.now();
+    updateBoardFreshnessLabel();
+
+    try {
+      boardViewLang = localStorage.getItem(`lanehub.board.${boardId}.lang`) || data.teamLang || 'en';
+    } catch (e) {
+      boardViewLang = data.teamLang || 'en';
+    }
+    if (!BD_LANGS.includes(boardViewLang)) boardViewLang = data.teamLang || 'en';
+
+    try {
+      boardSelectedGroup = localStorage.getItem(`lanehub.board.${boardId}.grp`) || '';
+    } catch (e) {
+      boardSelectedGroup = '';
+    }
+
+    renderBoardHeader();
+    renderBoardToolbar();
+    renderBoardTasks();
+  } catch (err) {
+    if (!silent) toast('Failed to load board: ' + err.message);
+  }
+}
+
+function renderBoardHeader() {
+  if (!currentBoard) return;
+  const b = currentBoard;
+  $('bd-title').textContent = b.title || b.slug;
+  const cTitle = getChatTitle(b.chatId);
+  const rateText = b.rate != null ? `rate ${b.rate} ${b.currency}/h` : 'no rate';
+  $('bd-sub').textContent = `${cTitle} · ${rateText} · hours = price ÷ rate`;
+
+  const ledger = b.ledger || { paid: 0, deposit: 0, allocated: 0, remaining: 0 };
+  $('bd-lg-paid').textContent = bdFmtCur(ledger.paid, b.currency);
+  $('bd-lg-dep').textContent = bdFmtCur(ledger.deposit, b.currency);
+  $('bd-lg-alloc').textContent = bdFmtCur(ledger.allocated, b.currency);
+  $('bd-lg-rest').textContent = bdFmtCur(ledger.remaining, b.currency);
+
+  const restCell = $('bd-lg-rest-cell');
+  if (ledger.remaining < 0) {
+    restCell.classList.add('bd-neg');
+  } else {
+    restCell.classList.remove('bd-neg');
+  }
+}
+
+function renderBoardToolbar() {
+  const groups = [...new Set(currentTasks.map(t => t.grp).filter(Boolean))].sort((a,b) => a.localeCompare(b));
+  $('bd-flt-group').replaceChildren(
+    new Option('All groups', ''),
+    ...groups.map(g => new Option(g, g))
+  );
+  if (groups.includes(boardSelectedGroup)) {
+    $('bd-flt-group').value = boardSelectedGroup;
+  } else {
+    $('bd-flt-group').value = '';
+    boardSelectedGroup = '';
+  }
+
+  $('bd-groups-list').replaceChildren(...groups.map(g => {
+    const o = document.createElement('option');
+    o.value = g;
+    return o;
+  }));
+
+  document.querySelectorAll('#bd-lang-seg .bd-lbtn').forEach(btn => {
+    const l = btn.dataset.lang;
+    const isSel = (l === boardViewLang);
+    btn.setAttribute('aria-pressed', isSel);
+    if (isSel) btn.classList.add('primary'); else btn.classList.remove('primary');
+  });
+}
+
+function resolveCardTitle(t, lang, teamLang) {
+  const m = t.titleI18n || {};
+  const lVal = (m[lang] || '').trim();
+  if (lVal) return { text: lVal, isFallback: false };
+  const teamVal = (m[teamLang] || '').trim();
+  if (teamVal) return { text: teamVal, isFallback: true };
+  for (const k of BD_LANGS) {
+    const v = (m[k] || '').trim();
+    if (v) return { text: v, isFallback: true };
+  }
+  return { text: 'Untitled', isFallback: false };
+}
+
+function renderBoardTasks() {
+  const colsContainer = $('bd-board-cols');
+  colsContainer.replaceChildren();
+
+  const filtered = currentTasks.filter(t => !boardSelectedGroup || t.grp === boardSelectedGroup);
+
+  BD_COLS.forEach((col, colIdx) => {
+    const colTasks = filtered
+      .filter(t => (t.status || 'backlog') === col.id)
+      .sort((a, b) => (Number(a.position) || 0) - (Number(b.position) || 0) || String(a.id).localeCompare(String(b.id)));
+
+    const count = colTasks.length;
+    const sum = colTasks
+      .filter(t => t.pay === 'deposit' || t.pay === 'paid')
+      .reduce((s, t) => s + (Number(t.price) || 0), 0);
+
+    const det = document.createElement('details');
+    det.className = 'bd-col';
+    det.dataset.status = col.id;
+    det.open = getColOpen(col.id);
+
+    det.addEventListener('toggle', () => {
+      if (bdMobileQuery.matches) {
+        setColOpen(col.id, det.open);
+      }
+    });
+
+    const summary = document.createElement('summary');
+    const h2 = document.createElement('h2');
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'bd-name';
+    nameSpan.innerHTML = `<span class="bd-chev">›</span> ${esc(col.name)}`;
+
+    const metaSpan = document.createElement('span');
+    metaSpan.className = 'bd-meta';
+    metaSpan.textContent = count + (sum > 0 ? ' · ' + bdFmtCur(sum, currentBoard.currency) : '');
+
+    h2.append(nameSpan, metaSpan);
+    summary.append(h2);
+    det.append(summary);
+
+    const body = document.createElement('div');
+    body.className = 'bd-col-body';
+
+    if (colTasks.length === 0) {
+      const emptyDiv = document.createElement('div');
+      emptyDiv.className = 'bd-empty';
+      emptyDiv.textContent = col.id === 'doing' ? 'Drag a task here to work on it.' : 'Empty.';
+      body.append(emptyDiv);
+    } else {
+      colTasks.forEach(t => {
+        body.append(renderCardElement(t, col.id, colIdx));
+      });
+    }
+
+    det.append(body);
+
+    det.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      det.classList.add('bd-drop');
+    });
+    det.addEventListener('dragleave', e => {
+      if (!det.contains(e.relatedTarget)) {
+        det.classList.remove('bd-drop');
+      }
+    });
+    det.addEventListener('drop', async e => {
+      e.preventDefault();
+      det.classList.remove('bd-drop');
+      const draggedId = e.dataTransfer.getData('text/plain');
+      if (!draggedId) return;
+      await moveTaskToPosition(draggedId, col.id, null, false);
+    });
+
+    colsContainer.append(det);
+  });
+}
+
+function renderCardElement(t, colId, colIdx) {
+  const card = document.createElement('article');
+  card.className = 'bd-card';
+  card.tabIndex = 0;
+  card.draggable = true;
+  card.dataset.id = t.id;
+  card.dataset.status = colId;
+
+  const titleInfo = resolveCardTitle(t, boardViewLang, currentBoard.teamLang);
+  const titleEl = document.createElement('div');
+  titleEl.className = 'bd-card-title';
+  const textSpan = document.createElement('span');
+  textSpan.textContent = titleInfo.text;
+  titleEl.append(textSpan);
+  if (titleInfo.isFallback) {
+    const chipNot = document.createElement('span');
+    chipNot.className = 'bd-chip bd-chip-muted';
+    chipNot.textContent = 'not translated';
+    titleEl.append(chipNot);
+  }
+  card.append(titleEl);
+
+  const row = document.createElement('div');
+  row.className = 'bd-card-row';
+
+  if (t.grp) {
+    const grpChip = document.createElement('span');
+    grpChip.className = 'bd-chip';
+    grpChip.textContent = t.grp;
+    row.append(grpChip);
+  }
+
+  const pay = t.pay || 'estimate';
+  const payChip = document.createElement('span');
+  payChip.className = `bd-chip bd-pay-${pay}`;
+  payChip.textContent = BD_PAY_LABELS[pay] || pay;
+  row.append(payChip);
+
+  if (Number(t.price) > 0) {
+    const priceEl = document.createElement('span');
+    priceEl.className = 'mono';
+    priceEl.textContent = bdFmtCur(t.price, currentBoard.currency);
+    row.append(priceEl);
+  }
+
+  if (t.hours != null && t.hours !== '') {
+    const hoursEl = document.createElement('span');
+    hoursEl.className = 'mono';
+    hoursEl.textContent = `${t.hours} h`;
+    row.append(hoursEl);
+  }
+
+  if (t.source) {
+    const srcEl = document.createElement('span');
+    srcEl.textContent = t.source;
+    row.append(srcEl);
+  }
+
+  if (t.clientVisible === false) {
+    const hidChip = document.createElement('span');
+    hidChip.className = 'bd-chip bd-chip-hidden';
+    hidChip.textContent = 'hidden from client';
+    row.append(hidChip);
+  }
+  card.append(row);
+
+  if (t.internalNote) {
+    const noteEl = document.createElement('div');
+    noteEl.className = 'bd-card-note';
+    noteEl.textContent = t.internalNote;
+    card.append(noteEl);
+  }
+
+  const movesDiv = document.createElement('div');
+  movesDiv.className = 'bd-card-moves';
+  if (colIdx > 0) {
+    const prevCol = BD_COLS[colIdx - 1];
+    const prevBtn = document.createElement('button');
+    prevBtn.type = 'button';
+    prevBtn.className = 'btn sm';
+    prevBtn.textContent = `← ${prevCol.name}`;
+    prevBtn.onclick = e => {
+      e.stopPropagation();
+      moveTaskToPosition(t.id, prevCol.id, null, false);
+    };
+    movesDiv.append(prevBtn);
+  }
+  if (colIdx < BD_COLS.length - 1) {
+    const nextCol = BD_COLS[colIdx + 1];
+    const nextBtn = document.createElement('button');
+    nextBtn.type = 'button';
+    nextBtn.className = 'btn sm';
+    nextBtn.textContent = `${nextCol.name} →`;
+    nextBtn.onclick = e => {
+      e.stopPropagation();
+      moveTaskToPosition(t.id, nextCol.id, null, false);
+    };
+    movesDiv.append(nextBtn);
+  }
+  card.append(movesDiv);
+
+  card.addEventListener('dragstart', e => {
+    e.dataTransfer.setData('text/plain', t.id);
+    e.dataTransfer.effectAllowed = 'move';
+    card.classList.add('bd-dragging');
+    isBoardDragging = true;
+  });
+  card.addEventListener('dragend', () => {
+    card.classList.remove('bd-dragging');
+    isBoardDragging = false;
+    document.querySelectorAll('.bd-card').forEach(c => {
+      c.classList.remove('bd-drop-before', 'bd-drop-after');
+    });
+  });
+
+  card.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    const rect = card.getBoundingClientRect();
+    const isBefore = (e.clientY < rect.top + rect.height / 2);
+    if (isBefore) {
+      card.classList.add('bd-drop-before');
+      card.classList.remove('bd-drop-after');
+    } else {
+      card.classList.add('bd-drop-after');
+      card.classList.remove('bd-drop-before');
+    }
+  });
+
+  card.addEventListener('dragleave', () => {
+    card.classList.remove('bd-drop-before', 'bd-drop-after');
+  });
+
+  card.addEventListener('drop', async e => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = card.getBoundingClientRect();
+    const isBefore = (e.clientY < rect.top + rect.height / 2);
+    card.classList.remove('bd-drop-before', 'bd-drop-after');
+    const draggedId = e.dataTransfer.getData('text/plain');
+    if (!draggedId || draggedId === t.id) return;
+    await moveTaskToPosition(draggedId, colId, t.id, isBefore);
+  });
+
+  card.addEventListener('click', () => openTaskDialog(t));
+  card.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      openTaskDialog(t);
+    }
+  });
+
+  return card;
+}
+
+async function moveTaskToPosition(draggedId, targetStatus, targetTaskId, isBefore) {
+  const dragged = currentTasks.find(t => t.id === draggedId);
+  if (!dragged) return;
+
+  const colTasks = currentTasks
+    .filter(t => (t.status || 'backlog') === targetStatus && t.id !== draggedId)
+    .sort((a, b) => (Number(a.position) || 0) - (Number(b.position) || 0) || String(a.id).localeCompare(String(b.id)));
+
+  let newPos;
+  if (colTasks.length === 0) {
+    newPos = 10;
+  } else if (!targetTaskId) {
+    newPos = (Number(colTasks[colTasks.length - 1].position) || 0) + 10;
+  } else {
+    const idx = colTasks.findIndex(t => t.id === targetTaskId);
+    if (idx === -1) {
+      newPos = (Number(colTasks[colTasks.length - 1].position) || 0) + 10;
+    } else if (isBefore) {
+      if (idx === 0) {
+        newPos = (Number(colTasks[0].position) || 0) - 10;
+      } else {
+        const prev = Number(colTasks[idx - 1].position) || 0;
+        const curr = Number(colTasks[idx].position) || 0;
+        newPos = (prev + curr) / 2;
+      }
+    } else {
+      if (idx === colTasks.length - 1) {
+        newPos = (Number(colTasks[idx].position) || 0) + 10;
+      } else {
+        const curr = Number(colTasks[idx].position) || 0;
+        const next = Number(colTasks[idx + 1].position) || 0;
+        newPos = (curr + next) / 2;
+      }
+    }
+  }
+
+  if (dragged.status === targetStatus && Math.abs((Number(dragged.position) || 0) - newPos) < 0.001) {
+    return;
+  }
+
+  try {
+    const res = await boardApi(`/admin/api/boards/${currentBoardId}/tasks/${draggedId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        status: targetStatus,
+        position: newPos,
+        version: dragged.version,
+      }),
+    });
+    if (res.status === 409) {
+      toast('Someone changed this task meanwhile — reloaded.');
+      await loadBoardDetails(currentBoardId);
+      return;
+    }
+    if (!res.ok) {
+      toast('Move failed: ' + (res.data?.detail || 'error'));
+      await loadBoardDetails(currentBoardId);
+      return;
+    }
+    Object.assign(dragged, res.data);
+    renderBoardTasks();
+  } catch (err) {
+    toast('Move failed: ' + err.message);
+  }
+}
+
+function openTaskDialog(task) {
+  editingTask = task;
+  editingTaskId = task ? task.id : null;
+  bdTaskDelArmed = false;
+  $('bd-cd-error').textContent = '';
+
+  const dlg = $('bd-card-dlg');
+  $('bd-cd-title').textContent = task ? 'Edit task' : 'New task';
+
+  const delBtn = $('bd-cd-delete');
+  delBtn.hidden = !task;
+  delBtn.textContent = 'Delete';
+
+  $('bd-cd-status').value = task ? (task.status || 'backlog') : 'backlog';
+  $('bd-cd-group').value = task ? (task.grp || '') : (boardSelectedGroup || '');
+  $('bd-cd-source').value = task ? (task.source || '') : '';
+  $('bd-cd-pay').value = task ? (task.pay || 'estimate') : 'estimate';
+  $('bd-cd-price').value = (task && Number(task.price) > 0) ? String(task.price) : '';
+  $('bd-cd-hours').value = (task && task.hours != null) ? String(task.hours) : '';
+  $('bd-cd-client-visible').checked = task ? (task.clientVisible !== false) : true;
+  $('bd-cd-internal-note').value = task ? (task.internalNote || '') : '';
+
+  const titleMap = task ? (task.titleI18n || {}) : {};
+  const noteMap = task ? (task.clientNoteI18n || {}) : {};
+
+  BD_LANGS.forEach(l => {
+    const tInput = $(`bd-cd-title-${l}`);
+    const nInput = $(`bd-cd-note-${l}`);
+    tInput.value = titleMap[l] || '';
+    nInput.value = noteMap[l] || '';
+    updateCardLangDot(l);
+  });
+
+  selectCardDialogLang(boardViewLang || currentBoard?.teamLang || 'en');
+  dlg.showModal();
+}
+
+function updateCardLangDot(lang) {
+  const tVal = $(`bd-cd-title-${lang}`).value.trim();
+  const dot = document.querySelector(`[data-cd-dot="${lang}"]`);
+  if (dot) dot.hidden = (tVal.length > 0);
+}
+
+function selectCardDialogLang(lang) {
+  cardDialogActiveLang = lang;
+  document.querySelectorAll('#bd-cd-lang-strip .bd-lang-tab').forEach(t => {
+    const isSel = (t.dataset.cdLang === lang);
+    t.setAttribute('aria-selected', isSel);
+  });
+  document.querySelectorAll('#bd-cd-lang-panels .bd-cd-lang-box').forEach(b => {
+    b.hidden = (b.dataset.langBox !== lang);
+  });
+}
+
+function openNewBoardDialog(preselectedChatId = null) {
+  $('bd-nb-error').textContent = '';
+  const boundChats = getBoundChats();
+  $('bd-nb-chat').replaceChildren(...boundChats.map(c => new Option(c.title || c.id, c.id)));
+  if (preselectedChatId && boundChats.some(c => c.id === String(preselectedChatId))) {
+    $('bd-nb-chat').value = String(preselectedChatId);
+  }
+  $('bd-nb-slug').value = '';
+  $('bd-nb-title').value = '';
+  $('bd-nb-team-lang').value = 'en';
+  $('bd-nb-client-lang').value = 'en';
+  $('bd-nb-rate').value = '';
+  $('bd-nb-currency').value = 'zł';
+  $('bd-new-board-dlg').showModal();
+}
+
+function showLinkOnceDialog(clientPath) {
+  const fullUrl = location.origin + clientPath;
+  $('bd-lo-url').value = fullUrl;
+  $('bd-link-once-dlg').showModal();
+}
+
+function resetLedgerForm() {
+  editingLedgerEntryId = null;
+  $('bd-lg-kind').value = 'deposit';
+  $('bd-lg-amount').value = '';
+  $('bd-lg-at').value = new Date().toISOString().slice(0, 10);
+  $('bd-lg-note').value = '';
+  $('bd-lg-form-title').textContent = 'Add ledger entry';
+  $('bd-lg-submit').textContent = 'Add entry';
+  $('bd-lg-cancel-edit').hidden = true;
+}
+
+async function refreshLedgerDialog() {
+  const tbody = $('bd-lg-tbody');
+  tbody.replaceChildren();
+  let entries = [];
+  try {
+    entries = await api(`/admin/api/boards/${currentBoardId}/ledger`);
+  } catch (e) {
+    entries = currentBoard?.ledger?.entries || [];
+  }
+  $('bd-lg-empty').hidden = (entries.length > 0);
+  entries.forEach(entry => {
+    const tr = document.createElement('tr');
+
+    const tdKind = document.createElement('td');
+    const pill = document.createElement('span');
+    pill.className = entry.kind === 'deposit' ? 'pill ok' : (entry.kind === 'refund' ? 'pill danger' : 'pill');
+    pill.textContent = entry.kind;
+    tdKind.append(pill);
+
+    const tdAmt = document.createElement('td');
+    tdAmt.className = 'mono';
+    tdAmt.textContent = bdFmtCur(entry.amount, currentBoard?.currency);
+
+    const tdDate = document.createElement('td');
+    tdDate.className = 'mono';
+    tdDate.textContent = entry.at;
+
+    const tdNote = document.createElement('td');
+    tdNote.textContent = entry.note || '—';
+
+    const tdAct = document.createElement('td');
+    tdAct.style.textAlign = 'right';
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'btn sm';
+    editBtn.textContent = 'Edit';
+    editBtn.onclick = () => {
+      editingLedgerEntryId = entry.id;
+      $('bd-lg-kind').value = entry.kind;
+      $('bd-lg-amount').value = entry.amount;
+      $('bd-lg-at').value = entry.at;
+      $('bd-lg-note').value = entry.note || '';
+      $('bd-lg-form-title').textContent = 'Edit ledger entry';
+      $('bd-lg-submit').textContent = 'Save changes';
+      $('bd-lg-cancel-edit').hidden = false;
+    };
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'btn sm danger';
+    delBtn.textContent = 'Delete';
+    delBtn.style.marginLeft = '6px';
+    delBtn.onclick = async () => {
+      const ok = await confirmDlg({
+        title: 'Delete entry',
+        message: 'Delete this ledger entry?',
+        danger: true,
+        confirmText: 'Delete',
+      });
+      if (!ok) return;
+      try {
+        await api(`/admin/api/boards/${currentBoardId}/ledger/${entry.id}`, { method: 'DELETE' });
+        await loadBoardDetails(currentBoardId);
+        await refreshLedgerDialog();
+      } catch (err) {
+        toast('Delete failed: ' + err.message);
+      }
+    };
+
+    tdAct.append(editBtn, delBtn);
+    tr.append(tdKind, tdAmt, tdDate, tdNote, tdAct);
+    tbody.append(tr);
+  });
+}
+
+function updateBoardFreshnessLabel() {
+  const el = $('bd-freshness');
+  if (!el) return;
+  if (!lastBoardUpdatedTime) { el.textContent = ''; return; }
+  const d = new Date(lastBoardUpdatedTime);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  el.textContent = `Updated ${hh}:${mm}`;
+}
+
+function startBoardFreshness() {
+  stopBoardFreshness();
+  boardFreshnessTimer = setInterval(async () => {
+    if (currentTab !== 'boards') return;
+    if (document.hidden) return;
+    if (isBoardDragging) return;
+    if (document.querySelector('dialog[open]')) return;
+    if (!currentBoardId) return;
+
+    await loadBoardDetails(currentBoardId, true);
+  }, 20000);
+}
+
+function stopBoardFreshness() {
+  if (boardFreshnessTimer) {
+    clearInterval(boardFreshnessTimer);
+    boardFreshnessTimer = null;
+  }
+}
+
+async function openBoardForChat(chatId) {
+  if (!boardsList) {
+    await loadBoardsList();
+  }
+  const chatStr = String(chatId);
+  const matching = (boardsList || []).find(b => String(b.chatId) === chatStr);
+  if (matching) {
+    currentBoardId = matching.id;
+    try { localStorage.setItem('lanehub.board', currentBoardId); } catch (e) {}
+    showTab('boards');
+  } else {
+    showTab('boards');
+    openNewBoardDialog(chatId);
+  }
+}
+
+function initBoardsModule() {
+  BD_LANGS.forEach(l => {
+    const tInput = $(`bd-cd-title-${l}`);
+    if (tInput) tInput.addEventListener('input', () => updateCardLangDot(l));
+  });
+
+  document.querySelectorAll('#bd-cd-lang-strip .bd-lang-tab').forEach(t => {
+    t.onclick = () => selectCardDialogLang(t.dataset.cdLang);
+  });
+  $('bd-cd-close').onclick = () => $('bd-card-dlg').close();
+  $('bd-cd-cancel').onclick = () => $('bd-card-dlg').close();
+
+  $('bd-cd-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    $('bd-cd-error').textContent = '';
+
+    const titleI18n = {};
+    const clientNoteI18n = {};
+    let hasAnyTitle = false;
+
+    BD_LANGS.forEach(l => {
+      const tVal = $(`bd-cd-title-${l}`).value.trim();
+      titleI18n[l] = tVal;
+      if (tVal) hasAnyTitle = true;
+      clientNoteI18n[l] = $(`bd-cd-note-${l}`).value.trim();
+    });
+
+    if (!hasAnyTitle) {
+      $('bd-cd-error').textContent = 'Title is required in at least one language.';
+      $(`bd-cd-title-${cardDialogActiveLang}`).focus();
+      return;
+    }
+
+    const status = $('bd-cd-status').value;
+    const grp = $('bd-cd-group').value.trim();
+    const source = $('bd-cd-source').value.trim();
+    const pay = $('bd-cd-pay').value;
+    const priceStr = $('bd-cd-price').value.trim();
+    const price = priceStr ? (parseFloat(priceStr.replace(',', '.')) || 0.0) : 0.0;
+    const hoursStr = $('bd-cd-hours').value.trim();
+    const hours = hoursStr ? parseFloat(hoursStr.replace(',', '.')) : null;
+    const clientVisible = $('bd-cd-client-visible').checked;
+    const internalNote = $('bd-cd-internal-note').value.trim();
+
+    const payload = {
+      titleI18n,
+      clientNoteI18n,
+      status,
+      grp,
+      source,
+      pay,
+      price,
+      hours,
+      clientVisible,
+      internalNote,
+    };
+
+    try {
+      if (editingTaskId) {
+        payload.version = editingTask.version;
+        const res = await boardApi(`/admin/api/boards/${currentBoardId}/tasks/${editingTaskId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+        if (res.status === 409) {
+          toast('Someone changed this task meanwhile — reloaded.');
+          $('bd-card-dlg').close();
+          await loadBoardDetails(currentBoardId);
+          const fresh = currentTasks.find(t => t.id === editingTaskId);
+          if (fresh) openTaskDialog(fresh);
+          return;
+        }
+        if (!res.ok) {
+          $('bd-cd-error').textContent = res.data?.detail || 'Failed to save task';
+          return;
+        }
+      } else {
+        const res = await boardApi(`/admin/api/boards/${currentBoardId}/tasks`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          $('bd-cd-error').textContent = res.data?.detail || 'Failed to create task';
+          return;
+        }
+      }
+      $('bd-card-dlg').close();
+      await loadBoardDetails(currentBoardId);
+    } catch (err) {
+      $('bd-cd-error').textContent = err.message;
+    }
+  });
+
+  $('bd-cd-delete').onclick = async () => {
+    if (!editingTaskId) return;
+    if (!bdTaskDelArmed) {
+      bdTaskDelArmed = true;
+      $('bd-cd-delete').textContent = 'Really delete?';
+      return;
+    }
+    try {
+      const res = await boardApi(`/admin/api/boards/${currentBoardId}/tasks/${editingTaskId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        $('bd-cd-error').textContent = res.data?.detail || 'Failed to delete task';
+        return;
+      }
+      $('bd-card-dlg').close();
+      await loadBoardDetails(currentBoardId);
+    } catch (err) {
+      $('bd-cd-error').textContent = err.message;
+    }
+  };
+
+  $('bd-nb-close').onclick = () => $('bd-new-board-dlg').close();
+  $('bd-nb-cancel').onclick = () => $('bd-new-board-dlg').close();
+
+  $('bd-nb-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    $('bd-nb-error').textContent = '';
+    const chatId = $('bd-nb-chat').value;
+    const slug = $('bd-nb-slug').value.trim().toLowerCase();
+    const title = $('bd-nb-title').value.trim();
+    const teamLang = $('bd-nb-team-lang').value;
+    const clientLang = $('bd-nb-client-lang').value;
+    const rateStr = $('bd-nb-rate').value.trim();
+    const rate = rateStr ? parseFloat(rateStr.replace(',', '.')) : null;
+    const currency = $('bd-nb-currency').value.trim() || 'zł';
+
+    try {
+      const res = await boardApi('/admin/api/boards', {
+        method: 'POST',
+        body: JSON.stringify({ chatId, slug, title, teamLang, clientLang, rate, currency }),
+      });
+      if (!res.ok) {
+        $('bd-nb-error').textContent = res.data?.detail || 'Failed to create board';
+        return;
+      }
+      $('bd-new-board-dlg').close();
+      currentBoardId = res.data.id;
+      try { localStorage.setItem('lanehub.board', currentBoardId); } catch (e) {}
+      showLinkOnceDialog(res.data.clientPath);
+      await renderBoardsTab();
+    } catch (err) {
+      $('bd-nb-error').textContent = err.message;
+    }
+  });
+
+  $('bd-lo-close').onclick = () => $('bd-link-once-dlg').close();
+  $('bd-lo-done').onclick = () => $('bd-link-once-dlg').close();
+  $('bd-lo-copy').onclick = () => copy($('bd-lo-url').value, 'Client link copied');
+
+  $('bd-btn-client-link').onclick = () => $('bd-client-link-dlg').showModal();
+  $('bd-cl-close').onclick = () => $('bd-client-link-dlg').close();
+  $('bd-cl-done').onclick = () => $('bd-client-link-dlg').close();
+  $('bd-cl-rotate').onclick = async () => {
+    const ok = await confirmDlg({
+      title: 'Rotate client link?',
+      message: 'The current client link will stop working immediately. Are you sure you want to generate a new one?',
+      danger: true,
+      confirmText: 'Rotate link',
+    });
+    if (!ok) return;
+    try {
+      const res = await api(`/admin/api/boards/${currentBoardId}/rotate-client-token`, { method: 'POST' });
+      $('bd-client-link-dlg').close();
+      showLinkOnceDialog(res.clientPath);
+    } catch (e) {
+      alertDlg({ title: 'Error', message: e.message });
+    }
+  };
+
+  $('bd-btn-settings').onclick = () => {
+    if (!currentBoard) return;
+    $('bd-st-error').textContent = '';
+    $('bd-st-title').value = currentBoard.title || '';
+    $('bd-st-team-lang').value = currentBoard.teamLang || 'en';
+    $('bd-st-client-lang').value = currentBoard.clientLang || 'en';
+    $('bd-st-rate').value = currentBoard.rate != null ? currentBoard.rate : '';
+    $('bd-st-currency').value = currentBoard.currency || 'zł';
+    $('bd-st-del-label').textContent = `To delete, type the slug "${currentBoard.slug}":`;
+    $('bd-st-del-confirm').value = '';
+    $('bd-st-del-btn').disabled = true;
+    $('bd-settings-dlg').showModal();
+  };
+  $('bd-st-close').onclick = () => $('bd-settings-dlg').close();
+  $('bd-st-cancel').onclick = () => $('bd-settings-dlg').close();
+  $('bd-st-del-confirm').addEventListener('input', () => {
+    $('bd-st-del-btn').disabled = ($('bd-st-del-confirm').value.trim() !== currentBoard?.slug);
+  });
+
+  $('bd-st-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    $('bd-st-error').textContent = '';
+    const title = $('bd-st-title').value.trim();
+    const teamLang = $('bd-st-team-lang').value;
+    const clientLang = $('bd-st-client-lang').value;
+    const rateStr = $('bd-st-rate').value.trim();
+    const rate = rateStr ? parseFloat(rateStr.replace(',', '.')) : null;
+    const currency = $('bd-st-currency').value.trim() || 'zł';
+
+    try {
+      const res = await boardApi(`/admin/api/boards/${currentBoardId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ title, teamLang, clientLang, rate, currency }),
+      });
+      if (!res.ok) {
+        $('bd-st-error').textContent = res.data?.detail || 'Failed to save settings';
+        return;
+      }
+      $('bd-settings-dlg').close();
+      await loadBoardDetails(currentBoardId);
+    } catch (err) {
+      $('bd-st-error').textContent = err.message;
+    }
+  });
+
+  $('bd-st-del-btn').onclick = async () => {
+    if (!currentBoard) return;
+    try {
+      const res = await boardApi(`/admin/api/boards/${currentBoardId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        $('bd-st-error').textContent = res.data?.detail || 'Failed to delete board';
+        return;
+      }
+      $('bd-settings-dlg').close();
+      toast('Board deleted');
+      currentBoardId = null;
+      currentBoard = null;
+      await renderBoardsTab();
+    } catch (err) {
+      $('bd-st-error').textContent = err.message;
+    }
+  };
+
+  $('bd-btn-ledger').onclick = async () => {
+    if (!currentBoard) return;
+    $('bd-lg-title').textContent = `Ledger · ${currentBoard.title || currentBoard.slug}`;
+    resetLedgerForm();
+    await refreshLedgerDialog();
+    $('bd-ledger-dlg').showModal();
+  };
+  $('bd-lg-close').onclick = () => $('bd-ledger-dlg').close();
+  $('bd-lg-done').onclick = () => $('bd-ledger-dlg').close();
+  $('bd-lg-cancel-edit').onclick = resetLedgerForm;
+
+  $('bd-lg-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const kind = $('bd-lg-kind').value;
+    const amount = parseFloat($('bd-lg-amount').value.replace(',', '.')) || 0;
+    const at = $('bd-lg-at').value.trim();
+    const note = $('bd-lg-note').value.trim();
+
+    try {
+      if (editingLedgerEntryId) {
+        await api(`/admin/api/boards/${currentBoardId}/ledger/${editingLedgerEntryId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ kind, amount, at, note }),
+        });
+      } else {
+        await api(`/admin/api/boards/${currentBoardId}/ledger`, {
+          method: 'POST',
+          body: JSON.stringify({ kind, amount, at, note }),
+        });
+      }
+      resetLedgerForm();
+      await loadBoardDetails(currentBoardId);
+      await refreshLedgerDialog();
+    } catch (err) {
+      toast('Failed to save entry: ' + err.message);
+    }
+  });
+
+  $('bd-btn-new-task').onclick = () => openTaskDialog(null);
+  $('bd-flt-group').addEventListener('change', () => {
+    boardSelectedGroup = $('bd-flt-group').value;
+    try { localStorage.setItem(`lanehub.board.${currentBoardId}.grp`, boardSelectedGroup); } catch (e) {}
+    renderBoardTasks();
+  });
+
+  document.querySelectorAll('#bd-lang-seg .bd-lbtn').forEach(btn => {
+    btn.onclick = () => {
+      boardViewLang = btn.dataset.lang;
+      try { localStorage.setItem(`lanehub.board.${currentBoardId}.lang`, boardViewLang); } catch (e) {}
+      renderBoardToolbar();
+      renderBoardTasks();
+    };
+  });
+
+  $('bd-board-select').addEventListener('change', async e => {
+    currentBoardId = parseInt(e.target.value, 10);
+    try { localStorage.setItem('lanehub.board', currentBoardId); } catch (e) {}
+    await loadBoardDetails(currentBoardId);
+  });
+
+  $('bd-btn-new-board').onclick = () => openNewBoardDialog(null);
+  $('bd-btn-empty-new-board').onclick = () => openNewBoardDialog(null);
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && currentTab === 'boards' && currentBoardId) {
+      if (!document.querySelector('dialog[open]') && !isBoardDragging) {
+        loadBoardDetails(currentBoardId, true);
+      }
+    }
+  });
+}
+
 // ----------------- DATA LOADING -----------------
 let chatNames = {};
 
@@ -1983,6 +3523,7 @@ $('login-form').addEventListener('submit', async e => {
 
 $('logout').onclick = async () => {
   try { await api('/api/logout', { method: 'POST' }); } catch (e) {}
+  stopBoardFreshness();
   showLogin();
 };
 
@@ -2003,8 +3544,20 @@ async function boot() {
     return;
   }
 
+  initBoardsModule();
+  const boardsBtn = $('tab-btn-boards');
+  if (boardsBtn) {
+    boardsBtn.hidden = !sessionState.boardsEnabled;
+  }
+  if (!sessionState.boardsEnabled && currentTab === 'boards') {
+    currentTab = 'chats';
+  }
+
   showAdmin();
   await loadLanes();
+  if (sessionState.boardsEnabled) {
+    loadBoardsList().catch(() => {});
+  }
 }
 
 // Saved skin initialization in JS
