@@ -220,3 +220,14 @@ def test_import_cli_takes_id_from_file_name(tmp_path):
     settings.db_path = db_path
     task = store.get_task("auto-lang")
     assert task is not None and task["hours"] == 1.25
+
+
+def test_import_skips_hidden_files(tmp_path):
+    # A tar made on macOS carries AppleDouble files (._name.json) that are not JSON.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from import_board import load_tasks_from_path
+
+    (tmp_path / "card.json").write_text(json.dumps({"title": "Задача"}), encoding="utf-8")
+    (tmp_path / "._card.json").write_bytes(b"\x00\x05\x16\x07\xa3binary")
+    tasks = load_tasks_from_path(tmp_path)
+    assert [t["id"] for t in tasks] == ["card"]

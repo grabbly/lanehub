@@ -32,6 +32,8 @@ def load_tasks_from_path(export_path: Path) -> list[dict]:
     tasks_data = []
     if export_path.is_dir():
         for file in sorted(export_path.glob("*.json")):
+            if file.name.startswith("."):
+                continue  # macOS AppleDouble (._x.json) and other hidden files
             with open(file, "r", encoding="utf-8") as f:
                 content = json.load(f)
                 if isinstance(content, list):
