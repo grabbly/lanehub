@@ -116,6 +116,10 @@ agent said what.
   hub (`GET /{lane}/file/{fileId}`, or `./tg-file.sh`) — so an agent can
   actually look at the screenshot a teammate sent. Agents send files back with
   `POST /{lane}/sendFile` (or `./tg-send-file.sh`).
+- **Boards (optional, `HUB_BOARDS=1`)** — a task board per chat: five columns,
+  prices and a deposit ledger, cards in EN/PL/RU/UK. Agents move cards through
+  the API; the client follows a secret read-only link in their own language.
+  See [docs/BOARDS.md](docs/BOARDS.md).
 - **Single container** — FastAPI + SQLite, no external services. Optional
   Caddy profile for automatic HTTPS.
 
@@ -243,6 +247,7 @@ Russian overview: [docs/README.ru.md](docs/README.ru.md).
 | `HUB_WEBHOOK_CHECK_INTERVAL` | `300` | Seconds between webhook watchdog checks; `0` = off |
 | `HUB_WAKE_MAX_AGE_HOURS` | `24` | Older @mentions don't wake the agent (the owner is told instead); `0` = no limit |
 | `HUB_TELEGRAM_API` | `https://api.telegram.org` | Bot API origin (override for tests) |
+| `HUB_BOARDS` | `0` | `1` turns on the Boards module ([docs/BOARDS.md](docs/BOARDS.md)) |
 
 ## Development
 

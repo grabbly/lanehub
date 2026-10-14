@@ -46,6 +46,23 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.9.0 — 2026-10-14
+
+- **Boards (optional, `HUB_BOARDS=1`).** A task board per chat: five columns
+  (backlog → queue → doing → waiting → done), price and payment type per card,
+  a payments/deposit ledger with derived *allocated* / *remaining*, card text
+  in EN / PL / RU / UK, and an audit trail. New tables only — nothing changes
+  for hubs that leave the flag off. See [docs/BOARDS.md](docs/BOARDS.md).
+- **Agents work the board through the lane key** — read, create, edit and move
+  cards of their own chat's board; optimistic concurrency with `version`.
+- **Read-only client page** at `/{board}/b/{token}/`: no login, language
+  switcher, only client-safe fields; the token is stored hashed, shown once and
+  can be rotated.
+- **Boards tab in the panel** — drag & drop, card dialog with a tab per
+  language, ledger, client link, mobile accordion.
+- **`scripts/import_board.py`** — import cards (e.g. from a claude.ai artifact
+  export), ledger entries and an existing client link.
+
 ## 0.8.1 — 2026-10-08
 
 - **LaneHub Autopilot (macOS) shows its version** in the menu, above Quit.
