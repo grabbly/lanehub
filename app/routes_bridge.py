@@ -299,6 +299,10 @@ async def transcribe_file(lane_slug: str, file_id: str, x_bridge_token: str = He
         raise HTTPException(status_code=400, detail="media is not transcribable")
 
     existing = db.get_transcript(fuid)
+    if existing and existing["status"] == "failed":
+        # Asking again is the retry button: e.g. after fixing the STT settings.
+        db.requeue_transcript(fuid)
+        return {"status": "pending", "transcript": None}
     if existing:
         return {"status": existing["status"], "transcript": existing.get("text")}
 

@@ -498,3 +498,66 @@ def test_stt_module_transcribe_direct(monkeypatch):
     )
     with pytest.raises(SttError, match="missing 'text'"):
         asyncio.run(transcribe(b"dummy_bytes", "voice.ogg", "audio/ogg"))
+
+
+def test_transcribe_endpoint_requeues_failed(client, monkeypatch):
+    """Asking again for a failed transcript queues it with fresh attempts."""
+    from app.stt import SttError
+
+    monkeypatch.setattr(settings, "stt_url", "http://fake-stt.local/transcribe")
+    login(client)
+    lane = make_lane(client, slug="backend")
+    auth = {"X-Bridge-Token": lane["apiKey"]}
+    _push_voice(client, "backend", update_id=10, message_id=100, file_id="fid_r", file_unique_id="uid_r")
+
+    async def broken(data, filename, mime):
+        raise SttError("HTTP 401")
+
+    monkeypatch.setattr("app.stt.transcribe", broken)
+    for _ in range(3):
+        with db.connect() as conn:
+            conn.execute("UPDATE transcripts SET next_try_at = 0 WHERE file_unique_id = 'uid_r'")
+        asyncio.run(runtime.stt_step())
+    assert db.get_transcript("uid_r")["status"] == "failed"
+
+    res = client.post("/backend/transcribe/fid_r", headers=auth)
+    assert res.json() == {"status": "pending", "transcript": None}
+    row = db.get_transcript("uid_r")
+    assert (row["status"], row["attempts"], row["error"]) == ("pending", 0, None)
+
+    async def works(data, filename, mime):
+        return {"text": "тепер працює"}
+
+    monkeypatch.setattr("app.stt.transcribe", works)
+    assert asyncio.run(runtime.stt_step()) is True
+    assert db.get_transcript("uid_r")["status"] == "done"
+
+
+def test_stt_key_header_setting(monkeypatch):
+    """The key goes as Bearer by default, or bare in a custom header (X-API-Key)."""
+    import httpx
+    from app.stt import transcribe
+
+    fake_value = "-".join(["header", "test", "value"])
+    monkeypatch.setattr(settings, "stt_url", "http://stt.example.com/transcribe")
+    monkeypatch.setattr(settings, "stt_key", fake_value)
+    seen = {}
+
+    def handler(request: httpx.Request):
+        seen["auth"] = request.headers.get("Authorization")
+        seen["x"] = request.headers.get("X-API-Key")
+        return httpx.Response(200, json={"text": "ok"})
+
+    orig_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx, "AsyncClient",
+        lambda *a, **kw: orig_client(*a, transport=httpx.MockTransport(handler), **kw),
+    )
+
+    monkeypatch.setattr(settings, "stt_key_header", "X-API-Key")
+    asyncio.run(transcribe(b"abc", "v.ogg", "audio/ogg"))
+    assert seen == {"auth": None, "x": fake_value}
+
+    monkeypatch.setattr(settings, "stt_key_header", "Authorization")
+    asyncio.run(transcribe(b"abc", "v.ogg", "audio/ogg"))
+    assert seen == {"auth": f"Bearer {fake_value}", "x": None}

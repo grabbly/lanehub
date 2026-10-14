@@ -72,6 +72,10 @@ class Settings:
     # Optional API key, sent as `Authorization: Bearer <key>`.
     stt_key: str = field(default_factory=lambda: _env("HUB_STT_KEY"))
 
+    # Header that carries the key. `Authorization` (default) sends it as a
+    # Bearer token; any other name (e.g. X-API-Key) sends the bare key.
+    stt_key_header: str = field(default_factory=lambda: _env("HUB_STT_KEY_HEADER", "Authorization"))
+
     # Optional `model` form field (OpenAI needs one, e.g. whisper-1).
     stt_model: str = field(default_factory=lambda: _env("HUB_STT_MODEL"))
 

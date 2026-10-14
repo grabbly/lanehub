@@ -177,6 +177,7 @@ Response:
 ```
 
 - Returns 503 if STT is not configured (`HUB_STT_URL` not set).
+- Calling it for a `failed` transcript queues it again with fresh attempts (e.g. after fixing the STT settings).
 - Returns 404 if the file is unknown or belongs to another chat.
 - Returns 400 if the media attachment is not transcribable (e.g. photo or document).
 

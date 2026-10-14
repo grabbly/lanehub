@@ -40,7 +40,11 @@ async def transcribe(data: bytes, filename: str, mime: str | None) -> dict[str, 
 
     headers = {}
     if settings.stt_key:
-        headers["Authorization"] = f"Bearer {settings.stt_key}"
+        name = settings.stt_key_header or "Authorization"
+        if name.lower() == "authorization":
+            headers["Authorization"] = f"Bearer {settings.stt_key}"
+        else:
+            headers[name] = settings.stt_key
 
     files = {"file": (filename or "audio.ogg", data, mime or "audio/ogg")}
     form_data: dict[str, str] = {}

@@ -801,6 +801,16 @@ def enqueue_transcript(
         return cur.rowcount > 0
 
 
+def requeue_transcript(file_unique_id: str) -> None:
+    """Give a failed transcript a fresh set of attempts (an explicit retry)."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE transcripts SET status = 'pending', attempts = 0, next_try_at = 0, error = NULL, "
+            "updated_at = ? WHERE file_unique_id = ? AND status = 'failed'",
+            (int(time.time()), file_unique_id),
+        )
+
+
 def get_transcript(file_unique_id: str) -> dict | None:
     with connect() as conn:
         row = conn.execute(
