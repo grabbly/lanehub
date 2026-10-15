@@ -46,6 +46,15 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.12.0 — 2026-10-15
+
+- **Boards: Client "✓ Done" tick.** Cards in the `waiting` column ("we are waiting on you") get a "✓ Зроблено / Done" button on the client page and in the «Потрібно від вас» banner. The client marks it when they did their part without moving the card or generating notifications; mistakes can be unticked ("Скасувати").
+- **Client write endpoint:** `POST /{board_slug}/b/{token}/tasks/{task_id}/done` with strict token verification, identical 404 behavior, relative URL support for reverse proxies, and in-memory rate limiting (max 30 writes per 10 minutes).
+- **Automatic reset rule:** When a card leaves `waiting`, `client_done_at` is cleared automatically so moving back to `waiting` starts clean.
+- **Operator panel highlights:** Accent chip "✓ Client: done · <date>" on cards, "✓ Client marked done: N" counter in header for filtering/highlighting, and "Clear mark" action in card dialog (`PATCH clientDone: false`).
+- **Agent API:** Agents see `clientDoneAt` on waiting cards and can clear it with `clientDone: false` (setting is reserved for client/admin).
+- **Idempotent DB migration:** Added `board_tasks.client_done_at INTEGER` automatically.
+
 ## 0.11.0 — 2026-10-15
 
 - **Boards: Client panel transformation.** Redesigned the client-facing board into a clean, focused window for clients with automatic theme integration, mobile accordions, and i18n.

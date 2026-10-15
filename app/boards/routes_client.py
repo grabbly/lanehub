@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from pydantic import BaseModel
 
 from . import store
 
@@ -92,7 +94,7 @@ def get_board_data(board_slug: str, token: str, lang: str | None = None) -> Resp
 
     tasks = []
     for t in store.list_tasks(board_id, client_visible_only=True, archived=False):
-        tasks.append({
+        task_data = {
             # Untranslated text falls back to the client's language, not the
             # team's: a Ukrainian client reading EN should see Ukrainian.
             "title": store.resolve_text(t["titleI18n"], active_lang, board["clientLang"]),
@@ -102,7 +104,11 @@ def get_board_data(board_slug: str, token: str, lang: str | None = None) -> Resp
             "price": t["price"],
             "position": t["position"],
             "updatedAt": t["updatedAt"],
-        })
+        }
+        if t["status"] == "waiting":
+            task_data["id"] = t["id"]
+            task_data["clientDoneAt"] = t["clientDoneAt"]
+        tasks.append(task_data)
 
     archived_tasks = store.list_tasks(board_id, client_visible_only=True, archived=True)
     groups: dict[str, list[dict]] = defaultdict(list)
@@ -147,3 +153,58 @@ def get_board_data(board_slug: str, token: str, lang: str | None = None) -> Resp
         "archive": archive,
     }
     return JSONResponse(content=payload, headers=SECURITY_HEADERS)
+
+
+class ClientDoneRequest(BaseModel):
+    done: bool
+
+    model_config = {"extra": "forbid"}
+
+
+_client_done_rate_limits: dict[int, list[float]] = defaultdict(list)
+RATE_LIMIT_WINDOW = 600.0  # 10 minutes
+RATE_LIMIT_MAX_WRITES = 30
+
+
+def _check_client_rate_limit(board_id: int) -> bool:
+    now = time.time()
+    cutoff = now - RATE_LIMIT_WINDOW
+    history = _client_done_rate_limits[board_id]
+    _client_done_rate_limits[board_id] = [ts for ts in history if ts > cutoff]
+    if len(_client_done_rate_limits[board_id]) >= RATE_LIMIT_MAX_WRITES:
+        return False
+    _client_done_rate_limits[board_id].append(now)
+    return True
+
+
+@router.post("/{board_slug}/b/{token}/tasks/{task_id}/done")
+def mark_client_done(
+    board_slug: str,
+    token: str,
+    task_id: str,
+    req: ClientDoneRequest,
+) -> Response:
+    board = _verify_access(board_slug, token)
+    if not board:
+        return _not_found_response()
+
+    task = store.get_task(task_id)
+    if (
+        not task
+        or task["boardId"] != board["id"]
+        or not task["clientVisible"]
+        or task["archivedAt"] is not None
+        or task["status"] != "waiting"
+    ):
+        return _not_found_response()
+
+    if not _check_client_rate_limit(board["id"]):
+        return Response(
+            content=b'{"detail":"too many requests"}',
+            status_code=429,
+            media_type="application/json",
+            headers=SECURITY_HEADERS,
+        )
+
+    res = store.set_task_client_done(board["id"], task_id, req.done, actor="client")
+    return JSONResponse(content=res, headers=SECURITY_HEADERS)

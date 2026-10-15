@@ -244,6 +244,7 @@ def update_task(board_id: int, task_id: str, req: TaskUpdateRequest) -> Any:
             client_note_i18n=req.client_note_i18n,
             internal_note=req.internal_note,
             archived=req.archived,
+            client_done=req.client_done,
             version=req.version,
             actor="admin",
         )

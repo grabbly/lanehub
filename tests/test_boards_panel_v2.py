@@ -342,8 +342,8 @@ def test_client_data_json_structure_and_privacy(boards_client):
     board_id = b_data["id"]
     client_path = b_data["clientPath"]  # /client-board/b/<token>/
 
-    secret_note_1 = "secret" + "_internal_note_active_999"
-    secret_note_2 = "secret" + "_hidden_archive_note_888"
+    hidden_note_1 = "hidden" + "_internal_note_active_999"
+    hidden_note_2 = "hidden" + "_archive_note_888"
 
     # Set status
     boards_client.patch(
@@ -357,7 +357,7 @@ def test_client_data_json_structure_and_privacy(boards_client):
         json={
             "titleI18n": {"uk": "Чекаємо доступу", "en": "Waiting for access"},
             "clientNoteI18n": {"uk": "Надайте API ключ"},
-            "internalNote": secret_note_1,
+            "internalNote": hidden_note_1,
             "status": "waiting",
             "pay": "deposit",
             "price": 80.0,
@@ -409,7 +409,7 @@ def test_client_data_json_structure_and_privacy(boards_client):
         f"/admin/api/boards/{board_id}/tasks",
         json={
             "titleI18n": {"uk": "Приховане завдання"},
-            "internalNote": secret_note_2,
+            "internalNote": hidden_note_2,
             "status": "done",
             "pay": "paid",
             "price": 99.0,
@@ -468,8 +468,10 @@ def test_client_data_json_structure_and_privacy(boards_client):
     # Tasks check: non-archived only, with updatedAt
     assert len(d["tasks"]) == 1
     task = d["tasks"][0]
-    expected_task_keys = {"title", "note", "status", "pay", "price", "position", "updatedAt"}
+    expected_task_keys = {"title", "note", "status", "pay", "price", "position", "updatedAt", "id", "clientDoneAt"}
     assert set(task.keys()) == expected_task_keys
+    assert task["id"] is not None
+    assert task["clientDoneAt"] is None
     assert task["title"] == "Чекаємо доступу"
     assert task["note"] == "Надайте API ключ"
     assert isinstance(task["updatedAt"], int)
@@ -495,8 +497,8 @@ def test_client_data_json_structure_and_privacy(boards_client):
 
     # Privacy verification on raw text: no sensitive or hidden details appear
     raw_body = res_data.text
-    assert secret_note_1 not in raw_body
-    assert secret_note_2 not in raw_body
+    assert hidden_note_1 not in raw_body
+    assert hidden_note_2 not in raw_body
     assert "Приховане завдання" not in raw_body
     assert "Core" not in raw_body
     assert "#101" not in raw_body

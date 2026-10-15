@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS board_tasks (
     client_note_i18n TEXT NOT NULL DEFAULT '{}',
     internal_note TEXT NOT NULL DEFAULT '',
     archived_at INTEGER,
+    client_done_at INTEGER,
     version INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
@@ -96,6 +97,8 @@ def _ensure_board_columns(conn: sqlite3.Connection) -> None:
     if t_cols:
         if "archived_at" not in t_cols:
             conn.execute("ALTER TABLE board_tasks ADD COLUMN archived_at INTEGER")
+        if "client_done_at" not in t_cols:
+            conn.execute("ALTER TABLE board_tasks ADD COLUMN client_done_at INTEGER")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_board_tasks_archived ON board_tasks(board_id, archived_at)")
 
 
@@ -534,6 +537,7 @@ def _task_row_to_dict(row: sqlite3.Row) -> dict:
     client_note_i18n = json.loads(row["client_note_i18n"] or "{}")
     keys = row.keys()
     archived_at = row["archived_at"] if "archived_at" in keys else None
+    client_done_at = row["client_done_at"] if "client_done_at" in keys else None
     return {
         "id": row["id"],
         "boardId": row["board_id"],
@@ -550,6 +554,7 @@ def _task_row_to_dict(row: sqlite3.Row) -> dict:
         "clientNoteI18n": client_note_i18n,
         "internalNote": row["internal_note"],
         "archivedAt": archived_at,
+        "clientDoneAt": client_done_at,
         "version": row["version"],
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
@@ -704,6 +709,7 @@ def update_task(
     client_note_i18n: dict[str, str] | None = None,
     internal_note: str | None = None,
     archived: bool | None = None,
+    client_done: bool | None = None,
     version: int | None = None,
     actor: str = "admin",
 ) -> dict:
@@ -802,6 +808,27 @@ def update_task(
                 payload["archived"] = False
                 payload["archivedAt"] = None
 
+        old_status = current_task["status"]
+        effective_status = status if status is not None else old_status
+
+        if client_done is not None:
+            if client_done:
+                if effective_status != "waiting":
+                    raise ValueError("clientDone can only be set when task is in waiting status")
+                updates.append("client_done_at = ?")
+                params.append(now)
+                payload["clientDone"] = True
+                payload["clientDoneAt"] = now
+            else:
+                updates.append("client_done_at = NULL")
+                payload["clientDone"] = False
+                payload["clientDoneAt"] = None
+        elif status is not None and status != old_status:
+            # Reset rule: when a task leaves waiting (status changes) client_done_at is cleared automatically. Moving back to waiting starts clean.
+            if current_task.get("clientDoneAt") is not None:
+                updates.append("client_done_at = NULL")
+                payload["clientDoneAt"] = None
+
         updates.append("version = version + 1")
         updates.append("updated_at = ?")
         params.append(now)
@@ -837,6 +864,35 @@ def update_task(
             )
 
     return get_task(task_id)
+
+
+def set_task_client_done(board_id: int, task_id: str, done: bool, actor: str = "client") -> dict:
+    """Set or clear client_done_at for a task in waiting status."""
+    now = int(time.time())
+    client_done_at = now if done else None
+    with _conn() as conn:
+        row = conn.execute("SELECT * FROM board_tasks WHERE id = ? AND board_id = ?", (task_id, board_id)).fetchone()
+        if not row:
+            raise LookupError(f"Task {task_id} not found on board {board_id}")
+        if row["status"] != "waiting":
+            raise ValueError(f"Task {task_id} is not in waiting status")
+        conn.execute(
+            """
+            UPDATE board_tasks
+            SET client_done_at = ?, updated_at = ?, version = version + 1, updated_by = ?
+            WHERE id = ? AND board_id = ?
+            """,
+            (client_done_at, now, actor, task_id, board_id),
+        )
+        record_event(
+            conn,
+            board_id,
+            actor=actor,
+            action="client_done" if done else "client_undone",
+            task_id=task_id,
+            payload={"clientDoneAt": client_done_at},
+        )
+    return {"id": task_id, "clientDoneAt": client_done_at}
 
 
 def delete_task(board_id: int, task_id: str, actor: str = "admin") -> bool:

@@ -76,6 +76,16 @@ itself and silently takes every update away from the new hub. So:
 
 ## Version-specific notes
 
+### 0.12.0 — client ✓ Done tick
+
+- **Nothing to do:** new column `board_tasks.client_done_at` is added automatically on startup.
+- Existing boards and API clients keep working unchanged.
+- Cards in `waiting` column get a "✓ Зроблено / Done" tick on the client page without moving the card or sending notifications.
+- Added client write endpoint `POST /{board_slug}/b/{token}/tasks/{task_id}/done` with in-memory rate limiting.
+- Automatic reset of `client_done_at` when a card leaves `waiting`.
+- Operator panel highlights client-done cards with a chip, header counter/filter, and clear mark action in the card dialog.
+- Agent API exposes `clientDoneAt` and allows clearing via `{"clientDone": false}`. See [BOARDS.md](BOARDS.md).
+
 ### 0.11.0 — client panel
 
 - **Nothing to do:** new columns (`board_tasks.archived_at`, `boards.status_i18n`,

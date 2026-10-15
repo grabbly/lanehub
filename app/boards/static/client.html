@@ -98,7 +98,14 @@ h1 { font-size: 24px; font-weight: 600; margin: 0; letter-spacing: -0.01em; text
 .archive-month-title { font-size: 13.5px; font-weight: 600; }
 .archive-items { margin-top: 8px; display: grid; gap: 6px; }
 .archive-item { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
-.archive-item .a-title { font-weight: 500; flex: 1 1 200px; overflow-wrap: anywhere; }
+.client-done-box { margin-top: 4px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.btn-client-done { display: inline-flex; align-items: center; gap: 5px; background: var(--surface); border: 1px solid var(--ok); color: var(--ok); border-radius: 6px; padding: 3px 9px; font-family: var(--font-body); font-size: 11.5px; font-weight: 600; cursor: pointer; transition: all .1s ease; width: fit-content; -webkit-tap-highlight-color: transparent; }
+.btn-client-done:hover:not(:disabled) { background: var(--ok-soft); }
+.btn-client-done:disabled { opacity: 0.5; cursor: not-allowed; }
+.client-done-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 12px; color: var(--ok); font-weight: 500; }
+.client-done-cancel { background: transparent; border: none; padding: 0; font-family: var(--font-body); font-size: 11.5px; color: var(--muted); text-decoration: underline; cursor: pointer; }
+.client-done-cancel:hover:not(:disabled) { color: var(--fg); }
+.client-done-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
 footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
 .err { color: var(--accent); }
 </style>
@@ -269,6 +276,74 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
     }));
   }
 
+  const pendingDone = new Set();
+
+  function toggleClientDone(c, nextDone) {
+    if (!c.id || pendingDone.has(c.id)) return;
+    const prevDoneAt = c.clientDoneAt;
+    c.clientDoneAt = nextDone ? Math.floor(Date.now() / 1000) : null;
+    pendingDone.add(c.id);
+    render(lastData, lastLang);
+
+    fetch(`tasks/${encodeURIComponent(c.id)}/done`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ done: nextDone }),
+    })
+      .then(r => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      })
+      .then(res => {
+        c.clientDoneAt = res.clientDoneAt;
+      })
+      .catch(() => {
+        c.clientDoneAt = prevDoneAt;
+      })
+      .finally(() => {
+        pendingDone.delete(c.id);
+        render(lastData, lastLang);
+      });
+  }
+
+  function renderClientDoneWidget(c, ui, lang) {
+    if (!c.id) return null;
+    const isPending = pendingDone.has(c.id);
+    const box = el("div", "client-done-box");
+
+    if (c.clientDoneAt) {
+      const d = new Date(c.clientDoneAt * 1000);
+      const loc = lang === "uk" ? "uk-UA" : (lang === "pl" ? "pl-PL" : (lang === "ru" ? "ru-RU" : "en-US"));
+      const timeStr = d.toLocaleString(loc, { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+      const markedText = (ui.client_done_marked || "✓ Ви позначили: зроблено") + " · " + timeStr;
+
+      const stat = el("div", "client-done-status");
+      stat.setAttribute("aria-pressed", "true");
+      stat.append(el("span", null, markedText));
+
+      const undoBtn = el("button", "client-done-cancel", ui.client_done_cancel || "Скасувати");
+      undoBtn.type = "button";
+      undoBtn.disabled = isPending;
+      undoBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggleClientDone(c, false);
+      });
+      stat.append(undoBtn);
+      box.append(stat);
+    } else {
+      const btn = el("button", "btn-client-done", ui.client_done_action || "✓ Зроблено");
+      btn.type = "button";
+      btn.setAttribute("aria-pressed", "false");
+      btn.disabled = isPending;
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggleClientDone(c, true);
+      });
+      box.append(btn);
+    }
+    return box;
+  }
+
   function render(data, lang) {
     lastData = data;
     lastLang = lang;
@@ -321,6 +396,8 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
         const card = el("div", "waiting-card");
         card.append(el("div", "w-title", c.title));
         if (c.note) card.append(el("div", "w-note", c.note));
+        const w = renderClientDoneWidget(c, ui, lang);
+        if (w) card.append(w);
         return card;
       }));
     } else {
@@ -377,6 +454,10 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
         row.append(priceChip(c, ui, lang, currency));
         card.append(row);
         if (c.note) card.append(el("div", "note", c.note));
+        if (col.id === "waiting") {
+          const w = renderClientDoneWidget(c, ui, lang);
+          if (w) card.append(w);
+        }
         body.append(card);
       });
       sec.append(body);

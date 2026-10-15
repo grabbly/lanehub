@@ -373,6 +373,7 @@
   .bd-chip.bd-pay-separate { background: var(--panel-2); color: var(--muted); }
   .bd-chip.bd-chip-hidden { background: transparent; border: 1px dashed var(--muted); color: var(--muted); }
   .bd-chip.bd-chip-muted { background: var(--panel-2); color: var(--muted); font-size: 10px; opacity: 0.8; font-style: italic; }
+  .bd-chip.bd-chip-client-done { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
   .bd-card-note { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35; }
   .bd-card-moves { display: none; gap: 6px; margin-top: 4px; }
   @media (hover: none) {
@@ -501,6 +502,7 @@
         </div>
         <div class="bd-hd-right">
           <div class="bd-hd-actions">
+            <button class="btn sm" id="bd-btn-client-done-filter" type="button" hidden style="background:var(--accent-soft); color:var(--accent); font-weight:600; border:1px solid var(--accent);">✓ Client marked done: <span id="bd-client-done-count">0</span></button>
             <button class="btn sm" id="bd-btn-ledger" type="button">Ledger</button>
             <button class="btn sm" id="bd-btn-client-link" type="button">Client link</button>
             <button class="btn sm" id="bd-btn-settings" type="button">Settings</button>
@@ -949,6 +951,12 @@
           </div>
         </div>
       </fieldset>
+
+      <!-- Client Done mark -->
+      <div id="bd-cd-client-done-wrap" hidden style="background:var(--accent-soft); color:var(--accent); border-radius:8px; padding:8px 12px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
+        <span>✓ Client marked done: <strong id="bd-cd-client-done-time"></strong></span>
+        <button type="button" class="btn sm" id="bd-cd-clear-client-done">Clear mark</button>
+      </div>
 
       <!-- Task details -->
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
@@ -2518,6 +2526,7 @@ let bdTaskDelArmed = false;
 let cardDialogActiveLang = 'en';
 let statusDialogActiveLang = 'en';
 let isShowingArchive = false;
+let isFilteringClientDone = false;
 let editingLedgerEntryId = null;
 
 async function boardApi(path, opts = {}) {
@@ -2696,6 +2705,25 @@ function renderBoardHeader() {
   } else {
     restCell.classList.remove('bd-neg');
   }
+
+  const clientDoneCount = currentTasks.filter(t => !t.archivedAt && t.clientDoneAt).length;
+  const btnDone = $('bd-btn-client-done-filter');
+  if (btnDone) {
+    if (clientDoneCount > 0 || isFilteringClientDone) {
+      btnDone.hidden = false;
+      $('bd-client-done-count').textContent = clientDoneCount;
+      if (isFilteringClientDone) {
+        btnDone.classList.add('primary');
+        btnDone.setAttribute('aria-pressed', 'true');
+      } else {
+        btnDone.classList.remove('primary');
+        btnDone.setAttribute('aria-pressed', 'false');
+      }
+    } else {
+      btnDone.hidden = true;
+      isFilteringClientDone = false;
+    }
+  }
 }
 
 function renderBoardToolbar() {
@@ -2750,7 +2778,10 @@ function renderBoardTasks() {
   const colsContainer = $('bd-board-cols');
   colsContainer.replaceChildren();
 
-  const filtered = currentTasks.filter(t => !boardSelectedGroup || t.grp === boardSelectedGroup);
+  let filtered = currentTasks.filter(t => !boardSelectedGroup || t.grp === boardSelectedGroup);
+  if (isFilteringClientDone) {
+    filtered = filtered.filter(t => !t.archivedAt && !!t.clientDoneAt);
+  }
 
   BD_COLS.forEach((col, colIdx) => {
     const colTasks = filtered
@@ -2888,6 +2919,13 @@ function renderCardElement(t, colId, colIdx) {
     hidChip.className = 'bd-chip bd-chip-hidden';
     hidChip.textContent = 'hidden from client';
     row.append(hidChip);
+  }
+
+  if (t.clientDoneAt) {
+    const doneChip = document.createElement('span');
+    doneChip.className = 'bd-chip bd-chip-client-done';
+    doneChip.textContent = `✓ Client: done · ${fmtDate(t.clientDoneAt)}`;
+    row.append(doneChip);
   }
   card.append(row);
 
@@ -3092,6 +3130,16 @@ function openTaskDialog(task) {
   $('bd-cd-hours').value = (task && task.hours != null) ? String(task.hours) : '';
   $('bd-cd-client-visible').checked = task ? (task.clientVisible !== false) : true;
   $('bd-cd-internal-note').value = task ? (task.internalNote || '') : '';
+
+  const doneWrap = $('bd-cd-client-done-wrap');
+  if (doneWrap) {
+    if (task && task.clientDoneAt) {
+      doneWrap.hidden = false;
+      $('bd-cd-client-done-time').textContent = fmtDate(task.clientDoneAt);
+    } else {
+      doneWrap.hidden = true;
+    }
+  }
 
   const titleMap = task ? (task.titleI18n || {}) : {};
   const noteMap = task ? (task.clientNoteI18n || {}) : {};
@@ -3497,6 +3545,47 @@ function initBoardsModule() {
   $('bd-cd-close').onclick = () => $('bd-card-dlg').close();
   $('bd-cd-cancel').onclick = () => $('bd-card-dlg').close();
 
+  const btnDoneFilter = $('bd-btn-client-done-filter');
+  if (btnDoneFilter) {
+    btnDoneFilter.onclick = () => {
+      isFilteringClientDone = !isFilteringClientDone;
+      renderBoardHeader();
+      renderBoardTasks();
+    };
+  }
+
+  const btnClearDone = $('bd-cd-clear-client-done');
+  if (btnClearDone) {
+    btnClearDone.onclick = async () => {
+      if (!editingTaskId || !editingTask) return;
+      try {
+        const res = await boardApi(`/admin/api/boards/${currentBoardId}/tasks/${editingTaskId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            clientDone: false,
+            version: editingTask.version,
+          }),
+        });
+        if (res.status === 409) {
+          toast('Someone changed this task meanwhile — reloaded.');
+          $('bd-card-dlg').close();
+          await loadBoardDetails(currentBoardId);
+          return;
+        }
+        if (!res.ok) {
+          toast('Failed to clear mark: ' + (res.data?.detail || 'error'));
+          return;
+        }
+        Object.assign(editingTask, res.data);
+        $('bd-cd-client-done-wrap').hidden = true;
+        toast('Client mark cleared');
+        await loadBoardDetails(currentBoardId);
+      } catch (err) {
+        toast('Error: ' + err.message);
+      }
+    };
+  }
+
   $('bd-cd-form').addEventListener('submit', async e => {
     e.preventDefault();
     $('bd-cd-error').textContent = '';
@@ -3784,6 +3873,7 @@ function initBoardsModule() {
     currentBoardId = parseInt(e.target.value, 10);
     try { localStorage.setItem('lanehub.board', currentBoardId); } catch (e) {}
     isShowingArchive = false;
+    isFilteringClientDone = false;
     $('bd-archive-view').hidden = true;
     $('bd-board-cols').hidden = false;
     await loadBoardDetails(currentBoardId);

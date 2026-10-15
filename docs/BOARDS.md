@@ -31,7 +31,7 @@ lane slug), what, when.
 |---|---|---|
 | Operator | panel sign-in | everything: boards, cards, ledger, settings, client link |
 | Agent | lane key (`X-Bridge-Token`) | read the board of **its own chat**, create cards, edit/move cards |
-| Client | secret link | read client-visible cards, prices and the ledger header |
+| Client | secret link | read client-visible cards, prices, ledger header; tick "✓ Done" on waiting cards |
 
 Agents can't delete cards, touch the ledger or settings, or see the client
 link. A board of another chat answers 404 to them, as if it didn't exist.
@@ -62,6 +62,17 @@ location /yl/ {
 }
 ```
 
+### Client "✓ Done" tick
+
+Cards in the `waiting` column ("we are waiting on you") get a "✓ Зроблено / Done" button on the client page and in the «Потрібно від вас» banner. The client presses it when they did their part. It does **not** move the card and changes nothing else — it is a signal for the team and bots in case they forget to move the card. The client can untick it if pressed by mistake ("Скасувати"). No notifications of any kind are sent (no Telegram messages).
+
+- **Endpoint**: `POST /{board_slug}/b/{token}/tasks/{task_id}/done` with body `{"done": true|false}` → `{id, clientDoneAt}`.
+- Strict token verification (same constant-time check and identical 404 response for wrong slug/token or task of another board / not client-visible / archived / not in `waiting`).
+- The client page calls the relative URL `tasks/<id>/done` so it works seamlessly behind reverse proxies mapping custom prefixes (e.g. `/yl/<token>/`).
+- In-memory rate limiting per board token: max 30 writes per 10 minutes (returns 429).
+- **Reset rule**: when a task leaves `waiting` (status changes), `client_done_at` is cleared automatically (the signal was consumed). Moving back to `waiting` starts clean.
+- **Events**: records `client_done` and `client_undone` with actor `client`.
+
 ## Rules for agents
 
 Boards are **not** an internal team kanban or a dump of subtasks. A board is the **client's window**: where we are, what is done, what we need from the client, and prices. Agents keep it tidy together with their developer:
@@ -72,6 +83,7 @@ Boards are **not** an internal team kanban or a dump of subtasks. A board is the
 4. **Finished work?** Move the card to `done` only when the client can actually see or test the result.
 5. **Archive done cards once seen:** Archive cards (e.g. after a week) with `PATCH /{lane}/board/tasks/<id>` `{"archived": true}`.
 6. **Keep «Де ми зараз» current:** Update the status line after each meaningful step using `PUT /{lane}/board/status` with `statusI18n`.
+7. **Check `clientDoneAt` on waiting cards:** When set, verify that the client did their part and move the card (or ask the developer). Agents can clear it via `PATCH /{lane}/board/tasks/<id>` with `{"clientDone": false}`, but cannot set it on the client's behalf.
 
 ## Agent API
 
@@ -100,6 +112,10 @@ curl -sS -X POST -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
 curl -sS -X PATCH -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
   -d '{"status":"doing","version":3}' "$HUB/$LANE/board/tasks/<id>"
 
+# clear client done mark: agents may clear (clientDone: false), but cannot set it
+curl -sS -X PATCH -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
+  -d '{"clientDone":false,"version":3}' "$HUB/$LANE/board/tasks/<id>"
+
 # archive or unarchive a card (writes an archived/unarchived event)
 curl -sS -X PATCH -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
   -d '{"archived":true,"version":3}' "$HUB/$LANE/board/tasks/<id>"
@@ -110,7 +126,7 @@ curl -sS -H "X-Bridge-Token: $KEY" "$HUB/$LANE/board/events?since=N"
 
 Card fields: `status`, `position`, `grp`, `source`, `sourceMessageId`, `pay`,
 `price`, `hours`, `clientVisible`, `titleI18n`, `clientNoteI18n`,
-`internalNote`, `archived` (`archivedAt` in output). Language maps accept only `en`, `pl`, `ru`, `uk`. A 409 carries
+`internalNote`, `archived` (`archivedAt` in output), `clientDoneAt`. Language maps accept only `en`, `pl`, `ru`, `uk`. A 409 carries
 the current card in `task`: re-read, re-apply, retry.
 
 Derived ledger numbers (`allocated`, `remaining`) and column sums continue counting archived tasks (money does not disappear when a card is archived).
@@ -120,10 +136,10 @@ Derived ledger numbers (`allocated`, `remaining`) and column sums continue count
 The client view at `/{slug}/b/{token}/data.json` returns:
 - `status`: current status line resolved for the viewer's language (fallback: lang → client_lang → any)
 - `statusUpdatedAt`: timestamp when the status was last changed (or null)
-- `tasks`: client-visible non-archived tasks, including `updatedAt` timestamp (used for the «нове» badge)
+- `tasks`: client-visible non-archived tasks, including `updatedAt` timestamp (used for the «нове» badge); tasks in `waiting` also include `id` and `clientDoneAt`
 - `archive`: list of months, newest first, each `{month: "YYYY-MM", count, sum, items: [{title, price, pay}]}` (grouped by the month of `archived_at`; `sum` calculates deposit/paid cards).
 
-Strict privacy rules apply: internal notes, hours, groups, sources, and IDs are never exposed in `data.json`.
+Strict privacy rules apply: internal notes, hours, groups, sources, and task IDs on non-waiting tasks are never exposed in `data.json`.
 
 ## Operator API
 

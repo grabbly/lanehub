@@ -42,6 +42,7 @@ class TaskUpdateRequest(BaseModel):
     client_note_i18n: dict[str, str] | None = Field(default=None, alias="clientNoteI18n")
     internal_note: str | None = Field(default=None, alias="internalNote")
     archived: bool | None = Field(default=None)
+    client_done: bool | None = Field(default=None, alias="clientDone")
     version: int | None = Field(default=None)
 
     model_config = {"populate_by_name": True}
@@ -161,6 +162,12 @@ def update_agent_task(
     set_source_message_id = "sourceMessageId" in req.model_fields_set or "source_message_id" in req.model_fields_set
     set_hours = "hours" in req.model_fields_set
 
+    if req.client_done is True:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="agents cannot set clientDone, only clear it",
+        )
+
     try:
         updated = store.update_task(
             board_id=board["id"],
@@ -180,6 +187,7 @@ def update_agent_task(
             client_note_i18n=req.client_note_i18n,
             internal_note=req.internal_note,
             archived=req.archived,
+            client_done=req.client_done,
             version=req.version,
             actor=lane_slug,
         )
