@@ -39,7 +39,7 @@
   "waiting_banner_title": "Требуется от вас",
   "badge_new": "новое",
   "archive_title": "Архив",
-  "client_done_action": "✓ Сделано",
+  "client_done_action": "Отметить как сделанное",
   "client_done_marked": "✓ Вы отметили: сделано",
   "client_done_cancel": "Отменить"
 }

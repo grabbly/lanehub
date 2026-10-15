@@ -39,7 +39,7 @@
   "waiting_banner_title": "Action needed from you",
   "badge_new": "new",
   "archive_title": "Archive",
-  "client_done_action": "✓ Done",
+  "client_done_action": "Mark as done",
   "client_done_marked": "✓ You marked: done",
   "client_done_cancel": "Undo"
 }
