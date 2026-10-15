@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS boards (
     client_lang TEXT NOT NULL DEFAULT 'en',
     currency TEXT NOT NULL DEFAULT 'zł',
     rate REAL,
+    status_i18n TEXT NOT NULL DEFAULT '{}',
+    status_updated_at INTEGER,
     client_token_hash TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
@@ -50,12 +52,14 @@ CREATE TABLE IF NOT EXISTS board_tasks (
     title_i18n TEXT NOT NULL DEFAULT '{}',
     client_note_i18n TEXT NOT NULL DEFAULT '{}',
     internal_note TEXT NOT NULL DEFAULT '',
+    archived_at INTEGER,
     version INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     updated_by TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_board_tasks_order ON board_tasks(board_id, status, position);
+CREATE INDEX IF NOT EXISTS idx_board_tasks_archived ON board_tasks(board_id, archived_at);
 CREATE TABLE IF NOT EXISTS board_ledger (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     board_id INTEGER NOT NULL,
@@ -79,8 +83,25 @@ CREATE TABLE IF NOT EXISTS board_events (
 DUMMY_HASH = hashlib.sha256(b"lanehub-dummy-token-for-constant-time").hexdigest()
 
 
+def _ensure_board_columns(conn: sqlite3.Connection) -> None:
+    """Idempotent column adds for boards tables (like db._ensure_columns)."""
+    b_cols = {r["name"] for r in conn.execute("PRAGMA table_info(boards)").fetchall()}
+    if b_cols:
+        if "status_i18n" not in b_cols:
+            conn.execute("ALTER TABLE boards ADD COLUMN status_i18n TEXT NOT NULL DEFAULT '{}'")
+        if "status_updated_at" not in b_cols:
+            conn.execute("ALTER TABLE boards ADD COLUMN status_updated_at INTEGER")
+
+    t_cols = {r["name"] for r in conn.execute("PRAGMA table_info(board_tasks)").fetchall()}
+    if t_cols:
+        if "archived_at" not in t_cols:
+            conn.execute("ALTER TABLE board_tasks ADD COLUMN archived_at INTEGER")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_board_tasks_archived ON board_tasks(board_id, archived_at)")
+
+
 def _conn() -> sqlite3.Connection:
     conn = db.connect()
+    _ensure_board_columns(conn)
     conn.executescript(BOARDS_SCHEMA)
     return conn
 
@@ -113,6 +134,15 @@ def validate_i18n_map(data: Any, field_name: str = "i18n") -> dict[str, str]:
             raise ValueError(f"Invalid language '{k}' in {field_name}. Allowed: {LANGS}")
         cleaned[k] = str(v) if v is not None else ""
     return cleaned
+
+
+def validate_status_i18n(data: Any, field_name: str = "statusI18n") -> dict[str, str]:
+    """Ensure data is a dict with valid language keys and each value <= 300 chars."""
+    cleaned = validate_i18n_map(data, field_name)
+    for k, v in cleaned.items():
+        if len(v) > 300:
+            raise ValueError(f"Status text for '{k}' exceeds 300 characters")
+    return {k: v.strip() for k, v in cleaned.items() if v and v.strip()}
 
 
 def resolve_text(i18n_map: dict[str, str], lang: str, team_lang: str) -> str:
@@ -275,6 +305,7 @@ def update_board(
     client_lang: str | None = None,
     currency: str | None = None,
     rate: float | None = None,
+    status_i18n: dict[str, str] | None = None,
     actor: str = "admin",
 ) -> dict:
     now = int(time.time())
@@ -310,6 +341,14 @@ def update_board(
         updates.append("rate = ?")
         params.append(rate)
         payload["rate"] = rate
+    if status_i18n is not None:
+        cleaned_status = validate_status_i18n(status_i18n)
+        has_text = any(v.strip() for v in cleaned_status.values())
+        updates.append("status_i18n = ?")
+        params.append(json.dumps(cleaned_status, ensure_ascii=False))
+        updates.append("status_updated_at = ?")
+        params.append(now if has_text else None)
+        payload["statusI18n"] = cleaned_status
 
     if not updates:
         b = get_board(board_id)
@@ -325,8 +364,35 @@ def update_board(
         cur = conn.execute(f"UPDATE boards SET {', '.join(updates)} WHERE id = ?", params)
         if cur.rowcount == 0:
             raise LookupError(f"Board {board_id} not found")
-        record_event(conn, board_id, actor=actor, action="board_updated", payload=payload)
+        if status_i18n is not None:
+            record_event(conn, board_id, actor=actor, action="status", payload={"statusI18n": payload["statusI18n"]})
+        other_payload = {k: v for k, v in payload.items() if k != "statusI18n"}
+        if other_payload or status_i18n is None:
+            record_event(conn, board_id, actor=actor, action="board_updated", payload=payload)
 
+    return get_board(board_id)
+
+
+def set_board_status(board_id: int, status_i18n: dict[str, str], actor: str = "agent") -> dict:
+    """Update or clear board status line and record 'status' event."""
+    cleaned = validate_status_i18n(status_i18n)
+    now = int(time.time())
+    has_text = any(v.strip() for v in cleaned.values())
+    status_updated_at = now if has_text else None
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE boards SET status_i18n = ?, status_updated_at = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(cleaned, ensure_ascii=False), status_updated_at, now, board_id),
+        )
+        if cur.rowcount == 0:
+            raise LookupError(f"Board {board_id} not found")
+        record_event(
+            conn,
+            board_id,
+            actor=actor,
+            action="status",
+            payload={"statusI18n": cleaned},
+        )
     return get_board(board_id)
 
 
@@ -353,6 +419,9 @@ def delete_board(board_id: int, actor: str = "admin") -> bool:
 
 def _board_row_to_dict(row: sqlite3.Row) -> dict:
     # Notice: NEVER include client_token_hash here
+    keys = row.keys()
+    status_i18n = json.loads(row["status_i18n"] or "{}") if "status_i18n" in keys else {}
+    status_updated_at = row["status_updated_at"] if "status_updated_at" in keys else None
     return {
         "id": row["id"],
         "chatId": row["chat_id"],
@@ -362,6 +431,8 @@ def _board_row_to_dict(row: sqlite3.Row) -> dict:
         "clientLang": row["client_lang"],
         "currency": row["currency"],
         "rate": row["rate"],
+        "statusI18n": status_i18n,
+        "statusUpdatedAt": status_updated_at,
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
     }
@@ -376,11 +447,13 @@ def get_board_token_hash(board_id: int) -> str | None:
 def get_board_client_updated_at(board_id: int) -> str:
     """Return max updated time across board, client-visible tasks, and ledger events as ISO 8601 UTC string."""
     with _conn() as conn:
-        b_row = conn.execute("SELECT updated_at FROM boards WHERE id = ?", (board_id,)).fetchone()
+        b_row = conn.execute("SELECT updated_at, status_updated_at FROM boards WHERE id = ?", (board_id,)).fetchone()
         t_row = conn.execute("SELECT MAX(updated_at) as max_t FROM board_tasks WHERE board_id = ? AND client_visible = 1", (board_id,)).fetchone()
         e_row = conn.execute("SELECT MAX(at) as max_e FROM board_events WHERE board_id = ?", (board_id,)).fetchone()
 
         candidates = [b_row["updated_at"] if b_row else 0]
+        if b_row and b_row["status_updated_at"]:
+            candidates.append(b_row["status_updated_at"])
         if t_row and t_row["max_t"]:
             candidates.append(t_row["max_t"])
         if e_row and e_row["max_e"]:
@@ -459,6 +532,8 @@ def get_columns_summary(board_id: int) -> dict[str, dict[str, Any]]:
 def _task_row_to_dict(row: sqlite3.Row) -> dict:
     title_i18n = json.loads(row["title_i18n"] or "{}")
     client_note_i18n = json.loads(row["client_note_i18n"] or "{}")
+    keys = row.keys()
+    archived_at = row["archived_at"] if "archived_at" in keys else None
     return {
         "id": row["id"],
         "boardId": row["board_id"],
@@ -474,10 +549,11 @@ def _task_row_to_dict(row: sqlite3.Row) -> dict:
         "titleI18n": title_i18n,
         "clientNoteI18n": client_note_i18n,
         "internalNote": row["internal_note"],
+        "archivedAt": archived_at,
         "version": row["version"],
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
-        "updatedBy": row["updated_by"],
+        "updatedBy": row["updated_by"] if "updated_by" in keys else "",
         "missingLangs": missing_langs(title_i18n),
     }
 
@@ -574,15 +650,34 @@ def get_task(task_id: str) -> dict | None:
         return _task_row_to_dict(row) if row else None
 
 
-def list_tasks(board_id: int, client_visible_only: bool = False) -> list[dict]:
+def list_tasks(
+    board_id: int,
+    client_visible_only: bool = False,
+    archived: str | bool | None = False,
+) -> list[dict]:
     with _conn() as conn:
         sql = "SELECT * FROM board_tasks WHERE board_id = ?"
         params: list[Any] = [board_id]
         if client_visible_only:
             sql += " AND client_visible = 1"
+        if archived == "1" or archived is True:
+            sql += " AND archived_at IS NOT NULL"
+        elif archived == "all":
+            pass
+        else:
+            sql += " AND archived_at IS NULL"
         sql += " ORDER BY status ASC, position ASC"
         rows = conn.execute(sql, params).fetchall()
         return [_task_row_to_dict(r) for r in rows]
+
+
+def count_archived_tasks(board_id: int) -> int:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM board_tasks WHERE board_id = ? AND archived_at IS NOT NULL",
+            (board_id,),
+        ).fetchone()
+        return int(row["cnt"] or 0) if row else 0
 
 
 class VersionConflictError(Exception):
@@ -608,6 +703,7 @@ def update_task(
     title_i18n: dict[str, str] | None = None,
     client_note_i18n: dict[str, str] | None = None,
     internal_note: str | None = None,
+    archived: bool | None = None,
     version: int | None = None,
     actor: str = "admin",
 ) -> dict:
@@ -695,6 +791,17 @@ def update_task(
             payload["internalNote"] = internal_note
 
         now = int(time.time())
+        if archived is not None:
+            if archived:
+                updates.append("archived_at = ?")
+                params.append(now)
+                payload["archived"] = True
+                payload["archivedAt"] = now
+            else:
+                updates.append("archived_at = NULL")
+                payload["archived"] = False
+                payload["archivedAt"] = None
+
         updates.append("version = version + 1")
         updates.append("updated_at = ?")
         params.append(now)
@@ -707,14 +814,27 @@ def update_task(
             params,
         )
 
-        record_event(
-            conn,
-            board_id,
-            actor=actor,
-            action="task_updated",
-            task_id=task_id,
-            payload=payload,
-        )
+        if archived is not None:
+            action = "archived" if archived else "unarchived"
+            record_event(
+                conn,
+                board_id,
+                actor=actor,
+                action=action,
+                task_id=task_id,
+                payload={"archivedAt": payload.get("archivedAt")},
+            )
+
+        other_payload = {k: v for k, v in payload.items() if k not in ("archived", "archivedAt")}
+        if other_payload or archived is None:
+            record_event(
+                conn,
+                board_id,
+                actor=actor,
+                action="task_updated",
+                task_id=task_id,
+                payload=payload,
+            )
 
     return get_task(task_id)
 

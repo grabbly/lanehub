@@ -41,7 +41,14 @@ class TaskUpdateRequest(BaseModel):
     title_i18n: dict[str, str] | None = Field(default=None, alias="titleI18n")
     client_note_i18n: dict[str, str] | None = Field(default=None, alias="clientNoteI18n")
     internal_note: str | None = Field(default=None, alias="internalNote")
+    archived: bool | None = Field(default=None)
     version: int | None = Field(default=None)
+
+    model_config = {"populate_by_name": True}
+
+
+class BoardStatusRequest(BaseModel):
+    status_i18n: dict[str, str] = Field(default_factory=dict, alias="statusI18n")
 
     model_config = {"populate_by_name": True}
 
@@ -82,13 +89,14 @@ def get_agent_board(
     lane_slug: str,
     x_bridge_token: str = Header(default="", alias="X-Bridge-Token"),
     board: str | None = Query(default=None),
+    archived: str | None = Query(default=None),
 ) -> dict:
     lane, b = _get_agent_board(lane_slug, x_bridge_token, board_slug=board)
     bid = b["id"]
     ledger_derived = store.derive_ledger(bid)
     ledger_entries = store.list_ledger(bid)
     columns = store.get_columns_summary(bid)
-    tasks = store.list_tasks(bid)
+    tasks = store.list_tasks(bid, archived=archived)
 
     return {
         "board": b,
@@ -171,6 +179,7 @@ def update_agent_task(
             title_i18n=req.title_i18n,
             client_note_i18n=req.client_note_i18n,
             internal_note=req.internal_note,
+            archived=req.archived,
             version=req.version,
             actor=lane_slug,
         )
@@ -182,6 +191,25 @@ def update_agent_task(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
+    return updated
+
+
+@router.put("/{lane_slug}/board/status")
+def update_agent_board_status(
+    lane_slug: str,
+    req: BoardStatusRequest,
+    x_bridge_token: str = Header(default="", alias="X-Bridge-Token"),
+    board: str | None = Query(default=None),
+) -> dict:
+    lane, b = _get_agent_board(lane_slug, x_bridge_token, board_slug=board)
+    try:
+        updated = store.set_board_status(
+            board_id=b["id"],
+            status_i18n=req.status_i18n,
+            actor=lane_slug,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
     return updated
 
 

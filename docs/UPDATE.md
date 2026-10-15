@@ -76,6 +76,15 @@ itself and silently takes every update away from the new hub. So:
 
 ## Version-specific notes
 
+### 0.11.0 — client panel
+
+- **Nothing to do:** new columns (`board_tasks.archived_at`, `boards.status_i18n`,
+  `boards.status_updated_at`) and indexes are added automatically on startup.
+- Existing boards and API clients keep working unchanged.
+- Adds manual archiving for tasks, status line «Де ми зараз» (`PUT /{lane}/board/status`),
+  client panel highlights (status card, waiting banner, new badges, monthly archive section),
+  and operator panel archive / status tools. See [BOARDS.md](BOARDS.md).
+
 ### 0.10.0 — voice messages as text (optional)
 
 - **Nothing to do** if you don't set `HUB_STT_URL`: the feature stays off and

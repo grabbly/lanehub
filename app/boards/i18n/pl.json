@@ -33,5 +33,10 @@
   "empty_column": "Na razie pusto.",
   "updated_at_prefix": "Zaktualizowano: ",
   "loading": "Ładowanie…",
-  "error_load": "Nie udało się załadować tablicy. Odśwież stronę za chwilę."
+  "error_load": "Nie udało się załadować tablicy. Odśwież stronę za chwilę.",
+  "status_title": "Gdzie teraz jesteśmy",
+  "status_updated_prefix": "zaktualizowano ",
+  "waiting_banner_title": "Wymagane od Ciebie",
+  "badge_new": "nowe",
+  "archive_title": "Archiwum"
 }

@@ -33,6 +33,7 @@ class BoardUpdateRequest(BaseModel):
     client_lang: str | None = Field(default=None, alias="clientLang")
     currency: str | None = Field(default=None)
     rate: float | None = Field(default=None)
+    status_i18n: dict[str, str] | None = Field(default=None, alias="statusI18n")
 
     model_config = {"populate_by_name": True}
 
@@ -75,6 +76,7 @@ def list_boards() -> list[dict]:
             **b,
             "ledger": ledger,
             "taskCount": total_tasks,
+            "archivedCount": store.count_archived_tasks(bid),
             "columns": cols,
         })
     return result
@@ -126,18 +128,19 @@ def create_board(req: BoardCreateRequest) -> dict:
 
 
 @router.get("/{board_id}")
-def get_board(board_id: int) -> dict:
+def get_board(board_id: int, archived: str | None = Query(default=None)) -> dict:
     b = _board_or_404(board_id)
     ledger_derived = store.derive_ledger(board_id)
     ledger_entries = store.list_ledger(board_id)
     columns = store.get_columns_summary(board_id)
-    tasks = store.list_tasks(board_id)
+    tasks = store.list_tasks(board_id, archived=archived)
 
     return {
         **b,
         "ledger": {**ledger_derived, "entries": ledger_entries},
         "columns": columns,
         "tasks": tasks,
+        "archivedCount": store.count_archived_tasks(board_id),
     }
 
 
@@ -153,6 +156,7 @@ def update_board(board_id: int, req: BoardUpdateRequest) -> dict:
             client_lang=req.client_lang,
             currency=req.currency,
             rate=req.rate,
+            status_i18n=req.status_i18n,
             actor="admin",
         )
     except ValueError as e:
@@ -182,9 +186,9 @@ def rotate_token(board_id: int) -> dict:
 # ---------------------------------------------------------------------------
 
 @router.get("/{board_id}/tasks")
-def list_tasks(board_id: int) -> list[dict]:
+def list_tasks(board_id: int, archived: str | None = Query(default=None)) -> list[dict]:
     _board_or_404(board_id)
-    return store.list_tasks(board_id)
+    return store.list_tasks(board_id, archived=archived)
 
 
 @router.post("/{board_id}/tasks", status_code=status.HTTP_201_CREATED)
@@ -239,6 +243,7 @@ def update_task(board_id: int, task_id: str, req: TaskUpdateRequest) -> Any:
             title_i18n=req.title_i18n,
             client_note_i18n=req.client_note_i18n,
             internal_note=req.internal_note,
+            archived=req.archived,
             version=req.version,
             actor="admin",
         )

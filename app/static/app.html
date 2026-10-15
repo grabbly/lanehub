@@ -490,6 +490,14 @@
         <div class="bd-hd-left">
           <h1 id="bd-title"></h1>
           <p class="bd-sub" id="bd-sub"></p>
+          <div class="bd-status-line" id="bd-status-wrap" style="margin-top:10px; display:flex; align-items:flex-start; gap:8px;">
+            <div style="flex:1; min-width:0;">
+              <span style="font-size:11px; text-transform:uppercase; letter-spacing:.05em; font-weight:600; color:var(--accent);">Де ми зараз:</span>
+              <span id="bd-status-view" style="margin-left:6px; font-weight:500;"></span>
+              <span id="bd-status-time" class="help" style="margin-left:6px; font-size:12px;"></span>
+            </div>
+            <button class="btn sm" id="bd-btn-edit-status" type="button">Edit</button>
+          </div>
         </div>
         <div class="bd-hd-right">
           <div class="bd-hd-actions">
@@ -511,6 +519,7 @@
         <select class="btn" id="bd-flt-group" aria-label="Group filter">
           <option value="">All groups</option>
         </select>
+        <button class="btn" id="bd-btn-toggle-archive" type="button">Show archive (0)</button>
         <span class="spacer"></span>
         <div class="seg" id="bd-lang-seg" aria-label="Language view">
           <button type="button" class="bd-lbtn" data-lang="en">EN</button>
@@ -521,6 +530,13 @@
       </div>
 
       <div class="bd-board" id="bd-board-cols"></div>
+      <div id="bd-archive-view" class="bd-archive-container" hidden style="background:var(--panel-2); border-radius:14px; padding:16px; display:grid; gap:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h2 style="font-size:15px; font-weight:700; margin:0;">Archived tasks</h2>
+          <span class="help" id="bd-archive-meta"></span>
+        </div>
+        <div id="bd-archive-months" style="display:grid; gap:12px;"></div>
+      </div>
     </div>
 
     <!-- Empty boards state -->
@@ -797,6 +813,45 @@
   </form>
 </dialog>
 
+<!-- Status dialog (Where we are now) -->
+<dialog id="bd-status-dlg" style="width:min(520px, calc(100vw - 32px));">
+  <div class="dlg-hd"><h2>Edit «Де ми зараз»</h2><button class="ghost" id="bd-status-close" aria-label="Close">✕</button></div>
+  <form id="bd-status-form">
+    <div class="dlg-bd" style="display:grid; gap:12px;">
+      <p class="help" style="margin:0;">Where we are now — brief client status line (≤ 300 chars per language). Empty clears it.</p>
+      <div class="bd-lang-tabs" role="tablist" id="bd-status-lang-strip">
+        <button type="button" class="bd-lang-tab" data-status-lang="en">EN</button>
+        <button type="button" class="bd-lang-tab" data-status-lang="pl">PL</button>
+        <button type="button" class="bd-lang-tab" data-status-lang="ru">RU</button>
+        <button type="button" class="bd-lang-tab" data-status-lang="uk">UK</button>
+      </div>
+      <div id="bd-status-lang-panels">
+        <div class="bd-status-lang-box" data-status-box="en">
+          <label class="lbl" for="bd-status-en">Status (EN)</label>
+          <textarea class="txt" id="bd-status-en" rows="3" maxlength="300" placeholder="e.g. Setting up payment provider"></textarea>
+        </div>
+        <div class="bd-status-lang-box" data-status-box="pl" hidden>
+          <label class="lbl" for="bd-status-pl">Status (PL)</label>
+          <textarea class="txt" id="bd-status-pl" rows="3" maxlength="300" placeholder="np. Konfiguracja płatności"></textarea>
+        </div>
+        <div class="bd-status-lang-box" data-status-box="ru" hidden>
+          <label class="lbl" for="bd-status-ru">Status (RU)</label>
+          <textarea class="txt" id="bd-status-ru" rows="3" maxlength="300" placeholder="напр. Настраиваем платежи"></textarea>
+        </div>
+        <div class="bd-status-lang-box" data-status-box="uk" hidden>
+          <label class="lbl" for="bd-status-uk">Status (UK)</label>
+          <textarea class="txt" id="bd-status-uk" rows="3" maxlength="300" placeholder="напр. Налаштовуємо оплати"></textarea>
+        </div>
+      </div>
+      <div class="error" id="bd-status-error"></div>
+    </div>
+    <div class="dlg-ft">
+      <button type="button" class="btn" id="bd-status-cancel">Cancel</button>
+      <button type="submit" class="btn primary" id="bd-status-save">Save status</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- Ledger dialog -->
 <dialog id="bd-ledger-dlg" style="width:min(640px, calc(100vw - 32px));">
   <div class="dlg-hd"><h2 id="bd-lg-title">Ledger</h2><button class="ghost" id="bd-lg-close" aria-label="Close">✕</button></div>
@@ -958,7 +1013,10 @@
       <div class="error" id="bd-cd-error"></div>
     </div>
     <div class="dlg-ft" style="display:flex; justify-content:space-between; gap:8px;">
-      <button type="button" class="btn danger" id="bd-cd-delete" hidden>Delete</button>
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="btn danger" id="bd-cd-delete" hidden>Delete</button>
+        <button type="button" class="btn" id="bd-cd-archive" hidden>Archive</button>
+      </div>
       <div style="display:flex; gap:8px; margin-left:auto;">
         <button type="button" class="btn" id="bd-cd-cancel">Cancel</button>
         <button type="submit" class="btn primary" id="bd-cd-save">Save</button>
@@ -2458,6 +2516,8 @@ let editingTaskId = null;
 let editingTask = null;
 let bdTaskDelArmed = false;
 let cardDialogActiveLang = 'en';
+let statusDialogActiveLang = 'en';
+let isShowingArchive = false;
 let editingLedgerEntryId = null;
 
 async function boardApi(path, opts = {}) {
@@ -2595,7 +2655,11 @@ async function loadBoardDetails(boardId, silent = false) {
 
     renderBoardHeader();
     renderBoardToolbar();
-    renderBoardTasks();
+    if (isShowingArchive) {
+      await renderArchiveView();
+    } else {
+      renderBoardTasks();
+    }
   } catch (err) {
     if (!silent) toast('Failed to load board: ' + err.message);
   }
@@ -2608,6 +2672,17 @@ function renderBoardHeader() {
   const cTitle = getChatTitle(b.chatId);
   const rateText = b.rate != null ? `rate ${b.rate} ${b.currency}/h` : 'no rate';
   $('bd-sub').textContent = `${cTitle} · ${rateText} · hours = price ÷ rate`;
+
+  const sMap = b.statusI18n || {};
+  let curStatus = (sMap[boardViewLang] || '').trim();
+  if (!curStatus && b.teamLang) curStatus = (sMap[b.teamLang] || '').trim();
+  if (!curStatus) {
+    for (const k of BD_LANGS) {
+      if ((sMap[k] || '').trim()) { curStatus = sMap[k].trim(); break; }
+    }
+  }
+  $('bd-status-view').textContent = curStatus || '—';
+  $('bd-status-time').textContent = b.statusUpdatedAt ? '· updated ' + fmtDate(b.statusUpdatedAt) : '';
 
   const ledger = b.ledger || { paid: 0, deposit: 0, allocated: 0, remaining: 0 };
   $('bd-lg-paid').textContent = bdFmtCur(ledger.paid, b.currency);
@@ -2641,6 +2716,14 @@ function renderBoardToolbar() {
     o.value = g;
     return o;
   }));
+
+  const archCount = currentBoard?.archivedCount ?? 0;
+  $('bd-btn-toggle-archive').textContent = isShowingArchive ? 'Hide archive' : `Show archive (${archCount})`;
+  if (isShowingArchive) {
+    $('bd-btn-toggle-archive').classList.add('primary');
+  } else {
+    $('bd-btn-toggle-archive').classList.remove('primary');
+  }
 
   document.querySelectorAll('#bd-lang-seg .bd-lbtn').forEach(btn => {
     const l = btn.dataset.lang;
@@ -2841,6 +2924,17 @@ function renderCardElement(t, colId, colIdx) {
     };
     movesDiv.append(nextBtn);
   }
+  if (colId === 'done') {
+    const archBtn = document.createElement('button');
+    archBtn.type = 'button';
+    archBtn.className = 'btn sm';
+    archBtn.textContent = 'Archive';
+    archBtn.onclick = async e => {
+      e.stopPropagation();
+      await archiveTask(t, true);
+    };
+    movesDiv.append(archBtn);
+  }
   card.append(movesDiv);
 
   card.addEventListener('dragstart', e => {
@@ -2977,6 +3071,19 @@ function openTaskDialog(task) {
   delBtn.hidden = !task;
   delBtn.textContent = 'Delete';
 
+  const archBtn = $('bd-cd-archive');
+  if (task) {
+    archBtn.hidden = false;
+    const isArch = !!task.archivedAt;
+    archBtn.textContent = isArch ? 'Unarchive' : 'Archive';
+    archBtn.onclick = async () => {
+      dlg.close();
+      await archiveTask(task, !isArch);
+    };
+  } else {
+    archBtn.hidden = true;
+  }
+
   $('bd-cd-status').value = task ? (task.status || 'backlog') : 'backlog';
   $('bd-cd-group').value = task ? (task.grp || '') : (boardSelectedGroup || '');
   $('bd-cd-source').value = task ? (task.source || '') : '';
@@ -3016,6 +3123,212 @@ function selectCardDialogLang(lang) {
   document.querySelectorAll('#bd-cd-lang-panels .bd-cd-lang-box').forEach(b => {
     b.hidden = (b.dataset.langBox !== lang);
   });
+}
+
+function openStatusDialog() {
+  if (!currentBoard) return;
+  $('bd-status-error').textContent = '';
+  const sMap = currentBoard.statusI18n || {};
+  BD_LANGS.forEach(l => {
+    const txt = $(`bd-status-${l}`);
+    if (txt) txt.value = sMap[l] || '';
+  });
+  selectStatusDialogLang(boardViewLang || currentBoard?.teamLang || 'en');
+  $('bd-status-dlg').showModal();
+}
+
+function selectStatusDialogLang(lang) {
+  statusDialogActiveLang = lang;
+  document.querySelectorAll('#bd-status-lang-strip .bd-lang-tab').forEach(t => {
+    const isSel = (t.dataset.statusLang === lang);
+    t.setAttribute('aria-selected', isSel);
+  });
+  document.querySelectorAll('#bd-status-lang-panels .bd-status-lang-box').forEach(b => {
+    b.hidden = (b.dataset.statusBox !== lang);
+  });
+}
+
+async function archiveTask(task, shouldArchive) {
+  try {
+    const res = await boardApi(`/admin/api/boards/${currentBoardId}/tasks/${task.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        archived: shouldArchive,
+        version: task.version,
+      }),
+    });
+    if (res.status === 409) {
+      toast('Someone changed this task meanwhile — reloaded.');
+      await loadBoardDetails(currentBoardId);
+      return;
+    }
+    if (!res.ok) {
+      toast('Failed to ' + (shouldArchive ? 'archive' : 'unarchive') + ' task: ' + (res.data?.detail || 'error'));
+      return;
+    }
+    toast(shouldArchive ? 'Task archived' : 'Task unarchived');
+    await loadBoardDetails(currentBoardId);
+  } catch (err) {
+    toast('Error: ' + err.message);
+  }
+}
+
+async function renderArchiveView() {
+  if (!currentBoardId) return;
+  const monthsContainer = $('bd-archive-months');
+  monthsContainer.innerHTML = '<div class="help" style="padding:16px;">Loading archive…</div>';
+  try {
+    const res = await boardApi(`/admin/api/boards/${currentBoardId}/tasks?archived=1`);
+    if (!res.ok) {
+      monthsContainer.innerHTML = `<div class="error" style="padding:16px;">${esc(res.data?.detail || 'Failed to load archive')}</div>`;
+      return;
+    }
+    const tasks = res.data || [];
+    $('bd-archive-meta').textContent = `${tasks.length} task${tasks.length === 1 ? '' : 's'}`;
+    $('bd-btn-toggle-archive').textContent = isShowingArchive ? 'Hide archive' : `Show archive (${tasks.length})`;
+    if (currentBoard) currentBoard.archivedCount = tasks.length;
+
+    if (tasks.length === 0) {
+      monthsContainer.innerHTML = '<div class="help" style="padding:20px; text-align:center;">No archived tasks.</div>';
+      return;
+    }
+
+    const groups = new Map();
+    tasks.forEach(t => {
+      const d = new Date((t.archivedAt || t.updatedAt || Date.now()) * 1000);
+      const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!groups.has(mKey)) groups.set(mKey, { date: d, tasks: [] });
+      groups.get(mKey).tasks.push(t);
+    });
+
+    const sortedKeys = [...groups.keys()].sort().reverse();
+    monthsContainer.replaceChildren();
+
+    sortedKeys.forEach(mKey => {
+      const grp = groups.get(mKey);
+      let monthName = mKey;
+      try {
+        monthName = new Intl.DateTimeFormat(boardViewLang || 'en', { month: 'long', year: 'numeric' }).format(grp.date);
+        monthName = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+      } catch (e) {}
+
+      const monthCount = grp.tasks.length;
+      const monthSum = grp.tasks
+        .filter(t => t.pay === 'deposit' || t.pay === 'paid')
+        .reduce((s, t) => s + (Number(t.price) || 0), 0);
+
+      const section = document.createElement('section');
+      section.style.background = 'var(--panel)';
+      section.style.borderRadius = '10px';
+      section.style.border = '1px solid var(--line)';
+      section.style.padding = '12px 14px';
+      section.style.display = 'grid';
+      section.style.gap = '8px';
+
+      const sHd = document.createElement('div');
+      sHd.style.display = 'flex';
+      sHd.style.justifyContent = 'space-between';
+      sHd.style.alignItems = 'center';
+
+      const sTitle = document.createElement('h3');
+      sTitle.style.fontSize = '14px';
+      sTitle.style.fontWeight = '600';
+      sTitle.style.margin = '0';
+      sTitle.textContent = monthName;
+
+      const sMeta = document.createElement('span');
+      sMeta.className = 'help';
+      sMeta.style.fontSize = '12px';
+      sMeta.textContent = monthCount + (monthSum > 0 ? ' · ' + bdFmtCur(monthSum, currentBoard.currency) : '');
+
+      sHd.append(sTitle, sMeta);
+      section.append(sHd);
+
+      const itemsList = document.createElement('div');
+      itemsList.style.display = 'grid';
+      itemsList.style.gap = '6px';
+
+      grp.tasks.forEach(t => {
+        const item = document.createElement('div');
+        item.style.display = 'flex';
+        item.style.alignItems = 'center';
+        item.style.justifyContent = 'space-between';
+        item.style.gap = '8px';
+        item.style.padding = '8px 10px';
+        item.style.background = 'var(--panel-2)';
+        item.style.borderRadius = '8px';
+
+        const left = document.createElement('div');
+        left.style.display = 'flex';
+        left.style.alignItems = 'center';
+        left.style.gap = '8px';
+        left.style.flex = '1';
+        left.style.minWidth = '0';
+
+        const titleInfo = resolveCardTitle(t, boardViewLang, currentBoard.teamLang);
+        const titleSpan = document.createElement('span');
+        titleSpan.style.fontWeight = '500';
+        titleSpan.style.overflow = 'hidden';
+        titleSpan.style.textOverflow = 'ellipsis';
+        titleSpan.style.whiteSpace = 'nowrap';
+        titleSpan.textContent = titleInfo.text;
+        left.append(titleSpan);
+
+        if (t.grp) {
+          const gChip = document.createElement('span');
+          gChip.className = 'bd-chip';
+          gChip.textContent = t.grp;
+          left.append(gChip);
+        }
+
+        const pay = t.pay || 'estimate';
+        const pChip = document.createElement('span');
+        pChip.className = `bd-chip bd-pay-${pay}`;
+        pChip.textContent = BD_PAY_LABELS[pay] || pay;
+        left.append(pChip);
+
+        if (Number(t.price) > 0) {
+          const prSpan = document.createElement('span');
+          prSpan.className = 'mono';
+          prSpan.style.fontSize = '12px';
+          prSpan.textContent = bdFmtCur(t.price, currentBoard.currency);
+          left.append(prSpan);
+        }
+
+        if (t.clientVisible === false) {
+          const hidChip = document.createElement('span');
+          hidChip.className = 'bd-chip bd-chip-hidden';
+          hidChip.textContent = 'hidden from client';
+          left.append(hidChip);
+        }
+
+        const right = document.createElement('div');
+        right.style.display = 'flex';
+        right.style.alignItems = 'center';
+        right.style.gap = '6px';
+
+        const unarchBtn = document.createElement('button');
+        unarchBtn.type = 'button';
+        unarchBtn.className = 'btn sm';
+        unarchBtn.textContent = 'Unarchive';
+        unarchBtn.onclick = async e => {
+          e.stopPropagation();
+          await archiveTask(t, false);
+        };
+        right.append(unarchBtn);
+
+        item.append(left, right);
+        item.style.cursor = 'pointer';
+        item.onclick = () => openTaskDialog(t);
+        itemsList.append(item);
+      });
+
+      section.append(itemsList);
+      monthsContainer.append(section);
+    });
+  } catch (err) {
+    monthsContainer.innerHTML = `<div class="error" style="padding:16px;">${esc(err.message)}</div>`;
+  }
 }
 
 function openNewBoardDialog(preselectedChatId = null) {
@@ -3458,15 +3771,71 @@ function initBoardsModule() {
       boardViewLang = btn.dataset.lang;
       try { localStorage.setItem(`lanehub.board.${currentBoardId}.lang`, boardViewLang); } catch (e) {}
       renderBoardToolbar();
-      renderBoardTasks();
+      renderBoardHeader();
+      if (isShowingArchive) {
+        renderArchiveView();
+      } else {
+        renderBoardTasks();
+      }
     };
   });
 
   $('bd-board-select').addEventListener('change', async e => {
     currentBoardId = parseInt(e.target.value, 10);
     try { localStorage.setItem('lanehub.board', currentBoardId); } catch (e) {}
+    isShowingArchive = false;
+    $('bd-archive-view').hidden = true;
+    $('bd-board-cols').hidden = false;
     await loadBoardDetails(currentBoardId);
   });
+
+  // Status editor
+  $('bd-btn-edit-status').onclick = () => openStatusDialog();
+  $('bd-status-close').onclick = () => $('bd-status-dlg').close();
+  $('bd-status-cancel').onclick = () => $('bd-status-dlg').close();
+  document.querySelectorAll('#bd-status-lang-strip .bd-lang-tab').forEach(t => {
+    t.onclick = () => selectStatusDialogLang(t.dataset.statusLang);
+  });
+  $('bd-status-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    $('bd-status-error').textContent = '';
+    const statusI18n = {};
+    BD_LANGS.forEach(l => {
+      const val = $(`bd-status-${l}`).value.trim();
+      if (val) statusI18n[l] = val;
+    });
+    try {
+      const res = await boardApi(`/admin/api/boards/${currentBoardId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ statusI18n }),
+      });
+      if (!res.ok) {
+        $('bd-status-error').textContent = res.data?.detail || 'Failed to update status';
+        return;
+      }
+      $('bd-status-dlg').close();
+      await loadBoardDetails(currentBoardId);
+    } catch (err) {
+      $('bd-status-error').textContent = err.message;
+    }
+  });
+
+  // Archive toggle
+  $('bd-btn-toggle-archive').onclick = async () => {
+    isShowingArchive = !isShowingArchive;
+    const archCount = currentBoard?.archivedCount ?? 0;
+    $('bd-btn-toggle-archive').textContent = isShowingArchive ? 'Hide archive' : `Show archive (${archCount})`;
+    if (isShowingArchive) {
+      $('bd-btn-toggle-archive').classList.add('primary');
+      $('bd-board-cols').hidden = true;
+      $('bd-archive-view').hidden = false;
+      await renderArchiveView();
+    } else {
+      $('bd-btn-toggle-archive').classList.remove('primary');
+      $('bd-archive-view').hidden = true;
+      $('bd-board-cols').hidden = false;
+    }
+  };
 
   $('bd-btn-new-board').onclick = () => openNewBoardDialog(null);
   $('bd-btn-empty-new-board').onclick = () => openNewBoardDialog(null);

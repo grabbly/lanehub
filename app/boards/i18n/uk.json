@@ -33,5 +33,10 @@
   "empty_column": "Поки порожньо.",
   "updated_at_prefix": "Оновлено: ",
   "loading": "Завантажую…",
-  "error_load": "Не вдалося завантажити дошку. Оновіть сторінку трохи пізніше."
+  "error_load": "Не вдалося завантажити дошку. Оновіть сторінку трохи пізніше.",
+  "status_title": "Де ми зараз",
+  "status_updated_prefix": "оновлено ",
+  "waiting_banner_title": "Потрібно від вас",
+  "badge_new": "нове",
+  "archive_title": "Архів"
 }

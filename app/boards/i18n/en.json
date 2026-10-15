@@ -33,5 +33,10 @@
   "empty_column": "Empty for now.",
   "updated_at_prefix": "Updated: ",
   "loading": "Loading…",
-  "error_load": "Failed to load board. Please refresh the page in a moment."
+  "error_load": "Failed to load board. Please refresh the page in a moment.",
+  "status_title": "Where we are now",
+  "status_updated_prefix": "updated ",
+  "waiting_banner_title": "Action needed from you",
+  "badge_new": "new",
+  "archive_title": "Archive"
 }

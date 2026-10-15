@@ -91,16 +91,19 @@ def test_client_endpoints_and_privacy(boards_client):
         "clientLang",
         "langs",
         "updatedAt",
+        "status",
+        "statusUpdatedAt",
         "ledger",
         "ui",
         "tasks",
+        "archive",
     }
     assert set(data.keys()) == expected_top_keys
 
     # Exact task object key set check
     assert len(data["tasks"]) == 1
     task_obj = data["tasks"][0]
-    expected_task_keys = {"title", "note", "status", "pay", "price", "position"}
+    expected_task_keys = {"title", "note", "status", "pay", "price", "position", "updatedAt"}
     assert set(task_obj.keys()) == expected_task_keys
 
     # Check values for viewer lang UK

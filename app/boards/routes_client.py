@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import re
+from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Response
@@ -72,7 +74,7 @@ def get_board_page(board_slug: str, token: str) -> Response:
     board = _verify_access(board_slug, token)
     if not board:
         return _not_found_response()
-    return HTMLResponse(content=CLIENT_HTML, headers=SECURITY_HEADERS)
+    return HTMLResponse(content=CLIENT_HTML_PATH.read_text(encoding="utf-8"), headers=SECURITY_HEADERS)
 
 
 @router.get("/{board_slug}/b/{token}/data.json")
@@ -89,7 +91,7 @@ def get_board_data(board_slug: str, token: str, lang: str | None = None) -> Resp
     ui = I18N_DICTS.get(active_lang, I18N_DICTS.get("en", {}))
 
     tasks = []
-    for t in store.list_tasks(board_id, client_visible_only=True):
+    for t in store.list_tasks(board_id, client_visible_only=True, archived=False):
         tasks.append({
             # Untranslated text falls back to the client's language, not the
             # team's: a Ukrainian client reading EN should see Ukrainian.
@@ -99,7 +101,37 @@ def get_board_data(board_slug: str, token: str, lang: str | None = None) -> Resp
             "pay": t["pay"],
             "price": t["price"],
             "position": t["position"],
+            "updatedAt": t["updatedAt"],
         })
+
+    archived_tasks = store.list_tasks(board_id, client_visible_only=True, archived=True)
+    groups: dict[str, list[dict]] = defaultdict(list)
+    for t in archived_tasks:
+        ts = t["archivedAt"] or t["updatedAt"]
+        m_str = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m")
+        groups[m_str].append(t)
+
+    sorted_months = sorted(groups.keys(), reverse=True)
+    archive = []
+    for m in sorted_months:
+        m_tasks = sorted(groups[m], key=lambda x: (x["archivedAt"] or 0), reverse=True)
+        count = len(m_tasks)
+        month_sum = sum(t["price"] for t in m_tasks if t["pay"] in ("deposit", "paid"))
+        items = []
+        for t in m_tasks:
+            items.append({
+                "title": store.resolve_text(t["titleI18n"], active_lang, board["clientLang"]),
+                "price": t["price"],
+                "pay": t["pay"],
+            })
+        archive.append({
+            "month": m,
+            "count": count,
+            "sum": round(month_sum, 2),
+            "items": items,
+        })
+
+    status_text = store.resolve_text(board["statusI18n"], active_lang, board["clientLang"])
 
     payload = {
         "title": board["title"],
@@ -107,8 +139,11 @@ def get_board_data(board_slug: str, token: str, lang: str | None = None) -> Resp
         "clientLang": board["clientLang"],
         "langs": list(store.LANGS),
         "updatedAt": store.get_board_client_updated_at(board_id),
+        "status": status_text,
+        "statusUpdatedAt": board["statusUpdatedAt"],
         "ledger": store.derive_ledger(board_id),
         "ui": ui,
         "tasks": tasks,
+        "archive": archive,
     }
     return JSONResponse(content=payload, headers=SECURITY_HEADERS)

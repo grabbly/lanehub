@@ -62,6 +62,17 @@ location /yl/ {
 }
 ```
 
+## Rules for agents
+
+Boards are **not** an internal team kanban or a dump of subtasks. A board is the **client's window**: where we are, what is done, what we need from the client, and prices. Agents keep it tidy together with their developer:
+
+1. **One card = one result or request the CLIENT understands.** Do not post subtasks, technical chores, or internal steps. Keep those in your own tools, scratchpads, or commit messages.
+2. **Write titles in the client language.** At least provide the client's language in `titleI18n`.
+3. **Need something from the client?** Put what you need in the client note (`clientNoteI18n`) and move the card to `waiting`.
+4. **Finished work?** Move the card to `done` only when the client can actually see or test the result.
+5. **Archive done cards once seen:** Archive cards (e.g. after a week) with `PATCH /{lane}/board/tasks/<id>` `{"archived": true}`.
+6. **Keep «Де ми зараз» current:** Update the status line after each meaningful step using `PUT /{lane}/board/status` with `statusI18n`.
+
 ## Agent API
 
 All calls take `X-Bridge-Token: <lane key>`. The board is the one of the lane's
@@ -69,8 +80,16 @@ bound chat (the oldest one if the chat has several; pick another with
 `?board=<slug>`).
 
 ```bash
-# the whole board: settings, ledger numbers, column sums, cards
+# the whole board: settings, ledger numbers, column sums, non-archived cards
 curl -sS -H "X-Bridge-Token: $KEY" "$HUB/$LANE/board"
+
+# list cards: default = non-archived; ?archived=1 = only archived; ?archived=all = both
+curl -sS -H "X-Bridge-Token: $KEY" "$HUB/$LANE/board?archived=1"
+
+# update status line «Де ми зараз» (max 300 chars per language; empty map clears it)
+curl -sS -X PUT -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
+  -d '{"statusI18n":{"uk":"Налаштовуємо платіжний шлюз","en":"Setting up payment gateway"}}' \
+  "$HUB/$LANE/board/status"
 
 # new card (title in at least one language)
 curl -sS -X POST -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
@@ -81,20 +100,36 @@ curl -sS -X POST -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
 curl -sS -X PATCH -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
   -d '{"status":"doing","version":3}' "$HUB/$LANE/board/tasks/<id>"
 
+# archive or unarchive a card (writes an archived/unarchived event)
+curl -sS -X PATCH -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
+  -d '{"archived":true,"version":3}' "$HUB/$LANE/board/tasks/<id>"
+
 # what changed since event N
 curl -sS -H "X-Bridge-Token: $KEY" "$HUB/$LANE/board/events?since=N"
 ```
 
 Card fields: `status`, `position`, `grp`, `source`, `sourceMessageId`, `pay`,
 `price`, `hours`, `clientVisible`, `titleI18n`, `clientNoteI18n`,
-`internalNote`. Language maps accept only `en`, `pl`, `ru`, `uk`. A 409 carries
+`internalNote`, `archived` (`archivedAt` in output). Language maps accept only `en`, `pl`, `ru`, `uk`. A 409 carries
 the current card in `task`: re-read, re-apply, retry.
+
+Derived ledger numbers (`allocated`, `remaining`) and column sums continue counting archived tasks (money does not disappear when a card is archived).
+
+## Client page data (`data.json`)
+
+The client view at `/{slug}/b/{token}/data.json` returns:
+- `status`: current status line resolved for the viewer's language (fallback: lang → client_lang → any)
+- `statusUpdatedAt`: timestamp when the status was last changed (or null)
+- `tasks`: client-visible non-archived tasks, including `updatedAt` timestamp (used for the «нове» badge)
+- `archive`: list of months, newest first, each `{month: "YYYY-MM", count, sum, items: [{title, price, pay}]}` (grouped by the month of `archived_at`; `sum` calculates deposit/paid cards).
+
+Strict privacy rules apply: internal notes, hours, groups, sources, and IDs are never exposed in `data.json`.
 
 ## Operator API
 
 Cookie session, under `/admin/api/boards`: list/create boards, `GET/PATCH/DELETE
-/{id}`, `POST /{id}/rotate-client-token`, cards (`/{id}/tasks…`, including
-DELETE), ledger (`/{id}/ledger…`), `/{id}/events`, and `POST /{id}/import`
+/{id}` (PATCH accepts `statusI18n`), `POST /{id}/rotate-client-token`, cards (`/{id}/tasks…`, including
+DELETE, PATCH with `archived: true|false`, `?archived=1|all`), ledger (`/{id}/ledger…`), `/{id}/events`, and `POST /{id}/import`
 (with `dryRun`). The panel's **Boards** tab is built on these.
 
 ## Importing a board
@@ -113,3 +148,4 @@ python scripts/import_board.py --db data/hub.db --board yl --create \
 
 Drop `--dry-run` to write. Re-running updates cards with the same id instead of
 duplicating them. Back up `data/hub.db` first.
+

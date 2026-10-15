@@ -46,6 +46,15 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.11.0 — 2026-10-15
+
+- **Boards: Client panel transformation.** Redesigned the client-facing board into a clean, focused window for clients with automatic theme integration, mobile accordions, and i18n.
+- **Manual task archiving:** `board_tasks.archived_at` column added idempotently. Cards can be archived or unarchived via agent or admin PATCH. Default task listings exclude archived tasks, with `?archived=1` or `?archived=all` options. Ledger calculations and column sums preserve archived tasks so budget figures remain exact.
+- **Status line «Де ми зараз»:** `boards.status_i18n` and `boards.status_updated_at` columns added. Agents can update the status line via `PUT /{lane}/board/status` (up to 300 characters per language). Admin panel includes an i18n status dialog.
+- **Client page highlights:** Prominent «Де ми зараз» status card with update timestamp, «Потрібно від вас (N)» banner highlighting actionable waiting tasks, «нове» badge for cards updated since the client's previous visit, and a collapsible monthly archive section.
+- **Operator panel Boards tab:** Multi-language status editor dialog, «Archive» button on done cards and card dialog, and a toolbar toggle to view archived tasks grouped by month with unarchive capability.
+- **Rules for agents:** Documented best practices and rules for AI agents in `docs/BOARDS.md` and `docs/README.ru.md`.
+
 ## 0.10.0 — 2026-10-15
 
 - **Speech-to-text (optional, `HUB_STT_URL`).** Automatic transcription of voice,

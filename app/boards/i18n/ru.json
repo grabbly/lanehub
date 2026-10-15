@@ -33,5 +33,10 @@
   "empty_column": "Пока пусто.",
   "updated_at_prefix": "Обновлено: ",
   "loading": "Загружаю…",
-  "error_load": "Не удалось загрузить доску. Обновите страницу чуть позже."
+  "error_load": "Не удалось загрузить доску. Обновите страницу чуть позже.",
+  "status_title": "Где мы сейчас",
+  "status_updated_prefix": "обновлено ",
+  "waiting_banner_title": "Требуется от вас",
+  "badge_new": "новое",
+  "archive_title": "Архив"
 }

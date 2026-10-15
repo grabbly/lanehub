@@ -75,6 +75,30 @@ h1 { font-size: 24px; font-weight: 600; margin: 0; letter-spacing: -0.01em; text
 .chip.paid { background: var(--info-soft); color: var(--info); }
 .chip.estimate { background: var(--warn-soft); color: var(--warn); }
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.status-card { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 12px 14px; display: grid; gap: 6px; }
+.status-hd { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+.status-lbl { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; color: var(--accent); }
+.status-time { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.status-text { font-size: 14.5px; font-weight: 500; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.waiting-banner { background: var(--warn-soft); border: 1px solid var(--warn); border-radius: var(--radius); padding: 12px 14px; display: grid; gap: 10px; }
+.waiting-banner-hd { font-size: 13.5px; font-weight: 600; color: var(--fg); }
+.waiting-banner-list { display: grid; gap: 8px; }
+.waiting-card { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; display: grid; gap: 4px; }
+.waiting-card .w-title { font-weight: 500; overflow-wrap: anywhere; }
+.waiting-card .w-note { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.badge-new { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: #ffffff; vertical-align: middle; margin-left: 6px; }
+.archive-section { display: grid; gap: 8px; }
+.archive-section h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; margin: 0; color: var(--muted); }
+.archive-months { display: grid; gap: 8px; }
+.archive-month { background: var(--surface-2); border-radius: var(--radius); padding: 10px; }
+.archive-month > summary { list-style: none; cursor: pointer; padding: 4px 2px; -webkit-tap-highlight-color: transparent; }
+.archive-month > summary::-webkit-details-marker { display: none; }
+.archive-month > summary .chev { display: inline-block; transition: transform .15s; color: var(--muted); margin-right: 6px; }
+.archive-month[open] > summary .chev { transform: rotate(90deg); }
+.archive-month-title { font-size: 13.5px; font-weight: 600; }
+.archive-items { margin-top: 8px; display: grid; gap: 6px; }
+.archive-item { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.archive-item .a-title { font-weight: 500; flex: 1 1 200px; overflow-wrap: anywhere; }
 footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
 .err { color: var(--accent); }
 </style>
@@ -98,12 +122,32 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
     </div>
   </header>
 
+  <div class="status-card" id="status-card" hidden>
+    <div class="status-hd">
+      <span class="status-lbl" id="lbl-status"></span>
+      <span class="status-time" id="status-time"></span>
+    </div>
+    <div class="status-text" id="status-text"></div>
+  </div>
+
+  <div class="waiting-banner" id="waiting-banner" hidden>
+    <div class="waiting-banner-hd">
+      <strong id="waiting-banner-title"></strong>
+    </div>
+    <div class="waiting-banner-list" id="waiting-banner-list"></div>
+  </div>
+
   <div class="info">
     <span><strong id="info-title"></strong> <span id="info-backlog"></span></span>
     <span id="info-waiting"></span>
   </div>
 
   <main class="board" id="board"></main>
+
+  <section class="archive-section" id="archive-section" hidden>
+    <h2 id="lbl-archive-title"></h2>
+    <div class="archive-months" id="archive-months"></div>
+  </section>
 
   <footer>
     <span><strong id="footer-q-title"></strong> <span id="footer-q-text"></span></span>
@@ -127,6 +171,14 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
   const isOpen = (id, count) => !mobile.matches || (id in saved ? saved[id] : DEFAULT_OPEN[id] && count > 0);
   const remember = (id, open) => { saved[id] = open; try { localStorage.setItem("yl-client-cols", JSON.stringify(saved)); } catch (e) {} };
   
+  const visitKey = "lh-board-visit-" + window.location.pathname;
+  let prevVisit = null;
+  try {
+    const stored = localStorage.getItem(visitKey);
+    if (stored) prevVisit = parseInt(stored, 10);
+    localStorage.setItem(visitKey, String(Math.floor(Date.now() / 1000)));
+  } catch (e) {}
+
   let lastLang = null, lastData = null;
   mobile.addEventListener("change", () => { if (lastData) render(lastData, lastLang); });
 
@@ -145,6 +197,21 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
       return currency ? formatted + " " + currency : formatted;
     } catch (e) {
       return num + (currency ? " " + currency : "");
+    }
+  }
+
+  function fmtMonth(monthStr, lang) {
+    const parts = monthStr.split("-");
+    if (parts.length !== 2) return monthStr;
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const d = new Date(Date.UTC(year, month - 1, 1));
+    const loc = lang === "uk" ? "uk-UA" : (lang === "pl" ? "pl-PL" : (lang === "ru" ? "ru-RU" : "en-US"));
+    try {
+      const s = new Intl.DateTimeFormat(loc, { month: "long", year: "numeric", timeZone: "UTC" }).format(d);
+      return s.charAt(0).toUpperCase() + s.slice(1);
+    } catch (e) {
+      return monthStr;
     }
   }
 
@@ -230,6 +297,37 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
       $("updated").className = "sub";
     }
 
+    if (data.status && data.status.trim()) {
+      $("status-card").hidden = false;
+      $("lbl-status").textContent = ui.status_title || "Де ми зараз";
+      $("status-text").textContent = data.status.trim();
+      if (data.statusUpdatedAt) {
+        const d = new Date(data.statusUpdatedAt * 1000);
+        const loc = lang === "uk" ? "uk-UA" : (lang === "pl" ? "pl-PL" : (lang === "ru" ? "ru-RU" : "en-US"));
+        $("status-time").textContent = (ui.status_updated_prefix || "оновлено ") + d.toLocaleString(loc, { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+      } else {
+        $("status-time").textContent = "";
+      }
+    } else {
+      $("status-card").hidden = true;
+    }
+
+    const cards = data.cards || data.tasks || [];
+    const waitingCards = cards.filter(c => c.status === "waiting");
+    if (waitingCards.length > 0) {
+      $("waiting-banner").hidden = false;
+      $("waiting-banner-title").textContent = (ui.waiting_banner_title || "Потрібно від вас") + " (" + waitingCards.length + ")";
+      $("waiting-banner-list").replaceChildren(...waitingCards.map(c => {
+        const card = el("div", "waiting-card");
+        card.append(el("div", "w-title", c.title));
+        if (c.note) card.append(el("div", "w-note", c.note));
+        return card;
+      }));
+    } else {
+      $("waiting-banner").hidden = true;
+      $("waiting-banner-list").replaceChildren();
+    }
+
     $("info-title").textContent = ui.info_title;
     $("info-backlog").textContent = ui.info_backlog;
     $("info-waiting").textContent = ui.info_waiting;
@@ -240,7 +338,6 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
 
     renderLangSwitch(data.langs, lang);
 
-    const cards = data.cards || data.tasks || [];
     $("board").replaceChildren(...COLS.map(col => {
       const colName = ui[col.titleKey] || col.id;
       const colHint = ui[col.hintKey] || "";
@@ -269,7 +366,13 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
       if (!list.length) body.append(el("div", "empty", ui.empty_column));
       list.forEach(c => {
         const card = el("article", "card");
-        card.append(el("div", "title", c.title));
+        const titleDiv = el("div", "title");
+        titleDiv.append(el("span", null, c.title));
+        const isNew = prevVisit && c.updatedAt && (c.updatedAt > prevVisit);
+        if (isNew) {
+          titleDiv.append(el("span", "badge-new", ui.badge_new || "нове"));
+        }
+        card.append(titleDiv);
         const row = el("div", "row");
         row.append(priceChip(c, ui, lang, currency));
         card.append(row);
@@ -279,6 +382,35 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
       sec.append(body);
       return sec;
     }));
+
+    const archiveList = data.archive || [];
+    if (archiveList.length > 0) {
+      $("archive-section").hidden = false;
+      $("lbl-archive-title").textContent = ui.archive_title || "Архів";
+      $("archive-months").replaceChildren(...archiveList.map(m => {
+        const sec = el("details", "archive-month");
+        const sum = el("summary");
+        const chev = el("span", "chev", "›");
+        const monthName = fmtMonth(m.month, lang);
+        const countAndSum = m.count + (m.sum > 0 ? " · " + fmtMoney(m.sum, lang, currency) : "");
+        const titleSpan = el("span", "archive-month-title", monthName + " · " + countAndSum);
+        sum.append(chev, titleSpan);
+        sec.append(sum);
+
+        const itemsBox = el("div", "archive-items");
+        (m.items || []).forEach(it => {
+          const itRow = el("div", "archive-item");
+          itRow.append(el("span", "a-title", it.title));
+          itRow.append(priceChip(it, ui, lang, currency));
+          itemsBox.append(itRow);
+        });
+        sec.append(itemsBox);
+        return sec;
+      }));
+    } else {
+      $("archive-section").hidden = true;
+      $("archive-months").replaceChildren();
+    }
   }
 
   function loadData(lang) {
