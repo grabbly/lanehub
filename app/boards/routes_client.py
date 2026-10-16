@@ -141,6 +141,7 @@ def get_board_data(board_slug: str, token: str, lang: str | None = None) -> Resp
         })
 
     status_text = store.resolve_text(board["statusI18n"], active_lang, board["clientLang"])
+    ledger, deposit_history = store.ledger_with_deposit_history(board_id, active_lang, board["clientLang"])
 
     payload = {
         "title": board["title"],
@@ -150,7 +151,8 @@ def get_board_data(board_slug: str, token: str, lang: str | None = None) -> Resp
         "updatedAt": store.get_board_client_updated_at(board_id),
         "status": status_text,
         "statusUpdatedAt": board["statusUpdatedAt"],
-        "ledger": store.derive_ledger(board_id),
+        "ledger": ledger,
+        "depositHistory": deposit_history,
         "ui": ui,
         "tasks": tasks,
         "archive": archive,

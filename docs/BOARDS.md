@@ -139,8 +139,36 @@ The client view at `/{slug}/b/{token}/data.json` returns:
 - `statusUpdatedAt`: timestamp when the status was last changed (or null)
 - `tasks`: client-visible non-archived tasks, including `updatedAt` timestamp (used for the «нове» badge); tasks in `waiting` also include `id` and `clientDoneAt`
 - `archive`: list of months, newest first, each `{month: "YYYY-MM", count, sum, items: [{title, price, pay}]}` (grouped by the month of `archived_at`; `sum` calculates deposit/paid cards).
+- `depositHistory`: what the deposit was spent on, newest first (see below).
 
 Strict privacy rules apply: internal notes, hours, groups, sources, and task IDs on non-waiting tasks are never exposed in `data.json`.
+
+### «Куди пішов депозит» (deposit history)
+
+On the client page the «Розподілено» and «Залишок» tiles are buttons (dotted
+underline; hover shows a hint). A click or tap opens a small dialog listing
+where the deposit went, and its footer reads «Депозит X − Розподілено Y =
+Залишок Z» — the same numbers as the tiles. It closes with ✕, Esc or a click
+outside, keeps keyboard focus inside while open and returns it to the tile.
+The tiles stay plain when a board has no deposit activity.
+
+`depositHistory` items, newest first (by date; on the same day spending is
+listed above the top-up):
+
+| `kind` | Fields | From |
+|---|---|---|
+| `deposit` | `amount`, `date` | ledger deposit entry (+) |
+| `refund` | `amount`, `date` | ledger refund entry (−) |
+| `task` | `title`, `status`, `amount`, `date` | a client-visible card with `pay: "deposit"`, archived ones included; `date` = archive date, else last change (`YYYY-MM-DD`, UTC) |
+| `other` | `amount` | the sum of `pay: "deposit"` cards hidden from the client (`clientVisible: false`), one line, last |
+
+Nothing else is exposed: no ids, no ledger notes, no internal notes or hours.
+Hidden cards are counted in *allocated* (as before) but never named, so the
+list still adds up: deposits − refunds = *deposit*, cards + «Інші роботи» =
+*allocated*. Both the tiles and the list are computed from the same rows in one
+read. The list is newest-first without a running balance: a card's date moves
+when it is edited and hidden cards have no date, so a running balance would
+jump around; the footer shows the one balance that matters.
 
 ## Operator API
 

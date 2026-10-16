@@ -47,5 +47,12 @@
   "client_done_comment_add": "Add comment",
   "client_done_comment_edit": "Edit comment",
   "client_done_comment_save": "Save",
-  "client_done_comment_cancel": "Cancel"
+  "client_done_comment_cancel": "Cancel",
+  "deposit_history_title": "Where the deposit went",
+  "deposit_history_open": "Click to see where the deposit went",
+  "deposit_history_topup": "Deposit top-up",
+  "deposit_history_refund": "Refund from deposit",
+  "deposit_history_other": "Other work",
+  "deposit_history_empty": "No deposit activity yet.",
+  "deposit_history_close": "Close"
 }

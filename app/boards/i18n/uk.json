@@ -47,5 +47,12 @@
   "client_done_comment_add": "Додати коментар",
   "client_done_comment_edit": "Змінити коментар",
   "client_done_comment_save": "Зберегти",
-  "client_done_comment_cancel": "Відміна"
+  "client_done_comment_cancel": "Відміна",
+  "deposit_history_title": "Куди пішов депозит",
+  "deposit_history_open": "Натисніть, щоб побачити, куди пішов депозит",
+  "deposit_history_topup": "Поповнення депозиту",
+  "deposit_history_refund": "Повернення з депозиту",
+  "deposit_history_other": "Інші роботи",
+  "deposit_history_empty": "Поки немає рухів по депозиту.",
+  "deposit_history_close": "Закрити"
 }

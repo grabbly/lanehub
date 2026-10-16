@@ -76,6 +76,12 @@ itself and silently takes every update away from the new hub. So:
 
 ## Version-specific notes
 
+### 0.14.0 — deposit history on the client page
+
+- **Nothing to do:** no schema, setting or API-breaking changes; existing boards get it on update.
+- On the client page, the «Розподілено» and «Залишок» tiles open «Куди пішов депозит»: deposit top-ups/refunds and the cards paid from the deposit (archived included), newest first, with a footer that equals the tiles.
+- `data.json` gains `depositHistory` (whitelisted fields only). Cards hidden from the client are summed into one «Інші роботи» line, never named. Ledger notes are not shown to the client.
+
 ### 0.13.0 — client comment with the ✓ Done tick
 
 - **Nothing to do:** new column `board_tasks.client_done_comment` is added automatically on startup.

@@ -97,6 +97,7 @@ def test_client_endpoints_and_privacy(boards_client):
         "ui",
         "tasks",
         "archive",
+        "depositHistory",
     }
     assert set(data.keys()) == expected_top_keys
 

@@ -491,37 +491,116 @@ def get_board_client_updated_at(board_id: int) -> str:
 # Derived Ledger & Columns
 # ---------------------------------------------------------------------------
 
+# Both derive_ledger and deposit_history read through _deposit_sources, so the
+# client's «where did the deposit go» list can't drift from the header numbers.
+def _deposit_sources(conn: sqlite3.Connection, board_id: int) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
+    """Ledger rows and every pay='deposit' task (archived and hidden ones included)."""
+    ledger_rows = conn.execute(
+        "SELECT id, kind, amount, at FROM board_ledger WHERE board_id = ? ORDER BY at ASC, id ASC",
+        (board_id,),
+    ).fetchall()
+    task_rows = conn.execute(
+        """
+        SELECT price, status, client_visible, title_i18n, archived_at, updated_at
+        FROM board_tasks
+        WHERE board_id = ? AND pay = 'deposit'
+        """,
+        (board_id,),
+    ).fetchall()
+    return ledger_rows, task_rows
+
+
+def _ledger_totals(ledger_rows: Iterable[sqlite3.Row], task_rows: Iterable[sqlite3.Row]) -> dict:
+    paid = 0.0
+    deposit_sum = 0.0
+    refund_sum = 0.0
+    for r in ledger_rows:
+        amt = float(r["amount"] or 0)
+        if r["kind"] == "payment":
+            paid += amt
+        elif r["kind"] == "deposit":
+            deposit_sum += amt
+        elif r["kind"] == "refund":
+            refund_sum += amt
+
+    deposit = deposit_sum - refund_sum
+    allocated = sum(float(t["price"] or 0) for t in task_rows)
+    return {
+        "paid": paid,
+        "deposit": deposit,
+        "allocated": allocated,
+        "remaining": deposit - allocated,
+    }
+
+
 def derive_ledger(board_id: int) -> dict:
     """Calculate derived ledger numbers: paid, deposit, allocated, remaining."""
     with _conn() as conn:
-        rows = conn.execute("SELECT kind, amount FROM board_ledger WHERE board_id = ?", (board_id,)).fetchall()
-        paid = 0.0
-        deposit_sum = 0.0
-        refund_sum = 0.0
-        for r in rows:
-            amt = float(r["amount"] or 0)
-            if r["kind"] == "payment":
-                paid += amt
-            elif r["kind"] == "deposit":
-                deposit_sum += amt
-            elif r["kind"] == "refund":
-                refund_sum += amt
+        ledger_rows, task_rows = _deposit_sources(conn, board_id)
+    return _ledger_totals(ledger_rows, task_rows)
 
-        deposit = deposit_sum - refund_sum
 
-        allocated_row = conn.execute(
-            "SELECT COALESCE(SUM(price), 0.0) as alloc FROM board_tasks WHERE board_id = ? AND pay = 'deposit'",
-            (board_id,),
-        ).fetchone()
-        allocated = float(allocated_row["alloc"] or 0.0)
-        remaining = deposit - allocated
+_DATE_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
 
-        return {
-            "paid": paid,
-            "deposit": deposit,
-            "allocated": allocated,
-            "remaining": remaining,
-        }
+
+def _ledger_date(at: str | None) -> str:
+    at = (at or "").strip()
+    m = _DATE_PREFIX_RE.match(at)
+    return m.group(0) if m else at[:32]
+
+
+def ledger_with_deposit_history(board_id: int, lang: str, fallback_lang: str) -> tuple[dict, list[dict]]:
+    """derive_ledger() and deposit_history() from one read, so they always agree."""
+    with _conn() as conn:
+        ledger_rows, task_rows = _deposit_sources(conn, board_id)
+    return _ledger_totals(ledger_rows, task_rows), _deposit_history_items(ledger_rows, task_rows, lang, fallback_lang)
+
+
+def deposit_history(board_id: int, lang: str, fallback_lang: str) -> list[dict]:
+    """What the deposit was spent on, for the client page. Newest first.
+
+    Items (client-safe whitelist, nothing else):
+      {"kind": "deposit"|"refund", "amount", "date"}            — ledger top-ups / refunds
+      {"kind": "task", "title", "status", "amount", "date"}     — client-visible pay='deposit' cards
+      {"kind": "other", "amount"}                               — sum of hidden pay='deposit' cards, last
+
+    Deposits minus refunds equal derive_ledger()["deposit"]; task + other amounts
+    equal derive_ledger()["allocated"]. Ledger notes, ids, hours etc. are never included.
+    """
+    with _conn() as conn:
+        ledger_rows, task_rows = _deposit_sources(conn, board_id)
+    return _deposit_history_items(ledger_rows, task_rows, lang, fallback_lang)
+
+
+def _deposit_history_items(
+    ledger_rows: list[sqlite3.Row], task_rows: list[sqlite3.Row], lang: str, fallback_lang: str
+) -> list[dict]:
+    dated: list[tuple[tuple, dict]] = []
+    for r in ledger_rows:
+        if r["kind"] not in ("deposit", "refund"):
+            continue
+        date = _ledger_date(r["at"])
+        dated.append(((date, 0, r["id"]), {"kind": r["kind"], "amount": float(r["amount"] or 0), "date": date}))
+
+    hidden_sum = 0.0
+    has_hidden = False
+    for t in task_rows:
+        price = float(t["price"] or 0)
+        if not t["client_visible"]:
+            hidden_sum += price
+            has_hidden = True
+            continue
+        ts = t["archived_at"] or t["updated_at"] or 0
+        date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+        title = resolve_text(json.loads(t["title_i18n"] or "{}"), lang, fallback_lang)
+        # On the same day, spending lists above the top-up it came from.
+        dated.append(((date, 1, ts), {"kind": "task", "title": title, "status": t["status"], "amount": price, "date": date}))
+
+    dated.sort(key=lambda x: x[0], reverse=True)
+    items = [item for _, item in dated]
+    if has_hidden and hidden_sum:
+        items.append({"kind": "other", "amount": hidden_sum})
+    return items
 
 
 def get_columns_summary(board_id: int) -> dict[str, dict[str, Any]]:

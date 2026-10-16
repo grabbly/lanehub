@@ -47,5 +47,12 @@
   "client_done_comment_add": "Dodaj komentarz",
   "client_done_comment_edit": "Edytuj komentarz",
   "client_done_comment_save": "Zapisz",
-  "client_done_comment_cancel": "Anuluj"
+  "client_done_comment_cancel": "Anuluj",
+  "deposit_history_title": "Na co poszedł depozyt",
+  "deposit_history_open": "Kliknij, aby zobaczyć, na co poszedł depozyt",
+  "deposit_history_topup": "Wpłata na depozyt",
+  "deposit_history_refund": "Zwrot z depozytu",
+  "deposit_history_other": "Inne prace",
+  "deposit_history_empty": "Na razie brak operacji na depozycie.",
+  "deposit_history_close": "Zamknij"
 }

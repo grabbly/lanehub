@@ -47,5 +47,12 @@
   "client_done_comment_add": "Добавить комментарий",
   "client_done_comment_edit": "Изменить комментарий",
   "client_done_comment_save": "Сохранить",
-  "client_done_comment_cancel": "Отмена"
+  "client_done_comment_cancel": "Отмена",
+  "deposit_history_title": "Куда ушёл депозит",
+  "deposit_history_open": "Нажмите, чтобы увидеть, куда ушёл депозит",
+  "deposit_history_topup": "Пополнение депозита",
+  "deposit_history_refund": "Возврат с депозита",
+  "deposit_history_other": "Другие работы",
+  "deposit_history_empty": "Пока нет движений по депозиту.",
+  "deposit_history_close": "Закрыть"
 }

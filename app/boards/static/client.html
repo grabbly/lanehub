@@ -25,6 +25,7 @@
   --ok: #6fcf97; --ok-soft: #1f3a2a; --warn: #e6b45a; --warn-soft: #3f321a; --info: #9aa9ee; --info-soft: #262d4d;
   color-scheme: dark; } }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; } /* .status-card / .waiting-banner set display: grid */
 html, body { margin: 0; }
 body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45; }
 .wrap { padding-inline: 16px; padding-block: calc(20px + env(safe-area-inset-top, 0px)) calc(40px + env(safe-area-inset-bottom, 0px)); max-width: 1500px; margin: 0 auto; display: grid; gap: 18px; }
@@ -42,6 +43,36 @@ h1 { font-size: 24px; font-weight: 600; margin: 0; letter-spacing: -0.01em; text
 .ledger .k { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .ledger .v { font-family: var(--font-mono); font-size: 16px; font-weight: 500; }
 .ledger .cell.rest .v { color: var(--ok); }
+/* «Розподілено» / «Залишок» open the «Куди пішов депозит» dialog once there is a history to show. */
+button.cell { font: inherit; color: inherit; text-align: left; margin: 0; -webkit-tap-highlight-color: transparent; }
+.ledger .cell.dep-open { cursor: pointer; transition: border-color .1s ease; }
+.ledger .cell.dep-open .v { text-decoration: underline dotted; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.ledger .cell.dep-open:hover { border-color: var(--accent); }
+.ledger .cell.dep-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ledger .cell:disabled { cursor: default; opacity: 1; }
+.dep-dialog { width: min(560px, calc(100vw - 24px)); max-height: min(86vh, 760px); padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--fg); box-shadow: 0 18px 50px rgba(0,0,0,.28); overflow: hidden; }
+.dep-dialog[open] { display: flex; flex-direction: column; }
+.dep-dialog::backdrop { background: rgba(20,14,24,.5); }
+.dep-hd { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.dep-hd h2 { font-size: 15px; font-weight: 600; margin: 0; }
+.dep-close { flex: none; width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--muted); font-size: 15px; line-height: 1; cursor: pointer; }
+.dep-close:hover { color: var(--fg); border-color: var(--fg); }
+.dep-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dep-list { list-style: none; margin: 0; padding: 6px 14px; overflow-y: auto; overscroll-behavior: contain; display: grid; align-content: start; }
+.dep-item { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.dep-item:last-child { border-bottom: none; }
+.dep-main { display: grid; gap: 3px; min-width: 0; }
+.dep-title { font-weight: 500; overflow-wrap: anywhere; }
+.dep-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dep-amt { flex: none; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 500; white-space: nowrap; }
+.dep-item.in .dep-amt { color: var(--ok); }
+.dep-item.in .dep-title { color: var(--ok); }
+.dep-empty { color: var(--muted); padding: 12px 0; }
+.dep-sum { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; padding: 10px 14px 12px; border-top: 1px solid var(--line); background: var(--surface-2); font-variant-numeric: tabular-nums; }
+.dep-sum .k { color: var(--muted); }
+.dep-sum .v { font-family: var(--font-mono); text-align: right; white-space: nowrap; }
+.dep-sum .total { font-weight: 600; color: var(--fg); }
+.dep-sum .total.v { color: var(--ok); }
 .info { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; color: var(--muted); display: grid; gap: 4px; }
 .info strong { color: var(--fg); font-weight: 500; }
 .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; align-items: start; }
@@ -131,8 +162,8 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
       <div class="ledger" id="ledger-box" aria-label="Ledger">
         <div class="cell"><span class="k" id="lbl-paid">Paid</span><span class="v" id="lg-paid">—</span></div>
         <div class="cell"><span class="k" id="lbl-dep">Deposit</span><span class="v" id="lg-dep">—</span></div>
-        <div class="cell"><span class="k" id="lbl-used">Allocated</span><span class="v" id="lg-used">—</span></div>
-        <div class="cell rest"><span class="k" id="lbl-rest">Remaining</span><span class="v" id="lg-rest">—</span></div>
+        <button type="button" class="cell" id="cell-used" aria-haspopup="dialog" aria-controls="dep-dialog" disabled><span class="k" id="lbl-used">Allocated</span><span class="v" id="lg-used">—</span></button>
+        <button type="button" class="cell rest" id="cell-rest" aria-haspopup="dialog" aria-controls="dep-dialog" disabled><span class="k" id="lbl-rest">Remaining</span><span class="v" id="lg-rest">—</span></button>
       </div>
     </div>
   </header>
@@ -163,6 +194,15 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
     <h2 id="lbl-archive-title"></h2>
     <div class="archive-months" id="archive-months"></div>
   </section>
+
+  <dialog class="dep-dialog" id="dep-dialog" aria-labelledby="dep-title">
+    <div class="dep-hd">
+      <h2 id="dep-title"></h2>
+      <button type="button" class="dep-close" id="dep-close" aria-label="Close">✕</button>
+    </div>
+    <ul class="dep-list" id="dep-list"></ul>
+    <div class="dep-sum" id="dep-sum"></div>
+  </dialog>
 
   <footer>
     <span><strong id="footer-q-title"></strong> <span id="footer-q-text"></span></span>
@@ -229,6 +269,118 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
       return monthStr;
     }
   }
+
+  const STATUS_KEYS = { backlog: "col_backlog", queue: "col_queue", doing: "col_doing", waiting: "col_waiting", done: "col_done" };
+
+  function fmtDay(dayStr, lang) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayStr || "");
+    if (!m) return dayStr || "";
+    const loc = lang === "uk" ? "uk-UA" : (lang === "pl" ? "pl-PL" : (lang === "ru" ? "ru-RU" : "en-US"));
+    try {
+      const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+      return new Intl.DateTimeFormat(loc, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(d);
+    } catch (e) {
+      return dayStr;
+    }
+  }
+
+  // «Куди пішов депозит»: newest first; the footer reuses data.ledger, so it
+  // always matches the tiles (the server derives both from the same rows).
+  function renderDepositDialog(data, lang) {
+    const ui = data.ui;
+    const currency = data.currency;
+    const items = Array.isArray(data.depositHistory) ? data.depositHistory : [];
+    const hasHistory = items.length > 0;
+    const hint = ui.deposit_history_open || "";
+    ["cell-used", "cell-rest"].forEach(id => {
+      const b = $(id);
+      b.disabled = !hasHistory;
+      b.classList.toggle("dep-open", hasHistory);
+      if (hasHistory && hint) b.title = hint; else b.removeAttribute("title");
+    });
+
+    $("dep-title").textContent = ui.deposit_history_title || "";
+    $("dep-close").setAttribute("aria-label", ui.deposit_history_close || "Close");
+    $("dep-close").title = ui.deposit_history_close || "Close";
+
+    const list = $("dep-list");
+    if (!hasHistory) {
+      list.replaceChildren(el("li", "dep-empty", ui.deposit_history_empty || ""));
+    } else {
+      list.replaceChildren(...items.map(it => {
+        const incoming = it.kind === "deposit";
+        const li = el("li", "dep-item" + (incoming ? " in" : ""));
+        const main = el("div", "dep-main");
+        let title;
+        if (it.kind === "deposit") title = ui.deposit_history_topup;
+        else if (it.kind === "refund") title = ui.deposit_history_refund;
+        else if (it.kind === "other") title = ui.deposit_history_other;
+        else title = it.title;
+        main.append(el("span", "dep-title", title || ""));
+        const meta = el("div", "dep-meta");
+        if (it.date) meta.append(el("span", null, fmtDay(it.date, lang)));
+        if (it.kind === "task" && STATUS_KEYS[it.status]) meta.append(el("span", "chip", ui[STATUS_KEYS[it.status]] || it.status));
+        if (meta.childNodes.length) main.append(meta);
+        // Top-ups add to the deposit; refunds, cards and «other» take from it.
+        const effect = (incoming ? 1 : -1) * (Number(it.amount) || 0);
+        const sign = effect > 0 ? "+" : (effect < 0 ? "−" : "");
+        li.append(main, el("span", "dep-amt", sign + fmtMoney(Math.abs(effect), lang, currency)));
+        return li;
+      }));
+    }
+
+    const lg = data.ledger || {};
+    const sum = $("dep-sum");
+    sum.replaceChildren(
+      el("span", "k", ui.ledger_deposit), el("span", "v", fmtMoney(lg.deposit, lang, currency)),
+      el("span", "k", "− " + (ui.ledger_allocated || "")), el("span", "v", fmtMoney(lg.allocated, lang, currency)),
+      el("span", "k total", "= " + (ui.ledger_remaining || "")), el("span", "v total", fmtMoney(lg.remaining, lang, currency)),
+    );
+  }
+
+  let depReturnFocus = null;
+  function openDepositDialog(e) {
+    const dlg = $("dep-dialog");
+    if (dlg.open) return;
+    depReturnFocus = e && e.currentTarget ? e.currentTarget : document.activeElement;
+    if (typeof dlg.showModal === "function") dlg.showModal(); else dlg.setAttribute("open", "");
+    $("dep-list").scrollTop = 0;
+    $("dep-close").focus();
+  }
+  function closeDepositDialog() {
+    const dlg = $("dep-dialog");
+    if (!dlg.open) return;
+    if (typeof dlg.close === "function") dlg.close(); else dlg.removeAttribute("open");
+  }
+  (() => {
+    const dlg = $("dep-dialog");
+    $("cell-used").addEventListener("click", openDepositDialog);
+    $("cell-rest").addEventListener("click", openDepositDialog);
+    $("dep-close").addEventListener("click", closeDepositDialog);
+    // A click on the backdrop lands on the <dialog> itself, outside its content box.
+    dlg.addEventListener("click", (e) => {
+      if (e.target !== dlg) return;
+      const r = dlg.getBoundingClientRect();
+      const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+      if (!inside) closeDepositDialog();
+    });
+    // Esc: native showModal fires "cancel"; the fallback path needs a keydown.
+    dlg.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); closeDepositDialog(); } });
+    // Keep Tab inside the dialog (showModal already makes the page inert; this also covers the fallback).
+    dlg.addEventListener("keydown", (e) => {
+      if (e.key !== "Tab") return;
+      const f = [...dlg.querySelectorAll("button, [href], [tabindex]:not([tabindex='-1'])")].filter(n => !n.disabled);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
+    dlg.addEventListener("close", () => {
+      const back = depReturnFocus;
+      depReturnFocus = null;
+      if (back && document.contains(back) && !back.disabled) back.focus();
+    });
+  })();
 
   function priceChip(c, ui, lang, currency) {
     const p = Number(c.price) || 0;
@@ -490,6 +642,7 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
     $("lg-dep").textContent = fmtMoney(data.ledger.deposit, lang, currency);
     $("lg-used").textContent = fmtMoney(data.ledger.allocated, lang, currency);
     $("lg-rest").textContent = fmtMoney(data.ledger.remaining, lang, currency);
+    renderDepositDialog(data, lang);
 
     if (data.updatedAt) {
       const d = new Date(data.updatedAt);

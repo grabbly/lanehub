@@ -46,6 +46,13 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.14.0 — 2026-10-16
+
+- **Boards client page: «Куди пішов депозит».** Clicking (tapping) the «Розподілено» or «Залишок» tile opens a small dialog with the deposit history: top-ups and refunds from the ledger, every card paid from the deposit (archived ones included) with its price, status and date, newest first, and a footer «Депозит − Розподілено = Залишок» that always equals the tiles. Closes with ✕, Esc or a click outside; keyboard- and screen-reader friendly; works at phone width in light and dark themes. Texts in EN / PL / RU / UK (`deposit_history_*`).
+- **data.json:** new field `depositHistory` — a strict whitelist (`kind`, `amount`, `date`, plus `title` and `status` for cards). No ids, ledger notes, internal notes or hours. Hidden cards (`clientVisible: false`) paid from the deposit are not listed by name — their sum is one «Інші роботи» line, so the totals still match.
+- The header numbers and the history are derived from the same rows in one read, so they can't drift apart.
+- Fix: the empty «Де ми зараз» strip no longer shows on the client page when a board has no status line.
+
 ## 0.13.0 — 2026-10-16
 
 - **Boards: Client comment with ✓ Done tick.** Clients can optionally add a short note (up to 500 chars) when marking tasks done in «Потрібно від вас» banner, and edit or add it later.

@@ -453,6 +453,7 @@ def test_client_data_json_structure_and_privacy(boards_client):
         "ui",
         "tasks",
         "archive",
+        "depositHistory",
     }
     assert set(d.keys()) == expected_top_keys
 
