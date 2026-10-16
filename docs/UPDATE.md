@@ -76,6 +76,15 @@ itself and silently takes every update away from the new hub. So:
 
 ## Version-specific notes
 
+### 0.13.0 — client comment with the ✓ Done tick
+
+- **Nothing to do:** new column `board_tasks.client_done_comment` is added automatically on startup.
+- Clients can optionally attach a short note (up to 500 characters) when marking a task as done, and add or edit it afterwards.
+- Added explanatory hint line under the done button on the client page (`client_done_hint`).
+- Endpoint `POST /{board_slug}/b/{token}/tasks/{task_id}/done` accepts optional `"comment"` and returns `{id, clientDoneAt, clientDoneComment}`.
+- Operator panel displays the comment on cards and in the task dialog.
+- Agents and admin see `clientDoneComment` on tasks; comment is cleared together with `clientDoneAt`.
+
 ### 0.12.1 — waiting cards only in the banner
 
 - **Nothing to do:** client page change only (no schema, API or setting changes).

@@ -41,5 +41,11 @@
   "archive_title": "Архив",
   "client_done_action": "Отметить как сделанное",
   "client_done_marked": "✓ Вы отметили: сделано",
-  "client_done_cancel": "Отменить"
+  "client_done_cancel": "Снять отметку",
+  "client_done_hint": "Сделали свою часть? Нажмите — мы увидим отметку. При необходимости добавьте комментарий.",
+  "client_done_comment_placeholder": "Комментарий для нас (необязательно)",
+  "client_done_comment_add": "Добавить комментарий",
+  "client_done_comment_edit": "Изменить комментарий",
+  "client_done_comment_save": "Сохранить",
+  "client_done_comment_cancel": "Отмена"
 }

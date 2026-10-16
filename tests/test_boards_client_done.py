@@ -79,14 +79,17 @@ def test_upgrade_path_old_db_without_client_done_column(tmp_path, monkeypatch):
     with sqlite3.connect(str(db_file)) as c:
         t_cols = [r[1] for r in c.execute("PRAGMA table_info(board_tasks)").fetchall()]
         assert "client_done_at" in t_cols
+        assert "client_done_comment" in t_cols
 
     task = store.get_task("t-upgrade")
     assert task is not None
     assert task["clientDoneAt"] is None
+    assert task["clientDoneComment"] is None
 
     # Update with client_done=True works and persists
     updated = store.update_task(1, "t-upgrade", client_done=True, actor="admin")
     assert updated["clientDoneAt"] is not None
+    assert updated["clientDoneComment"] is None
 
 
 def test_client_done_tick_lifecycle_and_security(boards_client):
@@ -145,6 +148,7 @@ def test_client_done_tick_lifecycle_and_security(boards_client):
     data = resp.json()
     assert data["id"] == t_id
     assert isinstance(data["clientDoneAt"], int)
+    assert data["clientDoneComment"] is None
 
     # Verify event logged
     events = store.list_events(board_id)
@@ -160,6 +164,7 @@ def test_client_done_tick_lifecycle_and_security(boards_client):
     data_undone = resp_undone.json()
     assert data_undone["id"] == t_id
     assert data_undone["clientDoneAt"] is None
+    assert data_undone["clientDoneComment"] is None
 
     events2 = store.list_events(board_id)
     undone_events = [e for e in events2 if e["action"] == "client_undone"]
@@ -218,9 +223,12 @@ def test_client_done_tick_lifecycle_and_security(boards_client):
     assert r_limited.headers["cache-control"] == "no-store"
     assert r_limited.json()["detail"] == "too many requests"
 
+    from app.boards.routes_client import _client_done_rate_limits
+    _client_done_rate_limits.clear()
+
 
 def test_reset_on_status_change(boards_client):
-    """Test client_done_at clears when leaving waiting, and moving back starts clean."""
+    """Test client_done_at and client_done_comment clear when leaving waiting, and moving back starts clean."""
     slug = "reset-board"
     board, raw_token = store.create_board(chat_id="-100999", slug=slug)
     board_id = board["id"]
@@ -228,30 +236,35 @@ def test_reset_on_status_change(boards_client):
     task = store.create_task(board_id, title_i18n={"en": "Waiting Task"}, status="waiting")
     task_id = task["id"]
 
-    # Mark done
-    store.set_task_client_done(board_id, task_id, done=True)
+    # Mark done with comment
+    store.set_task_client_done(board_id, task_id, done=True, comment="some client note", comment_provided=True)
     t_after_done = store.get_task(task_id)
     assert t_after_done["clientDoneAt"] is not None
+    assert t_after_done["clientDoneComment"] == "some client note"
 
-    # Update non-status fields (e.g. price) -> clientDoneAt is preserved
+    # Update non-status fields (e.g. price) -> clientDoneAt and clientDoneComment are preserved
     store.update_task(board_id, task_id, price=75.0)
-    assert store.get_task(task_id)["clientDoneAt"] is not None
+    t_after_price = store.get_task(task_id)
+    assert t_after_price["clientDoneAt"] is not None
+    assert t_after_price["clientDoneComment"] == "some client note"
 
-    # Move task out of waiting to doing -> clientDoneAt is cleared
+    # Move task out of waiting to doing -> clientDoneAt and clientDoneComment are cleared
     store.update_task(board_id, task_id, status="doing")
     t_doing = store.get_task(task_id)
     assert t_doing["status"] == "doing"
     assert t_doing["clientDoneAt"] is None
+    assert t_doing["clientDoneComment"] is None
 
     # Move task back to waiting -> starts clean (None)
     store.update_task(board_id, task_id, status="waiting")
     t_waiting_again = store.get_task(task_id)
     assert t_waiting_again["status"] == "waiting"
     assert t_waiting_again["clientDoneAt"] is None
+    assert t_waiting_again["clientDoneComment"] is None
 
 
 def test_agent_and_admin_client_done_permissions(boards_client):
-    """Test agent can see and clear (clientDone: false) but cannot set (clientDone: true -> 422); admin can do both."""
+    """Test agent can see and clear (clientDone: false) but cannot set (clientDone: true -> 422); admin can do both; neither can write clientDoneComment."""
     login(boards_client)
     lane = make_lane(boards_client, slug="perm-lane", chat_id="-100666")
     bridge_header = {"X-Bridge-Token": lane["apiKey"]}
@@ -277,10 +290,15 @@ def test_agent_and_admin_client_done_permissions(boards_client):
     assert adm_set.status_code == 200
     assert adm_set.json()["clientDoneAt"] is not None
 
-    # Agent reads board -> sees clientDoneAt
+    # Client adds comment
+    store.set_task_client_done(board_id, task_id, done=True, comment="client note here", comment_provided=True)
+    assert store.get_task(task_id)["clientDoneComment"] == "client note here"
+
+    # Agent reads board -> sees clientDoneAt and clientDoneComment
     agent_board = boards_client.get("/perm-lane/board", headers=bridge_header).json()
     agent_task = next(t for t in agent_board["tasks"] if t["id"] == task_id)
     assert agent_task["clientDoneAt"] is not None
+    assert agent_task["clientDoneComment"] == "client note here"
 
     # Agent attempts to set clientDone: true -> 422
     agent_set = boards_client.patch(
@@ -291,7 +309,22 @@ def test_agent_and_admin_client_done_permissions(boards_client):
     assert agent_set.status_code == 422
     assert "cannot set" in agent_set.json()["detail"].lower()
 
-    # Agent clears clientDone: false -> 200
+    # Agent attempts to set clientDoneComment -> 422
+    agent_set_comment = boards_client.patch(
+        f"/perm-lane/board/tasks/{task_id}",
+        headers=bridge_header,
+        json={"clientDoneComment": "agent hijacked comment"},
+    )
+    assert agent_set_comment.status_code == 422
+
+    # Admin attempts to set clientDoneComment -> 422
+    adm_set_comment = boards_client.patch(
+        f"/admin/api/boards/{board_id}/tasks/{task_id}",
+        json={"clientDoneComment": "admin hijacked comment"},
+    )
+    assert adm_set_comment.status_code == 422
+
+    # Agent clears clientDone: false -> 200 (clears both clientDoneAt and clientDoneComment)
     agent_clear = boards_client.patch(
         f"/perm-lane/board/tasks/{task_id}",
         headers=bridge_header,
@@ -299,11 +332,14 @@ def test_agent_and_admin_client_done_permissions(boards_client):
     )
     assert agent_clear.status_code == 200
     assert agent_clear.json()["clientDoneAt"] is None
+    assert agent_clear.json()["clientDoneComment"] is None
+    assert store.get_task(task_id)["clientDoneComment"] is None
 
-    # Admin clears clientDone: false -> 200
-    # First admin sets it again
+    # Admin clears clientDone: false -> 200 (clears both)
+    # First admin sets it and client adds comment
     boards_client.patch(f"/admin/api/boards/{board_id}/tasks/{task_id}", json={"clientDone": True})
-    assert store.get_task(task_id)["clientDoneAt"] is not None
+    store.set_task_client_done(board_id, task_id, done=True, comment="client note 2", comment_provided=True)
+    assert store.get_task(task_id)["clientDoneComment"] == "client note 2"
     # Then admin clears it
     adm_clear = boards_client.patch(
         f"/admin/api/boards/{board_id}/tasks/{task_id}",
@@ -311,10 +347,129 @@ def test_agent_and_admin_client_done_permissions(boards_client):
     )
     assert adm_clear.status_code == 200
     assert adm_clear.json()["clientDoneAt"] is None
+    assert adm_clear.json()["clientDoneComment"] is None
+    assert store.get_task(task_id)["clientDoneComment"] is None
+
+
+def test_client_done_comment_handling(boards_client):
+    """Test client done with comment, edits, omissions, clearing, validation, and body limits."""
+    c = boards_client
+    slug = "comment-board"
+    board, raw_token = store.create_board(
+        chat_id="-100333",
+        slug=slug,
+        title="Comment Board",
+        client_lang="uk",
+    )
+    board_id = board["id"]
+
+    t1 = store.create_task(board_id, title_i18n={"uk": "Задача з коментарем"}, status="waiting")
+    t1_id = t1["id"]
+
+    # 1. Done with comment -> stored, returned, event payload
+    r1 = c.post(f"/{slug}/b/{raw_token}/tasks/{t1_id}/done", json={"done": True, "comment": "надіслав доступи на пошту"})
+    assert r1.status_code == 200
+    d1 = r1.json()
+    assert d1["id"] == t1_id
+    assert isinstance(d1["clientDoneAt"], int)
+    t1_orig_done_at = d1["clientDoneAt"]
+    assert d1["clientDoneComment"] == "надіслав доступи на пошту"
+    assert store.get_task(t1_id)["clientDoneComment"] == "надіслав доступи на пошту"
+
+    events = store.list_events(board_id)
+    done_ev = next(e for e in events if e["action"] == "client_done" and e["taskId"] == t1_id)
+    assert done_ev["payload"]["clientDoneAt"] == t1_orig_done_at
+    assert done_ev["payload"]["clientDoneComment"] == "надіслав доступи на пошту"
+
+    # 2. Done without comment on another task -> stored, returned (None)
+    t2 = store.create_task(board_id, title_i18n={"uk": "Задача без коментаря"}, status="waiting")
+    t2_id = t2["id"]
+    r2 = c.post(f"/{slug}/b/{raw_token}/tasks/{t2_id}/done", json={"done": True})
+    assert r2.status_code == 200
+    d2 = r2.json()
+    assert d2["clientDoneComment"] is None
+    assert store.get_task(t2_id)["clientDoneComment"] is None
+
+    # 3. Edit comment on done task keeps clientDoneAt and logs client_comment
+    r3 = c.post(f"/{slug}/b/{raw_token}/tasks/{t1_id}/done", json={"done": True, "comment": "додав ще порт 8080"})
+    assert r3.status_code == 200
+    d3 = r3.json()
+    assert d3["clientDoneAt"] == t1_orig_done_at  # kept!
+    assert d3["clientDoneComment"] == "додав ще порт 8080"
+    assert store.get_task(t1_id)["clientDoneComment"] == "додав ще порт 8080"
+
+    events3 = store.list_events(board_id)
+    comment_evs = [e for e in events3 if e["action"] == "client_comment" and e["taskId"] == t1_id]
+    assert len(comment_evs) == 1
+    assert comment_evs[0]["actor"] == "client"
+    assert comment_evs[0]["payload"]["clientDoneComment"] == "додав ще порт 8080"
+
+    # 4. Omitting comment on re-send keeps it (no new event)
+    r4 = c.post(f"/{slug}/b/{raw_token}/tasks/{t1_id}/done", json={"done": True})
+    assert r4.status_code == 200
+    d4 = r4.json()
+    assert d4["clientDoneAt"] == t1_orig_done_at
+    assert d4["clientDoneComment"] == "додав ще порт 8080"
+    assert store.get_task(t1_id)["clientDoneComment"] == "додав ще порт 8080"
+    events4 = store.list_events(board_id)
+    comment_evs4 = [e for e in events4 if e["action"] == "client_comment" and e["taskId"] == t1_id]
+    assert len(comment_evs4) == 1
+
+    # 5. Empty string clears it
+    r5 = c.post(f"/{slug}/b/{raw_token}/tasks/{t1_id}/done", json={"done": True, "comment": ""})
+    assert r5.status_code == 200
+    d5 = r5.json()
+    assert d5["clientDoneAt"] == t1_orig_done_at
+    assert d5["clientDoneComment"] is None
+    assert store.get_task(t1_id)["clientDoneComment"] is None
+    events5 = store.list_events(board_id)
+    comment_evs5 = [e for e in events5 if e["action"] == "client_comment" and e["taskId"] == t1_id]
+    assert len(comment_evs5) == 2
+
+    # 6. 501 chars -> 422
+    r_long = c.post(f"/{slug}/b/{raw_token}/tasks/{t1_id}/done", json={"done": True, "comment": "x" * 501})
+    assert r_long.status_code == 422
+
+    # 7. Control chars stripped except newline
+    r_ctrl = c.post(
+        f"/{slug}/b/{raw_token}/tasks/{t1_id}/done",
+        json={"done": True, "comment": "  \x00clean\x07 \x1b\nmulti\rline\t "},
+    )
+    assert r_ctrl.status_code == 200
+    assert r_ctrl.json()["clientDoneComment"] == "clean \nmultiline"
+
+    # 8. Comment with done:false -> 422
+    r_false = c.post(f"/{slug}/b/{raw_token}/tasks/{t1_id}/done", json={"done": False, "comment": "illegal"})
+    assert r_false.status_code == 422
+
+    # 9. Extra fields -> 422
+    r_extra = c.post(f"/{slug}/b/{raw_token}/tasks/{t1_id}/done", json={"done": True, "comment": "ok", "foo": "bar"})
+    assert r_extra.status_code == 422
+
+    # 10. Untick clears comment
+    # First set comment back
+    c.post(f"/{slug}/b/{raw_token}/tasks/{t1_id}/done", json={"done": True, "comment": "restored note"})
+    assert store.get_task(t1_id)["clientDoneComment"] == "restored note"
+    # Now untick
+    r_untick = c.post(f"/{slug}/b/{raw_token}/tasks/{t1_id}/done", json={"done": False})
+    assert r_untick.status_code == 200
+    assert r_untick.json()["clientDoneAt"] is None
+    assert r_untick.json()["clientDoneComment"] is None
+    assert store.get_task(t1_id)["clientDoneComment"] is None
+
+    # 11. Body size limit (> 4096 bytes -> 413)
+    big_body = b'{"done": true, "comment": "' + (b"y" * 4100) + b'"}'
+    r_big = c.post(
+        f"/{slug}/b/{raw_token}/tasks/{t1_id}/done",
+        content=big_body,
+        headers={"Content-Type": "application/json"},
+    )
+    assert r_big.status_code == 413
+    assert r_big.headers["cache-control"] == "no-store"
 
 
 def test_data_json_whitelist_waiting_vs_other_tasks(boards_client):
-    """Test data.json whitelist: id and clientDoneAt ONLY on waiting tasks; no internal leaks."""
+    """Test data.json whitelist: id, clientDoneAt, clientDoneComment ONLY on waiting tasks; no internal leaks."""
     c = boards_client
     slug = "whitelist-board"
     board, raw_token = store.create_board(
@@ -337,7 +492,7 @@ def test_data_json_whitelist_waiting_vs_other_tasks(boards_client):
         internal_note=hidden_note,
         client_visible=True,
     )
-    store.set_task_client_done(board_id, t_wait["id"], done=True)
+    store.set_task_client_done(board_id, t_wait["id"], done=True, comment="перший коментар", comment_provided=True)
 
     t_doing = store.create_task(
         board_id,
@@ -377,27 +532,41 @@ def test_data_json_whitelist_waiting_vs_other_tasks(boards_client):
     data = resp.json()
     tasks_by_status = {t["status"]: t for t in data["tasks"]}
 
-    # Waiting task has id and clientDoneAt
+    # Waiting task has id, clientDoneAt, and clientDoneComment
     waiting_task = tasks_by_status["waiting"]
-    assert set(waiting_task.keys()) == {"title", "note", "status", "pay", "price", "position", "updatedAt", "id", "clientDoneAt"}
+    assert set(waiting_task.keys()) == {
+        "title",
+        "note",
+        "status",
+        "pay",
+        "price",
+        "position",
+        "updatedAt",
+        "id",
+        "clientDoneAt",
+        "clientDoneComment",
+    }
     assert waiting_task["id"] == t_wait["id"]
     assert isinstance(waiting_task["clientDoneAt"], int)
+    assert waiting_task["clientDoneComment"] == "перший коментар"
 
     # Doing task keeps strict non-id key set
     doing_task = tasks_by_status["doing"]
     assert set(doing_task.keys()) == {"title", "note", "status", "pay", "price", "position", "updatedAt"}
     assert "id" not in doing_task
     assert "clientDoneAt" not in doing_task
+    assert "clientDoneComment" not in doing_task
 
     # Queue task keeps strict non-id key set
     queue_task = tasks_by_status["queue"]
     assert set(queue_task.keys()) == {"title", "note", "status", "pay", "price", "position", "updatedAt"}
     assert "id" not in queue_task
     assert "clientDoneAt" not in queue_task
+    assert "clientDoneComment" not in queue_task
 
 
 def test_panel_html_substring_entry_points():
-    """Verify app.html and client.html contain the new entry points."""
+    """Verify app.html and client.html contain the new entry points and no unsafe innerHTML for comments."""
     from pathlib import Path
     app_html = (Path(__file__).parent.parent / "app" / "static" / "app.html").read_text(encoding="utf-8")
     client_html = (Path(__file__).parent.parent / "app" / "boards" / "static" / "client.html").read_text(encoding="utf-8")
@@ -408,6 +577,8 @@ def test_panel_html_substring_entry_points():
     assert "bd-chip-client-done" in app_html
     assert "bd-cd-clear-client-done" in app_html
     assert "bd-cd-client-done-wrap" in app_html
+    assert "bd-card-client-comment" in app_html
+    assert "bd-cd-client-done-comment" in app_html
 
     # Client page client.html entry points
     assert "btn-client-done" in client_html
@@ -415,3 +586,13 @@ def test_panel_html_substring_entry_points():
     assert "client-done-status" in client_html
     assert "aria-pressed" in client_html
     assert "/done" in client_html
+    assert "client-done-hint" in client_html
+    assert "client-done-comment" in client_html
+    assert "client-done-textarea" in client_html
+    assert "client_done_comment_placeholder" in client_html
+
+    # Verify no innerHTML is used for comments in client.html
+    assert "innerHTML = c.clientDoneComment" not in client_html
+    assert "innerHTML = comment" not in client_html
+    assert ".innerHTML = `“${c.clientDoneComment}”`" not in client_html
+    assert "innerHTML" not in client_html

@@ -4,13 +4,15 @@ from __future__ import annotations
 import json
 import re
 import time
+import unicodedata
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from . import store
 
@@ -108,6 +110,7 @@ def get_board_data(board_slug: str, token: str, lang: str | None = None) -> Resp
         if t["status"] == "waiting":
             task_data["id"] = t["id"]
             task_data["clientDoneAt"] = t["clientDoneAt"]
+            task_data["clientDoneComment"] = t["clientDoneComment"]
         tasks.append(task_data)
 
     archived_tasks = store.list_tasks(board_id, client_visible_only=True, archived=True)
@@ -157,8 +160,49 @@ def get_board_data(board_slug: str, token: str, lang: str | None = None) -> Resp
 
 class ClientDoneRequest(BaseModel):
     done: bool
+    comment: str | None = None
 
     model_config = {"extra": "forbid"}
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_request(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if "done" in data and not data["done"] and "comment" in data:
+            raise ValueError("comment is not allowed when done is false")
+        if "comment" in data and data["comment"] is not None:
+            if not isinstance(data["comment"], str):
+                raise ValueError("comment must be a string")
+            cleaned = "".join(ch for ch in data["comment"] if ch == "\n" or unicodedata.category(ch) != "Cc")
+            cleaned = cleaned.strip()
+            if len(cleaned) > 500:
+                raise ValueError("comment exceeds 500 characters")
+        return data
+
+
+MAX_CLIENT_DONE_BODY_BYTES = 4096
+
+
+async def _check_client_done_body_size(request: Request) -> None:
+    cl = request.headers.get("content-length")
+    if cl:
+        try:
+            if int(cl) > MAX_CLIENT_DONE_BODY_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail="request body too large",
+                    headers=SECURITY_HEADERS,
+                )
+        except ValueError:
+            pass
+    raw_body = await request.body()
+    if len(raw_body) > MAX_CLIENT_DONE_BODY_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="request body too large",
+            headers=SECURITY_HEADERS,
+        )
 
 
 _client_done_rate_limits: dict[int, list[float]] = defaultdict(list)
@@ -177,7 +221,10 @@ def _check_client_rate_limit(board_id: int) -> bool:
     return True
 
 
-@router.post("/{board_slug}/b/{token}/tasks/{task_id}/done")
+@router.post(
+    "/{board_slug}/b/{token}/tasks/{task_id}/done",
+    dependencies=[Depends(_check_client_done_body_size)],
+)
 def mark_client_done(
     board_slug: str,
     token: str,
@@ -206,5 +253,21 @@ def mark_client_done(
             headers=SECURITY_HEADERS,
         )
 
-    res = store.set_task_client_done(board["id"], task_id, req.done, actor="client")
+    comment_provided = "comment" in req.model_fields_set
+    try:
+        res = store.set_task_client_done(
+            board["id"],
+            task_id,
+            req.done,
+            comment=req.comment,
+            comment_provided=comment_provided,
+            actor="client",
+        )
+    except ValueError as e:
+        return Response(
+            content=json.dumps({"detail": str(e)}).encode("utf-8"),
+            status_code=422,
+            media_type="application/json",
+            headers=SECURITY_HEADERS,
+        )
     return JSONResponse(content=res, headers=SECURITY_HEADERS)

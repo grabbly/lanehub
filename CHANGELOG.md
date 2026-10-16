@@ -46,6 +46,16 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.13.0 — 2026-10-16
+
+- **Boards: Client comment with ✓ Done tick.** Clients can optionally add a short note (up to 500 chars) when marking tasks done in «Потрібно від вас» banner, and edit or add it later.
+- **Hint line:** Added explanatory hint under the done button (`client_done_hint`).
+- **Idempotent DB migration:** Added `board_tasks.client_done_comment TEXT NULL` column automatically on startup.
+- **API updates:** `POST /{board_slug}/b/{token}/tasks/{task_id}/done` accepts `{"done": bool, "comment"?: string}` and returns `{id, clientDoneAt, clientDoneComment}`. Extra fields or comment with done:false return 422; 4 KB body size limit (413).
+- **Event logging:** Logs `client_done` (with comment payload if provided) and `client_comment` on comment edits.
+- **Operator panel:** Shows comment on board cards (ellipsis with tooltip) and in the card dialog.
+- **Agent API:** Agents see `clientDoneComment` on tasks and can clear it with `clientDone: false` (cannot set or modify comment).
+
 ## 0.12.1 — 2026-10-16
 
 - **Boards client page: waiting cards are shown once.** Cards in `waiting` now appear only in the «Потрібно від вас» banner at the top; the duplicate "Waiting on you" column is gone from the client page (the operator panel keeps all five columns). The legend line now points to the banner. No API, data or schema changes.

@@ -97,14 +97,23 @@ h1 { font-size: 24px; font-weight: 600; margin: 0; letter-spacing: -0.01em; text
 .archive-month-title { font-size: 13.5px; font-weight: 600; }
 .archive-items { margin-top: 8px; display: grid; gap: 6px; }
 .archive-item { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
-.client-done-box { margin-top: 4px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.btn-client-done { display: inline-flex; align-items: center; gap: 5px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); border-radius: 6px; padding: 3px 9px; font-family: var(--font-body); font-size: 11.5px; font-weight: 600; cursor: pointer; transition: all .1s ease; width: fit-content; -webkit-tap-highlight-color: transparent; }
+.client-done-box { margin-top: 6px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 100%; box-sizing: border-box; }
+.btn-client-done { display: inline-flex; align-items: center; gap: 5px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); border-radius: 6px; padding: 4px 10px; font-family: var(--font-body); font-size: 11.5px; font-weight: 600; cursor: pointer; transition: all .1s ease; width: fit-content; -webkit-tap-highlight-color: transparent; }
 .btn-client-done:hover:not(:disabled) { border-color: var(--ok); color: var(--ok); }
 .btn-client-done:disabled { opacity: 0.5; cursor: not-allowed; }
 .client-done-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 12px; color: var(--ok); font-weight: 500; }
-.client-done-cancel { background: transparent; border: none; padding: 0; font-family: var(--font-body); font-size: 11.5px; color: var(--muted); text-decoration: underline; cursor: pointer; }
-.client-done-cancel:hover:not(:disabled) { color: var(--fg); }
-.client-done-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
+.client-done-cancel, .client-done-link, .client-done-comment-cancel { background: transparent; border: none; padding: 0; font-family: var(--font-body); font-size: 11.5px; color: var(--muted); text-decoration: underline; cursor: pointer; }
+.client-done-cancel:hover:not(:disabled), .client-done-link:hover:not(:disabled), .client-done-comment-cancel:hover:not(:disabled) { color: var(--fg); }
+.client-done-cancel:disabled, .client-done-link:disabled, .client-done-comment-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
+.client-done-save-btn { display: inline-flex; align-items: center; background: var(--surface); border: 1px solid var(--line); color: var(--fg); border-radius: 6px; padding: 3px 9px; font-family: var(--font-body); font-size: 11.5px; font-weight: 600; cursor: pointer; transition: all .1s ease; }
+.client-done-save-btn:hover:not(:disabled) { border-color: var(--ok); color: var(--ok); }
+.client-done-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.client-done-textarea { width: 100%; max-width: 100%; box-sizing: border-box; resize: vertical; min-height: 42px; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-family: var(--font-body); font-size: 12px; background: var(--surface); color: var(--fg); }
+.client-done-textarea:focus { outline: none; border-color: var(--accent); }
+.client-done-textarea:disabled { opacity: 0.6; cursor: not-allowed; }
+.client-done-hint { font-size: 11px; color: var(--muted); line-height: 1.35; }
+.client-done-comment { font-size: 12px; color: var(--muted); font-style: italic; margin: 2px 0; word-break: break-word; white-space: pre-wrap; }
+.client-done-actions { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 2px; }
 footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
 .err { color: var(--accent); }
 </style>
@@ -276,18 +285,37 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
   }
 
   const pendingDone = new Set();
+  const editingCommentCards = new Set();
+  const commentDrafts = new Map();
 
-  function toggleClientDone(c, nextDone) {
+  function saveClientDone(c, nextDone, commentText, fromEdit = false) {
     if (!c.id || pendingDone.has(c.id)) return;
     const prevDoneAt = c.clientDoneAt;
-    c.clientDoneAt = nextDone ? Math.floor(Date.now() / 1000) : null;
+    const prevComment = c.clientDoneComment;
+
+    if (nextDone) {
+      if (!c.clientDoneAt) {
+        c.clientDoneAt = Math.floor(Date.now() / 1000);
+      }
+      c.clientDoneComment = commentText || null;
+    } else {
+      c.clientDoneAt = null;
+      c.clientDoneComment = null;
+      editingCommentCards.delete(c.id);
+      commentDrafts.delete(c.id);
+    }
     pendingDone.add(c.id);
     render(lastData, lastLang);
+
+    const bodyObj = { done: nextDone };
+    if (nextDone && commentText !== undefined) {
+      bodyObj.comment = commentText;
+    }
 
     fetch(`tasks/${encodeURIComponent(c.id)}/done`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ done: nextDone }),
+      body: JSON.stringify(bodyObj),
     })
       .then(r => {
         if (!r.ok) throw new Error(String(r.status));
@@ -295,9 +323,16 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
       })
       .then(res => {
         c.clientDoneAt = res.clientDoneAt;
+        c.clientDoneComment = res.clientDoneComment;
+        editingCommentCards.delete(c.id);
+        commentDrafts.delete(c.id);
       })
       .catch(() => {
         c.clientDoneAt = prevDoneAt;
+        c.clientDoneComment = prevComment;
+        if (fromEdit) {
+          editingCommentCards.add(c.id);
+        }
       })
       .finally(() => {
         pendingDone.delete(c.id);
@@ -319,26 +354,118 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
       const stat = el("div", "client-done-status");
       stat.setAttribute("aria-pressed", "true");
       stat.append(el("span", null, markedText));
-
-      const undoBtn = el("button", "client-done-cancel", ui.client_done_cancel || "Скасувати");
-      undoBtn.type = "button";
-      undoBtn.disabled = isPending;
-      undoBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        toggleClientDone(c, false);
-      });
-      stat.append(undoBtn);
       box.append(stat);
+
+      const isEditing = editingCommentCards.has(c.id);
+
+      if (isEditing) {
+        const textarea = el("textarea", "client-done-textarea");
+        textarea.rows = 2;
+        textarea.maxLength = 500;
+        textarea.placeholder = ui.client_done_comment_placeholder || "Коментар для нас (необов'язково)";
+        textarea.disabled = isPending;
+        const currentVal = commentDrafts.has(c.id) ? commentDrafts.get(c.id) : (c.clientDoneComment || "");
+        textarea.value = currentVal;
+        textarea.addEventListener("input", (e) => {
+          commentDrafts.set(c.id, e.target.value);
+        });
+        box.append(textarea);
+
+        const actions = el("div", "client-done-actions");
+
+        const saveBtn = el("button", "client-done-save-btn", ui.client_done_comment_save || "Зберегти");
+        saveBtn.type = "button";
+        saveBtn.disabled = isPending;
+        saveBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const draft = commentDrafts.has(c.id) ? commentDrafts.get(c.id) : textarea.value;
+          saveClientDone(c, true, draft.trim(), true);
+        });
+        actions.append(saveBtn);
+
+        const cancelEditBtn = el("button", "client-done-comment-cancel", ui.client_done_comment_cancel || "Відміна");
+        cancelEditBtn.type = "button";
+        cancelEditBtn.disabled = isPending;
+        cancelEditBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          commentDrafts.delete(c.id);
+          editingCommentCards.delete(c.id);
+          render(lastData, lastLang);
+        });
+        actions.append(cancelEditBtn);
+
+        const undoBtn = el("button", "client-done-cancel", ui.client_done_cancel || "Скасувати позначку");
+        undoBtn.type = "button";
+        undoBtn.disabled = isPending;
+        undoBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          saveClientDone(c, false);
+        });
+        actions.append(undoBtn);
+
+        box.append(actions);
+      } else {
+        if (c.clientDoneComment && c.clientDoneComment.trim()) {
+          const commentDiv = el("div", "client-done-comment");
+          commentDiv.textContent = `“${c.clientDoneComment}”`;
+          box.append(commentDiv);
+        }
+
+        const actions = el("div", "client-done-actions");
+
+        const hasComment = Boolean(c.clientDoneComment && c.clientDoneComment.trim());
+        const editLinkText = hasComment
+          ? (ui.client_done_comment_edit || "Змінити коментар")
+          : (ui.client_done_comment_add || "Додати коментар");
+        const editLink = el("button", "client-done-link", editLinkText);
+        editLink.type = "button";
+        editLink.disabled = isPending;
+        editLink.addEventListener("click", (e) => {
+          e.stopPropagation();
+          commentDrafts.set(c.id, c.clientDoneComment || "");
+          editingCommentCards.add(c.id);
+          render(lastData, lastLang);
+        });
+        actions.append(editLink);
+
+        const undoBtn = el("button", "client-done-cancel", ui.client_done_cancel || "Скасувати позначку");
+        undoBtn.type = "button";
+        undoBtn.disabled = isPending;
+        undoBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          saveClientDone(c, false);
+        });
+        actions.append(undoBtn);
+
+        box.append(actions);
+      }
     } else {
+      const textarea = el("textarea", "client-done-textarea");
+      textarea.rows = 2;
+      textarea.maxLength = 500;
+      textarea.placeholder = ui.client_done_comment_placeholder || "Коментар для нас (необов'язково)";
+      textarea.disabled = isPending;
+      if (commentDrafts.has(c.id)) {
+        textarea.value = commentDrafts.get(c.id);
+      }
+      textarea.addEventListener("input", (e) => {
+        commentDrafts.set(c.id, e.target.value);
+      });
+      box.append(textarea);
+
       const btn = el("button", "btn-client-done", ui.client_done_action || "Позначити як зроблене");
       btn.type = "button";
       btn.setAttribute("aria-pressed", "false");
       btn.disabled = isPending;
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
-        toggleClientDone(c, true);
+        const draft = commentDrafts.has(c.id) ? commentDrafts.get(c.id) : textarea.value;
+        saveClientDone(c, true, draft.trim(), false);
       });
       box.append(btn);
+
+      const hint = el("div", "client-done-hint", ui.client_done_hint || "Зробили свою частину? Натисніть — ми побачимо позначку. За потреби додайте коментар.");
+      box.append(hint);
     }
     return box;
   }

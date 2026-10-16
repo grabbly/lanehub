@@ -374,6 +374,7 @@
   .bd-chip.bd-chip-hidden { background: transparent; border: 1px dashed var(--muted); color: var(--muted); }
   .bd-chip.bd-chip-muted { background: var(--panel-2); color: var(--muted); font-size: 10px; opacity: 0.8; font-style: italic; }
   .bd-chip.bd-chip-client-done { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .bd-card-client-comment { font-size: 11.5px; color: var(--muted); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; }
   .bd-card-note { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35; }
   .bd-card-moves { display: none; gap: 6px; margin-top: 4px; }
   @media (hover: none) {
@@ -953,9 +954,12 @@
       </fieldset>
 
       <!-- Client Done mark -->
-      <div id="bd-cd-client-done-wrap" hidden style="background:var(--accent-soft); color:var(--accent); border-radius:8px; padding:8px 12px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
-        <span>✓ Client marked done: <strong id="bd-cd-client-done-time"></strong></span>
-        <button type="button" class="btn sm" id="bd-cd-clear-client-done">Clear mark</button>
+      <div id="bd-cd-client-done-wrap" hidden style="background:var(--accent-soft); color:var(--accent); border-radius:8px; padding:8px 12px; display:flex; flex-direction:column; gap:6px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <span>✓ Client marked done: <strong id="bd-cd-client-done-time"></strong></span>
+          <button type="button" class="btn sm" id="bd-cd-clear-client-done">Clear mark</button>
+        </div>
+        <div id="bd-cd-client-done-comment" hidden style="font-size:12px; opacity:0.9; word-break:break-word; white-space:pre-wrap; border-top:1px solid currentColor; padding-top:4px;"></div>
       </div>
 
       <!-- Task details -->
@@ -2929,6 +2933,14 @@ function renderCardElement(t, colId, colIdx) {
   }
   card.append(row);
 
+  if (t.clientDoneAt && t.clientDoneComment) {
+    const commentEl = document.createElement('div');
+    commentEl.className = 'bd-card-client-comment';
+    commentEl.textContent = `“${t.clientDoneComment}”`;
+    commentEl.title = t.clientDoneComment;
+    card.append(commentEl);
+  }
+
   if (t.internalNote) {
     const noteEl = document.createElement('div');
     noteEl.className = 'bd-card-note';
@@ -3136,8 +3148,23 @@ function openTaskDialog(task) {
     if (task && task.clientDoneAt) {
       doneWrap.hidden = false;
       $('bd-cd-client-done-time').textContent = fmtDate(task.clientDoneAt);
+      const commentEl = $('bd-cd-client-done-comment');
+      if (commentEl) {
+        if (task.clientDoneComment) {
+          commentEl.hidden = false;
+          commentEl.textContent = `“${task.clientDoneComment}”`;
+        } else {
+          commentEl.hidden = true;
+          commentEl.textContent = '';
+        }
+      }
     } else {
       doneWrap.hidden = true;
+      const commentEl = $('bd-cd-client-done-comment');
+      if (commentEl) {
+        commentEl.hidden = true;
+        commentEl.textContent = '';
+      }
     }
   }
 

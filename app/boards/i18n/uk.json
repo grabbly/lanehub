@@ -41,5 +41,11 @@
   "archive_title": "Архів",
   "client_done_action": "Позначити як зроблене",
   "client_done_marked": "✓ Ви позначили: зроблено",
-  "client_done_cancel": "Скасувати"
+  "client_done_cancel": "Скасувати позначку",
+  "client_done_hint": "Зробили свою частину? Натисніть — ми побачимо позначку. За потреби додайте коментар.",
+  "client_done_comment_placeholder": "Коментар для нас (необов'язково)",
+  "client_done_comment_add": "Додати коментар",
+  "client_done_comment_edit": "Змінити коментар",
+  "client_done_comment_save": "Зберегти",
+  "client_done_comment_cancel": "Відміна"
 }

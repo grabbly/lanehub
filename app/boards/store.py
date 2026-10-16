@@ -8,6 +8,7 @@ import re
 import secrets as pysecrets
 import sqlite3
 import time
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
@@ -54,6 +55,7 @@ CREATE TABLE IF NOT EXISTS board_tasks (
     internal_note TEXT NOT NULL DEFAULT '',
     archived_at INTEGER,
     client_done_at INTEGER,
+    client_done_comment TEXT,
     version INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
@@ -99,6 +101,8 @@ def _ensure_board_columns(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE board_tasks ADD COLUMN archived_at INTEGER")
         if "client_done_at" not in t_cols:
             conn.execute("ALTER TABLE board_tasks ADD COLUMN client_done_at INTEGER")
+        if "client_done_comment" not in t_cols:
+            conn.execute("ALTER TABLE board_tasks ADD COLUMN client_done_comment TEXT")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_board_tasks_archived ON board_tasks(board_id, archived_at)")
 
 
@@ -146,6 +150,23 @@ def validate_status_i18n(data: Any, field_name: str = "statusI18n") -> dict[str,
         if len(v) > 300:
             raise ValueError(f"Status text for '{k}' exceeds 300 characters")
     return {k: v.strip() for k, v in cleaned.items() if v and v.strip()}
+
+
+def clean_client_done_comment(val: str | None) -> str | None:
+    """Sanitize and validate client done comment.
+
+    Plain text only: strip control characters except newline, trim, max 500 chars (longer -> ValueError).
+    Empty string -> None.
+    """
+    if val is None:
+        return None
+    cleaned = "".join(ch for ch in str(val) if ch == "\n" or unicodedata.category(ch) != "Cc")
+    cleaned = cleaned.strip()
+    if len(cleaned) > 500:
+        raise ValueError("clientDoneComment exceeds 500 characters")
+    if not cleaned:
+        return None
+    return cleaned
 
 
 def resolve_text(i18n_map: dict[str, str], lang: str, team_lang: str) -> str:
@@ -538,6 +559,7 @@ def _task_row_to_dict(row: sqlite3.Row) -> dict:
     keys = row.keys()
     archived_at = row["archived_at"] if "archived_at" in keys else None
     client_done_at = row["client_done_at"] if "client_done_at" in keys else None
+    client_done_comment = row["client_done_comment"] if "client_done_comment" in keys else None
     return {
         "id": row["id"],
         "boardId": row["board_id"],
@@ -555,6 +577,7 @@ def _task_row_to_dict(row: sqlite3.Row) -> dict:
         "internalNote": row["internal_note"],
         "archivedAt": archived_at,
         "clientDoneAt": client_done_at,
+        "clientDoneComment": client_done_comment,
         "version": row["version"],
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
@@ -821,13 +844,17 @@ def update_task(
                 payload["clientDoneAt"] = now
             else:
                 updates.append("client_done_at = NULL")
+                updates.append("client_done_comment = NULL")
                 payload["clientDone"] = False
                 payload["clientDoneAt"] = None
+                payload["clientDoneComment"] = None
         elif status is not None and status != old_status:
-            # Reset rule: when a task leaves waiting (status changes) client_done_at is cleared automatically. Moving back to waiting starts clean.
-            if current_task.get("clientDoneAt") is not None:
+            # Reset rule: when a task leaves waiting (status changes) client_done_at and client_done_comment are cleared automatically. Moving back to waiting starts clean.
+            if current_task.get("clientDoneAt") is not None or current_task.get("clientDoneComment") is not None:
                 updates.append("client_done_at = NULL")
+                updates.append("client_done_comment = NULL")
                 payload["clientDoneAt"] = None
+                payload["clientDoneComment"] = None
 
         updates.append("version = version + 1")
         updates.append("updated_at = ?")
@@ -866,33 +893,103 @@ def update_task(
     return get_task(task_id)
 
 
-def set_task_client_done(board_id: int, task_id: str, done: bool, actor: str = "client") -> dict:
-    """Set or clear client_done_at for a task in waiting status."""
+def set_task_client_done(
+    board_id: int,
+    task_id: str,
+    done: bool,
+    comment: str | None = None,
+    comment_provided: bool = False,
+    actor: str = "client",
+) -> dict:
+    """Set, clear, or edit client_done_at and client_done_comment for a task in waiting status."""
+    if not done and comment_provided:
+        raise ValueError("comment is not allowed when done is false")
+
     now = int(time.time())
-    client_done_at = now if done else None
     with _conn() as conn:
         row = conn.execute("SELECT * FROM board_tasks WHERE id = ? AND board_id = ?", (task_id, board_id)).fetchone()
         if not row:
             raise LookupError(f"Task {task_id} not found on board {board_id}")
         if row["status"] != "waiting":
             raise ValueError(f"Task {task_id} is not in waiting status")
-        conn.execute(
-            """
-            UPDATE board_tasks
-            SET client_done_at = ?, updated_at = ?, version = version + 1, updated_by = ?
-            WHERE id = ? AND board_id = ?
-            """,
-            (client_done_at, now, actor, task_id, board_id),
-        )
-        record_event(
-            conn,
-            board_id,
-            actor=actor,
-            action="client_done" if done else "client_undone",
-            task_id=task_id,
-            payload={"clientDoneAt": client_done_at},
-        )
-    return {"id": task_id, "clientDoneAt": client_done_at}
+
+        keys = row.keys()
+        current_done_at = row["client_done_at"] if "client_done_at" in keys else None
+        current_comment = row["client_done_comment"] if "client_done_comment" in keys else None
+        is_already_done = current_done_at is not None
+
+        if not done:
+            conn.execute(
+                """
+                UPDATE board_tasks
+                SET client_done_at = NULL, client_done_comment = NULL, updated_at = ?, version = version + 1, updated_by = ?
+                WHERE id = ? AND board_id = ?
+                """,
+                (now, actor, task_id, board_id),
+            )
+            record_event(
+                conn,
+                board_id,
+                actor=actor,
+                action="client_undone",
+                task_id=task_id,
+                payload={"clientDoneAt": None, "clientDoneComment": None, "comment": None},
+            )
+            return {"id": task_id, "clientDoneAt": None, "clientDoneComment": None}
+
+        if not is_already_done:
+            client_done_at = now
+            client_done_comment = clean_client_done_comment(comment) if comment_provided else None
+            conn.execute(
+                """
+                UPDATE board_tasks
+                SET client_done_at = ?, client_done_comment = ?, updated_at = ?, version = version + 1, updated_by = ?
+                WHERE id = ? AND board_id = ?
+                """,
+                (client_done_at, client_done_comment, now, actor, task_id, board_id),
+            )
+            payload: dict[str, Any] = {"clientDoneAt": client_done_at}
+            if client_done_comment is not None:
+                payload["clientDoneComment"] = client_done_comment
+                payload["comment"] = client_done_comment
+            record_event(
+                conn,
+                board_id,
+                actor=actor,
+                action="client_done",
+                task_id=task_id,
+                payload=payload,
+            )
+            return {"id": task_id, "clientDoneAt": client_done_at, "clientDoneComment": client_done_comment}
+        else:
+            # Already done: keep original clientDoneAt
+            client_done_at = current_done_at
+            if comment_provided:
+                client_done_comment = clean_client_done_comment(comment)
+                conn.execute(
+                    """
+                    UPDATE board_tasks
+                    SET client_done_comment = ?, updated_at = ?, version = version + 1, updated_by = ?
+                    WHERE id = ? AND board_id = ?
+                    """,
+                    (client_done_comment, now, actor, task_id, board_id),
+                )
+                payload = {
+                    "clientDoneComment": client_done_comment,
+                    "comment": client_done_comment,
+                }
+                record_event(
+                    conn,
+                    board_id,
+                    actor=actor,
+                    action="client_comment",
+                    task_id=task_id,
+                    payload=payload,
+                )
+            else:
+                client_done_comment = current_comment
+
+            return {"id": task_id, "clientDoneAt": client_done_at, "clientDoneComment": client_done_comment}
 
 
 def delete_task(board_id: int, task_id: str, actor: str = "admin") -> bool:

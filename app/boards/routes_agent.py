@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 from fastapi import APIRouter, Header, HTTPException, Query, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from ..routes_bridge import _auth_lane
 from . import store
@@ -27,6 +27,14 @@ class TaskCreateRequest(BaseModel):
 
     model_config = {"populate_by_name": True}
 
+    @model_validator(mode="before")
+    @classmethod
+    def reject_client_done_comment(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "clientDoneComment" in data or "client_done_comment" in data:
+                raise ValueError("clientDoneComment cannot be set")
+        return data
+
 
 class TaskUpdateRequest(BaseModel):
     status: str | None = Field(default=None)
@@ -46,6 +54,14 @@ class TaskUpdateRequest(BaseModel):
     version: int | None = Field(default=None)
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_client_done_comment(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "clientDoneComment" in data or "client_done_comment" in data:
+                raise ValueError("clientDoneComment cannot be modified by agents or admins")
+        return data
 
 
 class BoardStatusRequest(BaseModel):

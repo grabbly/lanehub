@@ -41,5 +41,11 @@
   "archive_title": "Archive",
   "client_done_action": "Mark as done",
   "client_done_marked": "✓ You marked: done",
-  "client_done_cancel": "Undo"
+  "client_done_cancel": "Undo mark",
+  "client_done_hint": "Done your part? Click to let us know. Add a comment if needed.",
+  "client_done_comment_placeholder": "Comment for us (optional)",
+  "client_done_comment_add": "Add comment",
+  "client_done_comment_edit": "Edit comment",
+  "client_done_comment_save": "Save",
+  "client_done_comment_cancel": "Cancel"
 }

@@ -41,5 +41,11 @@
   "archive_title": "Archiwum",
   "client_done_action": "Oznacz jako zrobione",
   "client_done_marked": "✓ Oznaczono: zrobione",
-  "client_done_cancel": "Cofnij"
+  "client_done_cancel": "Cofnij oznaczenie",
+  "client_done_hint": "Zrobione z Twojej strony? Kliknij — zobaczymy oznaczenie. W razie potrzeby dodaj komentarz.",
+  "client_done_comment_placeholder": "Komentarz dla nas (opcjonalnie)",
+  "client_done_comment_add": "Dodaj komentarz",
+  "client_done_comment_edit": "Edytuj komentarz",
+  "client_done_comment_save": "Zapisz",
+  "client_done_comment_cancel": "Anuluj"
 }

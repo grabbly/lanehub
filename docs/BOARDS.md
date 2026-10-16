@@ -64,14 +64,15 @@ location /yl/ {
 
 ### Client "✓ Done" tick
 
-On the client page, cards in `waiting` ("we are waiting on you") are shown only in the «Потрібно від вас» banner at the top — there is no separate waiting column there (the operator panel still shows all five columns). Each of them gets a "✓ Зроблено / Done" button. The client presses it when they did their part. It does **not** move the card and changes nothing else — it is a signal for the team and bots in case they forget to move the card. The client can untick it if pressed by mistake ("Скасувати"). No notifications of any kind are sent (no Telegram messages).
+On the client page, cards in `waiting` ("we are waiting on you") are shown only in the «Потрібно від вас» banner at the top — there is no separate waiting column there (the operator panel still shows all five columns). Each of them gets a "✓ Зроблено / Done" button with an optional client comment and an explanatory hint line underneath. The client presses it when they did their part. It does **not** move the card and changes nothing else — it is a signal for the team and bots in case they forget to move the card. The client can add or edit their comment later, or untick the card if pressed by mistake ("Скасувати позначку"). No notifications of any kind are sent (no Telegram messages).
 
-- **Endpoint**: `POST /{board_slug}/b/{token}/tasks/{task_id}/done` with body `{"done": true|false}` → `{id, clientDoneAt}`.
+- **Endpoint**: `POST /{board_slug}/b/{token}/tasks/{task_id}/done` with body `{"done": true, "comment"?: string}` or `{"done": false}` → `{id, clientDoneAt, clientDoneComment}`. Extra fields or providing `comment` with `done: false` returns 422. Comments are plain text up to 500 characters (longer returns 422). Body size limit is 4 KB (returns 413).
+- **Edit comment**: `done: true` on an already-done card replaces `clientDoneComment` (omitting `comment` leaves it unchanged; empty string clears it) while keeping the original `clientDoneAt`.
 - Strict token verification (same constant-time check and identical 404 response for wrong slug/token or task of another board / not client-visible / archived / not in `waiting`).
 - The client page calls the relative URL `tasks/<id>/done` so it works seamlessly behind reverse proxies mapping custom prefixes (e.g. `/yl/<token>/`).
 - In-memory rate limiting per board token: max 30 writes per 10 minutes (returns 429).
-- **Reset rule**: when a task leaves `waiting` (status changes), `client_done_at` is cleared automatically (the signal was consumed). Moving back to `waiting` starts clean.
-- **Events**: records `client_done` and `client_undone` with actor `client`.
+- **Reset rule**: when a task leaves `waiting` (status changes), both `client_done_at` and `client_done_comment` are cleared automatically (the signal was consumed). Moving back to `waiting` starts clean.
+- **Events**: records `client_done` (including comment payload if provided), `client_comment` (on comment edits), and `client_undone` with actor `client`.
 
 ## Rules for agents
 
@@ -83,7 +84,7 @@ Boards are **not** an internal team kanban or a dump of subtasks. A board is the
 4. **Finished work?** Move the card to `done` only when the client can actually see or test the result.
 5. **Archive done cards once seen:** Archive cards (e.g. after a week) with `PATCH /{lane}/board/tasks/<id>` `{"archived": true}`.
 6. **Keep «Де ми зараз» current:** Update the status line after each meaningful step using `PUT /{lane}/board/status` with `statusI18n`.
-7. **Check `clientDoneAt` on waiting cards:** When set, verify that the client did their part and move the card (or ask the developer). Agents can clear it via `PATCH /{lane}/board/tasks/<id>` with `{"clientDone": false}`, but cannot set it on the client's behalf.
+7. **Check `clientDoneAt` and `clientDoneComment` on waiting cards:** When set, verify that the client did their part, read their comment if they left one, and move the card (or ask the developer). Agents can clear it via `PATCH /{lane}/board/tasks/<id>` with `{"clientDone": false}`, but cannot set it or modify `clientDoneComment` on the client's behalf.
 
 ## Agent API
 

@@ -468,10 +468,11 @@ def test_client_data_json_structure_and_privacy(boards_client):
     # Tasks check: non-archived only, with updatedAt
     assert len(d["tasks"]) == 1
     task = d["tasks"][0]
-    expected_task_keys = {"title", "note", "status", "pay", "price", "position", "updatedAt", "id", "clientDoneAt"}
+    expected_task_keys = {"title", "note", "status", "pay", "price", "position", "updatedAt", "id", "clientDoneAt", "clientDoneComment"}
     assert set(task.keys()) == expected_task_keys
     assert task["id"] is not None
     assert task["clientDoneAt"] is None
+    assert task["clientDoneComment"] is None
     assert task["title"] == "Чекаємо доступу"
     assert task["note"] == "Надайте API ключ"
     assert isinstance(task["updatedAt"], int)
