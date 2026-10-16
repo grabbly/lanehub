@@ -46,6 +46,10 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.12.1 — 2026-10-16
+
+- **Boards client page: waiting cards are shown once.** Cards in `waiting` now appear only in the «Потрібно від вас» banner at the top; the duplicate "Waiting on you" column is gone from the client page (the operator panel keeps all five columns). The legend line now points to the banner. No API, data or schema changes.
+
 ## 0.12.0 — 2026-10-15
 
 - **Boards: Client "✓ Done" tick.** Cards in the `waiting` column ("we are waiting on you") get a "✓ Зроблено / Done" button on the client page and in the «Потрібно від вас» banner. The client marks it when they did their part without moving the card or generating notifications; mistakes can be unticked ("Скасувати").

@@ -64,7 +64,7 @@ location /yl/ {
 
 ### Client "✓ Done" tick
 
-Cards in the `waiting` column ("we are waiting on you") get a "✓ Зроблено / Done" button on the client page and in the «Потрібно від вас» banner. The client presses it when they did their part. It does **not** move the card and changes nothing else — it is a signal for the team and bots in case they forget to move the card. The client can untick it if pressed by mistake ("Скасувати"). No notifications of any kind are sent (no Telegram messages).
+On the client page, cards in `waiting` ("we are waiting on you") are shown only in the «Потрібно від вас» banner at the top — there is no separate waiting column there (the operator panel still shows all five columns). Each of them gets a "✓ Зроблено / Done" button. The client presses it when they did their part. It does **not** move the card and changes nothing else — it is a signal for the team and bots in case they forget to move the card. The client can untick it if pressed by mistake ("Скасувати"). No notifications of any kind are sent (no Telegram messages).
 
 - **Endpoint**: `POST /{board_slug}/b/{token}/tasks/{task_id}/done` with body `{"done": true|false}` → `{id, clientDoneAt}`.
 - Strict token verification (same constant-time check and identical 404 response for wrong slug/token or task of another board / not client-visible / archived / not in `waiting`).

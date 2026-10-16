@@ -26,7 +26,7 @@
   "pay_free": "free",
   "info_title": "How to read this board.",
   "info_backlog": "Backlog contains requests with provisional prices. Once confirmed, tasks move to Queue, In progress, and Done.",
-  "info_waiting": "“Waiting on you” means your next step is required: assets, access, or decision.",
+  "info_waiting": "“Action needed from you” at the top lists the steps we need from you: assets, access, or a decision.",
   "footer_question_title": "New task or question?",
   "footer_question_text": "Message us in our Telegram chat — we will estimate it and add it to the board.",
   "footer_private_notice": "This page is accessible only via this private link. Please do not forward it to third parties.",

@@ -76,6 +76,11 @@ itself and silently takes every update away from the new hub. So:
 
 ## Version-specific notes
 
+### 0.12.1 — waiting cards only in the banner
+
+- **Nothing to do:** client page change only (no schema, API or setting changes).
+- On the client page, `waiting` cards are listed once — in the «Потрібно від вас» banner; the separate waiting column is no longer shown there. The operator panel is unchanged.
+
 ### 0.12.0 — client ✓ Done tick
 
 - **Nothing to do:** new column `board_tasks.client_done_at` is added automatically on startup.
