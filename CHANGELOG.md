@@ -46,6 +46,10 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.14.1 — 2026-10-20
+
+- **Silent messages:** `POST /{lane}/send` accepts an optional `disableNotification: true` — Telegram delivers the message without a sound or vibration. Meant for routine reminders and status pings that should not ping people every time. Default unchanged (`false`); older clients keep working as before.
+
 ## 0.14.0 — 2026-10-16
 
 - **Boards client page: «Куди пішов депозит».** Clicking (tapping) the «Розподілено» or «Залишок» tile opens a small dialog with the deposit history: top-ups and refunds from the ledger, every card paid from the deposit (archived ones included) with its price, status and date, newest first, and a footer «Депозит − Розподілено = Залишок» that always equals the tiles. Closes with ✕, Esc or a click outside; keyboard- and screen-reader friendly; works at phone width in light and dark themes. Texts in EN / PL / RU / UK (`deposit_history_*`).
