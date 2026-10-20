@@ -65,6 +65,7 @@ class SendRequest(BaseModel):
     parse_mode: ParseMode | None = Field(default=None, alias="parseMode")
     reply_to_message_id: int | None = Field(default=None, alias="replyToMessageId")
     disable_web_page_preview: bool = Field(default=False, alias="disableWebPagePreview")
+    disable_notification: bool = Field(default=False, alias="disableNotification")
 
     model_config = {"populate_by_name": True}
 
@@ -110,6 +111,7 @@ async def perform_send(
     parse_mode: str | None = None,
     reply_to: int | None = None,
     disable_preview: bool = False,
+    silent: bool = False,
 ) -> dict:
     """Send text as the lane's bot to its bound chat, splitting long text into
     <=4000-char parts (a reply goes on the first part only)."""
@@ -122,7 +124,7 @@ async def perform_send(
         try:
             result = await telegram.send_message(
                 lane["bot_token"], target, part, parse_mode=parse_mode,
-                reply_to=reply_to if i == 0 else None, disable_preview=disable_preview,
+                reply_to=reply_to if i == 0 else None, disable_preview=disable_preview, silent=silent,
             )
         except telegram.TelegramError as exc:
             raise _send_failed(lane, exc)
@@ -151,7 +153,7 @@ async def send(lane_slug: str, req: SendRequest, x_bridge_token: str = Header(de
     if auto_until > now and not text.startswith(AUTO_PREFIX):
         text = f"{AUTO_PREFIX}{text}"
     return await perform_send(lane, text, req.chat_id, req.parse_mode, req.reply_to_message_id,
-                              req.disable_web_page_preview)
+                              req.disable_web_page_preview, req.disable_notification)
 
 
 @router.post("/{lane_slug}/sendFile")

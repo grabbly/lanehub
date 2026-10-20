@@ -205,6 +205,7 @@ Optional fields (camelCase or snake_case; the default is plain text):
 | `parseMode` | `"HTML"` or `"MarkdownV2"` — Telegram formatting. MarkdownV2 needs `_*[]()~\`>#+-=\|{}.!` escaped; HTML is easier for agents. With a formatting error Telegram rejects the message (502). Text over 4000 chars is split, which can cut through a tag, so keep formatted messages short. |
 | `replyToMessageId` | reply to that Telegram `messageId` (sent anyway if it was deleted); applies to the first part |
 | `disableWebPagePreview` | `true` = no link preview |
+| `disableNotification` | `true` = delivered silently (no sound/vibration) — for routine reminders |
 
 - A lane is **bound to exactly one chat** and posts only there. `chatId` is
   optional: omit it and the message goes to the bound chat; pass it and it must

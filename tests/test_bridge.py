@@ -610,6 +610,11 @@ def test_send_formatting_and_reply(client):
     client.post("/backend/send", headers=h, json={"text": "*literal*"})
     payload = [c for c in client.fake_tg.calls if c[1] == "sendMessage"][-1][2]
     assert "parse_mode" not in payload and "reply_parameters" not in payload
+    assert "disable_notification" not in payload
+    # silent on request (routine reminders)
+    client.post("/backend/send", headers=h, json={"text": "tick", "disableNotification": True})
+    payload = [c for c in client.fake_tg.calls if c[1] == "sendMessage"][-1][2]
+    assert payload["disable_notification"] is True
     assert client.post("/backend/send", headers=h, json={"text": "x", "parseMode": "Markdown"}).status_code == 422
 
 

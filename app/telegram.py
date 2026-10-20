@@ -66,6 +66,7 @@ async def send_message(
     parse_mode: str | None = None,
     reply_to: int | None = None,
     disable_preview: bool = False,
+    silent: bool = False,
 ) -> dict:
     payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
     if parse_mode:
@@ -75,6 +76,9 @@ async def send_message(
         payload["reply_parameters"] = {"message_id": reply_to, "allow_sending_without_reply": True}
     if disable_preview:
         payload["link_preview_options"] = {"is_disabled": True}
+    if silent:
+        # Delivered without a sound/vibration (routine reminders that must not ping every time).
+        payload["disable_notification"] = True
     return await tg_call(bot_token, "sendMessage", payload)
 
 
