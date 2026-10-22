@@ -76,6 +76,10 @@ itself and silently takes every update away from the new hub. So:
 
 ## Version-specific notes
 
+### 0.14.2 — «＋ Add bot» picker visible again
+
+- **Nothing to do:** panel CSS fix only, no schema, setting or API changes.
+
 ### 0.14.1 — silent messages
 
 - **Nothing to do:** additive API field, no schema or setting changes.

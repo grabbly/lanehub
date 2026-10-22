@@ -46,6 +46,10 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.14.2 — 2026-10-22
+
+- **Fix: «＋ Add bot» showed nothing.** The bot picker opened below the chat card, which clipped it away, so the click looked dead. The card no longer clips while the picker is open. All four looks.
+
 ## 0.14.1 — 2026-10-20
 
 - **Silent messages:** `POST /{lane}/send` accepts an optional `disableNotification: true` — Telegram delivers the message without a sound or vibration. Meant for routine reminders and status pings that should not ping people every time. Default unchanged (`false`); older clients keep working as before.

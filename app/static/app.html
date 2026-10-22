@@ -128,6 +128,8 @@
   .help { font-size: 13px; color: var(--muted); }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 4px; }
   .add-row { padding: 10px 16px; border-top: 1px solid var(--line); position: relative; }
+  /* The picker drops below the card; .chat's overflow:hidden would clip it away. */
+  .chat:has(.picker) { overflow: visible; }
   .link-btn { border: 0; background: none; color: var(--accent); font-weight: 500; padding: 4px 0; display: inline-flex; gap: 6px; align-items: center; }
 
   .picker { position: absolute; left: 16px; top: 44px; z-index: 20; width: min(340px, calc(100vw - 48px)); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,.18); padding: 8px; }
