@@ -333,3 +333,73 @@ def test_lanes_list_has_hub_wide_seen_chats(client):
     make_lane(client, slug="alpha")
     body = client.get("/admin/api/lanes").json()
     assert isinstance(body["seenChats"], list)
+
+
+def test_bot_check_reports_bot_and_membership(client):
+    login(client)
+    r = client.post("/admin/api/bot-check", json={"botToken": "new-token:abc", "chatId": "-100500"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["bot"]["username"] == "test_bot"
+    assert body["chatId"] == "-100500" and body["chat"]["title"] == "Test chat"
+    assert body["inChat"] is True and body["isAdmin"] is False and body["status"] == "member"
+    client.fake_tg.member_status = "administrator"
+    assert client.post("/admin/api/bot-check", json={"botToken": "new-token:abc", "chatId": "-100500"}).json()["isAdmin"]
+
+
+def test_bot_check_bot_not_in_group_yet(client, monkeypatch):
+    """Telegram says "chat not found" to a bot that isn't in a basic group —
+    the check reports it instead of failing, so the panel can explain."""
+    from app.telegram import TelegramError
+    login(client)
+    real = client.fake_tg.__call__
+
+    async def fake(bot_token, method, payload=None, timeout=15):
+        if method == "getChat" and "5331744355" in str(payload["chat_id"]):
+            raise TelegramError("Bad Request: chat not found")
+        return await real(bot_token, method, payload, timeout)
+
+    monkeypatch.setattr("app.telegram.tg_call", fake)
+    body = client.post("/admin/api/bot-check", json={"botToken": "new-token:abc", "chatId": "-5331744355"}).json()
+    assert body["inChat"] is False and body["status"] == "not_found"
+    assert "chat not found" in body["error"]
+    client.fake_tg.member_status = "left"
+    body = client.post("/admin/api/bot-check", json={"botToken": "new-token:abc", "chatId": "-100500"}).json()
+    assert body["inChat"] is False and body["status"] == "left"
+
+
+def test_bot_check_follows_supergroup_upgrade(client, monkeypatch):
+    """Promoting the bot to admin upgrades a basic group; the old id then
+    answers with migrate_to_chat_id and the check hands back the new id."""
+    from app.telegram import TelegramError
+    login(client)
+    real = client.fake_tg.__call__
+
+    async def fake(bot_token, method, payload=None, timeout=15):
+        if method == "getChat" and str(payload["chat_id"]) == "-5331744355":
+            raise TelegramError("Bad Request: group chat was upgraded to a supergroup chat",
+                                {"ok": False, "parameters": {"migrate_to_chat_id": -1005331744355}})
+        return await real(bot_token, method, payload, timeout)
+
+    monkeypatch.setattr("app.telegram.tg_call", fake)
+    body = client.post("/admin/api/bot-check", json={"botToken": "new-token:abc", "chatId": "-5331744355"}).json()
+    assert body["chatId"] == "-1005331744355" and body["inChat"] is True
+
+
+def test_bot_check_known_bot_and_bad_token(client, monkeypatch):
+    from app.telegram import TelegramError
+    login(client)
+    make_lane(client, slug="alpha", chat_id="-100500")
+    body = client.post("/admin/api/bot-check", json={"fromLane": "alpha", "chatId": "-100500"}).json()
+    assert body["knownLanes"] == ["alpha"] and body["alreadyInChat"] == "alpha"
+    real = client.fake_tg.__call__
+
+    async def fake(bot_token, method, payload=None, timeout=15):
+        if method == "getMe" and bot_token == "bad":
+            raise TelegramError("Unauthorized")
+        return await real(bot_token, method, payload, timeout)
+
+    monkeypatch.setattr("app.telegram.tg_call", fake)
+    assert client.post("/admin/api/bot-check", json={"botToken": "bad", "chatId": "-100500"}).status_code == 422
+    client.cookies.clear()
+    assert client.post("/admin/api/bot-check", json={"botToken": "x:y"}).status_code == 401

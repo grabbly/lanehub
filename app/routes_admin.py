@@ -204,6 +204,86 @@ async def lanes_list(hub_session: str | None = Cookie(default=None)) -> dict:
     }
 
 
+def _bot_token_of(bot_token: str, from_lane: str) -> str:
+    """The token from the request: pasted, or taken from a lane of a known bot."""
+    token = (bot_token or "").strip()
+    if (from_lane or "").strip():
+        if token:
+            raise HTTPException(status_code=422, detail="pass either botToken or fromLane, not both")
+        source = db.get_lane(from_lane.strip().lower())
+        if not source:
+            raise HTTPException(status_code=404, detail=f"no lane '{from_lane}' to take the bot from")
+        token = source["bot_token"]
+    if not token:
+        raise HTTPException(status_code=422, detail="botToken (or fromLane) is required")
+    return token
+
+
+async def _get_me_or_422(token: str) -> dict:
+    try:
+        return await telegram.get_me(token)
+    except telegram.TelegramError as exc:
+        raise HTTPException(status_code=422, detail=f"bot token rejected by Telegram: {exc}")
+
+
+class BotCheck(BaseModel):
+    bot_token: str = Field(default="", alias="botToken")
+    from_lane: str = Field(default="", alias="fromLane")
+    chat_id: str = Field(default="", alias="chatId")
+
+    model_config = {"populate_by_name": True}
+
+
+@router.post("/bot-check")
+async def bot_check(req: BotCheck, hub_session: str | None = Cookie(default=None)) -> dict:
+    """Pre-flight for "Add bot": which bot the token is, and whether it is in
+    the chat yet and an admin there. Read-only — the panel polls it while the
+    operator adds the bot to the group in Telegram, and enables "Add bot" once
+    `inChat` turns true. `chatId` is the id to create the lane with (it changes
+    when the first admin promotion turns a basic group into a supergroup)."""
+    require_admin(hub_session)
+    token = _bot_token_of(req.bot_token, req.from_lane)
+    me = await _get_me_or_422(token)
+    raw = req.chat_id.strip()
+    out = {
+        "bot": {
+            "username": me.get("username", ""),
+            "name": me.get("first_name", ""),
+            # privacy mode off: the bot sees every message even without admin
+            "readsAllMessages": bool(me.get("can_read_all_group_messages")),
+        },
+        "chatId": raw,
+        "chat": None,
+        "status": "not_found",
+        "inChat": False,
+        "isAdmin": False,
+        "error": "",
+        "knownLanes": [lane["slug"] for lane in db.bot_lanes(token)],
+        "alreadyInChat": "",
+    }
+    if not raw:
+        return out
+    try:
+        chat = await telegram.resolve_chat(token, raw)
+        cid = str(chat.get("id", raw))
+        out["chatId"] = cid
+        out["chat"] = {"id": cid, "title": chat.get("title") or chat.get("first_name") or "", "type": chat.get("type", "")}
+        member = await telegram.get_chat_member(token, cid, telegram.bot_id_from_token(token) or me["id"])
+    except telegram.TelegramError as exc:
+        out["error"] = exc.description
+        return out
+    status = member.get("status", "")
+    out["status"] = status
+    out["inChat"] = status in ("creator", "administrator", "member") or (
+        status == "restricted" and bool(member.get("is_member"))
+    )
+    out["isAdmin"] = status in ("creator", "administrator")
+    for lane in db.bot_lanes(token):
+        if str(lane["default_chat_id"]) in (raw, out["chatId"]):
+            out["alreadyInChat"] = lane["slug"]
+    return out
+
+
 @router.post("/lanes", status_code=201)
 async def lanes_create(req: LaneCreate, hub_session: str | None = Cookie(default=None)) -> dict:
     require_admin(hub_session)
@@ -215,20 +295,8 @@ async def lanes_create(req: LaneCreate, hub_session: str | None = Cookie(default
             raise HTTPException(status_code=422, detail=f"slug '{slug}' is reserved")
         if db.get_lane(slug):
             raise HTTPException(status_code=409, detail="lane already exists")
-    token = req.bot_token.strip()
-    if req.from_lane.strip():
-        if token:
-            raise HTTPException(status_code=422, detail="pass either botToken or fromLane, not both")
-        source = db.get_lane(req.from_lane.strip().lower())
-        if not source:
-            raise HTTPException(status_code=404, detail=f"no lane '{req.from_lane}' to take the bot from")
-        token = source["bot_token"]
-    if not token:
-        raise HTTPException(status_code=422, detail="botToken (or fromLane) is required")
-    try:
-        me = await telegram.get_me(token)
-    except telegram.TelegramError as exc:
-        raise HTTPException(status_code=422, detail=f"bot token rejected by Telegram: {exc}")
+    token = _bot_token_of(req.bot_token, req.from_lane)
+    me = await _get_me_or_422(token)
     if not slug:
         slug = derive_slug(me.get("username", ""))
     lane_dict = db.create_lane(

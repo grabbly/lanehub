@@ -37,8 +37,19 @@ Inside each chat block:
 - **Bot rows**: click any bot row to expand its details.
 - **＋ Add bot**: adds another bot to this specific chat. Offers two choices:
   - **Your bots**: picks a bot the hub already knows; reuses the stored token on
-    the server without the token ever reaching the browser.
-  - **Paste a bot token**: opens a dialog to paste a bot token from @BotFather.
+    the server without the token ever reaching the browser. If that bot is not
+    in the group yet (or not an admin there), the step-by-step dialog below opens
+    at step 2.
+  - **Paste a bot token**: a step-by-step dialog.
+    1. Paste the token from @BotFather and press **Check token**: the hub asks
+       Telegram which bot it is and shows its @username. Nothing is saved yet.
+    2. The dialog tells you to add that bot to the group in Telegram and make it
+       an admin (no rights need to be ticked). It checks every few seconds and
+       shows **Waiting** (not in the group), **Almost** (in the group, not an
+       admin) or **Ready**. **Check now** checks at once.
+    3. **Add bot** unlocks as soon as the bot is in the group.
+    If the first admin promotion turns the group into a supergroup, the dialog
+    picks up the new chat id by itself.
 
 Special boxes on the Chats tab:
 - **Groups your bots have seen**: shows groups where your bots were added but no

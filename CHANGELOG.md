@@ -46,6 +46,12 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.14.3 — 2026-10-22
+
+- **«Add bot» walks you through it.** Pasting a token no longer fails with "chat not found" when the bot isn't in the group yet. Step 1: the hub names the bot. Step 2: add it to the group and make it an admin in Telegram — the dialog checks every few seconds and shows Waiting / Almost (not admin) / Ready. Step 3: **Add bot** unlocks once the bot is in the group. Picking a known bot from **Your bots** that isn't in the group opens the same steps.
+- New read-only `POST /admin/api/bot-check {botToken|fromLane, chatId}`.
+- A chat id of a basic group that became a supergroup is followed to the new id (Telegram's `migrate_to_chat_id`) when adding a bot or binding a lane.
+
 ## 0.14.2 — 2026-10-22
 
 - **Fix: «＋ Add bot» showed nothing.** The bot picker opened below the chat card, which clipped it away, so the click looked dead. The card no longer clips while the picker is open. All four looks.

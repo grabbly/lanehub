@@ -92,6 +92,7 @@ routing changes. If a change would require touching Python, it's out of scope.
     → `{version, authenticated, deliveryMode, publicBaseUrl, adminPasswordSet}`
   - `GET /admin/api/lanes` → `{lanes: [Lane]}` (see shape below)
   - `POST /admin/api/lanes {botToken, title?, slug?, defaultChatId?}` → Lane
+  - `POST /admin/api/bot-check {botToken|fromLane, chatId}` → `{bot:{username,name,readsAllMessages}, chatId, chat, status, inChat, isAdmin, error, knownLanes, alreadyInChat}` (read-only pre-flight for "Add bot"; `chatId` is the id to create the lane with)
   - `PATCH /admin/api/lanes/{slug} {title?|defaultChatId?|enabled?|operatorChatId?|botToken?}`
   - `POST /admin/api/lanes/{slug}/rotate-key` → `{apiKey}`
   - `DELETE /admin/api/lanes/{slug}`

@@ -159,6 +159,11 @@ async def resolve_chat(bot_token: str, raw: str) -> dict:
     try:
         return await get_chat(bot_token, raw)
     except TelegramError as exc:
+        # A basic group upgraded to a supergroup (first admin promotion) answers
+        # with the new id — follow it instead of failing on the old one.
+        moved = (exc.payload.get("parameters") or {}).get("migrate_to_chat_id")
+        if moved:
+            return await get_chat(bot_token, str(moved))
         digits = raw.lstrip("-")
         if not digits.isdigit() or raw.startswith("-100"):
             raise

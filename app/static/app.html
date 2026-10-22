@@ -130,6 +130,14 @@
   .add-row { padding: 10px 16px; border-top: 1px solid var(--line); position: relative; }
   /* The picker drops below the card; .chat's overflow:hidden would clip it away. */
   .chat:has(.picker) { overflow: visible; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .ab-row { display: flex; gap: 8px; }
+  .ab-row .txt { flex: 1; min-width: 0; }
+  .ab-howto { margin: 4px 0 0; padding-left: 20px; display: grid; gap: 6px; font-size: 13.5px; line-height: 1.45; }
+  .ab-status { display: grid; gap: 8px; font-size: 13.5px; }
+  .ab-status .pill { margin-right: 6px; }
+  .ab-status .ab-row { align-items: center; }
+  #ab-bot { display: flex; align-items: center; gap: 10px; font-size: 14px; }
   .link-btn { border: 0; background: none; color: var(--accent); font-weight: 500; padding: 4px 0; display: inline-flex; gap: 6px; align-items: center; }
 
   .picker { position: absolute; left: 16px; top: 44px; z-index: 20; width: min(340px, calc(100vw - 48px)); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,.18); padding: 8px; }
@@ -588,20 +596,36 @@
   </div>
 </dialog>
 
-<!-- Add Someone Else's Bot dialog -->
+<!-- Add bot dialog: token → bot in the group (polled) → add -->
 <dialog id="add-bot-dlg">
-  <div class="dlg-hd"><h2>Paste a bot token</h2><button class="ghost" id="ab-close" aria-label="Close">✕</button></div>
+  <div class="dlg-hd"><h2 id="ab-head">Add a bot</h2><button class="ghost" id="ab-close" aria-label="Close">✕</button></div>
+  <div class="steps"><span class="on" id="ab-st1"></span><span id="ab-st2"></span><span id="ab-st3"></span></div>
   <div class="dlg-bd">
-    <label class="lbl" for="ab-token">Bot token from @BotFather</label>
-    <input class="txt mono" id="ab-token" placeholder="123456789:AAH… from @BotFather" autocomplete="off">
-    <label class="lbl" for="ab-title">Title (optional)</label>
-    <input class="txt" id="ab-title" placeholder="Backend agent">
-    <div class="help">The hub checks the token with Telegram and names the bot by its username. If the bot already works in another app, it's set to <b>Posts only</b> so that app keeps its messages.</div>
+    <div id="ab-s1">
+      <label class="lbl" for="ab-token">Step 1 · Bot token from @BotFather</label>
+      <div class="ab-row">
+        <input class="txt mono" id="ab-token" placeholder="123456789:AAH… from @BotFather" autocomplete="off">
+        <button class="btn" id="ab-check-token">Check token</button>
+      </div>
+      <div class="help" id="ab-s1-help">The hub asks Telegram which bot this is. Nothing is saved yet.</div>
+    </div>
+    <div id="ab-bot" hidden></div>
+    <div id="ab-s2" hidden>
+      <label class="lbl">Step 2 · Put the bot into the group in Telegram</label>
+      <ol class="ab-howto" id="ab-howto"></ol>
+      <div class="ab-status" id="ab-status" aria-live="polite"></div>
+      <div class="help">The first time a bot becomes an admin, Telegram turns the group into a supergroup and gives it a new id. The hub follows the new id by itself.</div>
+    </div>
+    <div id="ab-s3" hidden>
+      <label class="lbl" for="ab-title">Step 3 · Title (optional)</label>
+      <input class="txt" id="ab-title" placeholder="Backend agent">
+      <div class="help">If the bot already works in another app, it's set to <b>Posts only</b> so that app keeps its messages.</div>
+    </div>
     <div class="error" id="ab-error"></div>
   </div>
   <div class="dlg-ft">
     <button class="btn" id="ab-cancel">Cancel</button>
-    <button class="btn primary" id="ab-submit">Add bot</button>
+    <button class="btn primary" id="ab-submit" disabled>Add bot</button>
   </div>
 </dialog>
 
@@ -1928,10 +1952,27 @@ function renderPickerHTML(chatId) {
 }
 
 async function addKnownBotToChat(chatId, fromSlug) {
+  // A bot the hub knows still has to be in the group in Telegram. Check first;
+  // when it isn't there (or can't see messages) walk through the steps instead
+  // of failing with "chat not found".
+  let check;
+  try {
+    check = await api('/admin/api/bot-check', {
+      method: 'POST',
+      body: JSON.stringify({ fromLane: fromSlug, chatId }),
+    });
+  } catch (err) {
+    alertDlg({ title: 'Error adding bot', message: err.message });
+    return;
+  }
+  if (!check.inChat || !(check.isAdmin || check.bot.readsAllMessages)) {
+    openAddBotDialog(chatId, { fromLane: fromSlug, check });
+    return;
+  }
   try {
     const res = await api('/admin/api/lanes', {
       method: 'POST',
-      body: JSON.stringify({ fromLane: fromSlug, defaultChatId: chatId }),
+      body: JSON.stringify({ fromLane: fromSlug, defaultChatId: check.chatId || chatId }),
     });
     if (res.warning) await alertDlg({ title: 'Notice', message: res.warning });
     openLaneSlug = res.slug;
@@ -1942,34 +1983,160 @@ async function addKnownBotToChat(chatId, fromSlug) {
   }
 }
 
-// ----------------- ADD SOMEONE ELSE'S BOT DIALOG -----------------
-let addBotTargetChatId = null;
-function openAddBotDialog(chatId) {
-  addBotTargetChatId = chatId;
+// ----------------- ADD BOT DIALOG -----------------
+// Step 1: paste a token (skipped for a bot the hub knows) → the hub names the bot.
+// Step 2: the operator adds it to the group and makes it admin in Telegram; the
+//         dialog re-checks every few seconds and says what is still missing.
+// Step 3: "Add bot" unlocks once Telegram reports the bot in the group.
+const AB_POLL_MS = 4000;
+const AB_POLL_FOR_MS = 15 * 60 * 1000;
+let ab = null;
+
+function openAddBotDialog(chatId, opts = {}) {
+  stopAbPolling();
+  ab = { chatId, fromLane: opts.fromLane || '', token: '', check: opts.check || null,
+         timer: null, busy: false, pollUntil: 0 };
+  $('ab-head').textContent = `Add a bot to «${getChatTitle(chatId)}»`;
   $('ab-token').value = '';
   $('ab-title').value = '';
   $('ab-error').textContent = '';
+  $('ab-s1').hidden = !!ab.fromLane;
   $('add-bot-dlg').showModal();
+  if (ab.check) startAbPolling(); else $('ab-token').focus();
+  renderAddBot();
 }
+
+function stopAbPolling() {
+  if (ab && ab.timer) { clearInterval(ab.timer); ab.timer = null; }
+}
+
+function startAbPolling() {
+  stopAbPolling();
+  if (!ab || abDone()) return;
+  ab.pollUntil = Date.now() + AB_POLL_FOR_MS;
+  ab.timer = setInterval(() => {
+    if (!ab || !$('add-bot-dlg').open || Date.now() > ab.pollUntil) { stopAbPolling(); renderAddBot(); return; }
+    runAbCheck(true);
+  }, AB_POLL_MS);
+}
+
+// Nothing left to wait for: in the group as admin (or privacy mode off).
+function abDone() {
+  const c = ab && ab.check;
+  return !!c && c.inChat && (c.isAdmin || c.bot.readsAllMessages);
+}
+
+async function runAbCheck(quiet) {
+  if (!ab || ab.busy) return;
+  const body = ab.fromLane ? { fromLane: ab.fromLane } : { botToken: ab.token };
+  ab.busy = true;
+  if (!quiet) $('ab-error').textContent = '';
+  try {
+    const res = await api('/admin/api/bot-check', {
+      method: 'POST',
+      body: JSON.stringify({ ...body, chatId: ab.chatId }),
+    });
+    if (!ab) return;
+    ab.check = res;
+    if (res.chatId) ab.chatId = res.chatId; // the group may have become a supergroup
+    if (abDone()) stopAbPolling();
+  } catch (err) {
+    if (!quiet) $('ab-error').textContent = err.message;
+    if (!ab.check) stopAbPolling();
+  } finally {
+    if (ab) ab.busy = false;
+    renderAddBot();
+  }
+}
+
+function renderAddBot() {
+  if (!ab) return;
+  const c = ab.check;
+  const user = c ? '@' + (c.bot.username || '') : '';
+  const chatTitle = getChatTitle(ab.chatId);
+  $('ab-st2').className = c ? 'on' : '';
+  $('ab-st3').className = c && c.inChat ? 'on' : '';
+
+  const botBox = $('ab-bot');
+  botBox.hidden = !c;
+  if (c) {
+    const known = ab.fromLane ? 'token on file' : (c.knownLanes.length ? `already in the hub (${c.knownLanes.join(', ')})` : 'token OK');
+    botBox.innerHTML = `<span class="pill ok">✓ ${esc(known)}</span><span><b class="mono">${esc(user)}</b>${c.bot.name ? ' · ' + esc(c.bot.name) : ''}</span>`;
+  }
+
+  $('ab-s2').hidden = !c;
+  if (c) {
+    $('ab-howto').innerHTML = `
+      <li><b>Add it to the group.</b> In Telegram open «${esc(chatTitle)}» → tap the group name → <b>Add members</b> → search <b class="mono">${esc(user)}</b> → <b>Add</b>.</li>
+      <li><b>Make it an admin.</b> Group name → <b>Edit</b> (✎) → <b>Administrators</b> → <b>Add admin</b> → <b class="mono">${esc(user)}</b> → <b>Save</b>. No rights need to be ticked, only the admin status. Without it the bot does not see people's ordinary messages.</li>
+      <li><b>Come back here.</b> The hub checks every few seconds by itself, or press <b>Check now</b>.</li>`;
+    let pill, text;
+    if (c.alreadyInChat) {
+      pill = 'ok'; text = `This bot is already in this chat (lane ${c.alreadyInChat}). Nothing to add.`;
+    } else if (c.status === 'kicked') {
+      pill = 'danger'; text = 'The bot was removed from the group and is banned there. Unban it in the group settings, then add it again.';
+    } else if (!c.inChat) {
+      pill = 'danger'; text = `${user} is not in «${chatTitle}» yet. Do step 1 above.`;
+    } else if (!c.isAdmin && !c.bot.readsAllMessages) {
+      pill = 'warn'; text = `${user} is in the group but not an admin. Do step 2, or it will only see commands and replies to it.`;
+    } else if (!c.isAdmin) {
+      pill = 'ok'; text = `${user} is in the group. It is not an admin, but its privacy mode is off, so it sees every message.`;
+    } else {
+      pill = 'ok'; text = `${user} is in the group and is an admin. Ready to add.`;
+    }
+    const label = { ok: 'Ready', warn: 'Almost', danger: 'Waiting' }[pill];
+    const polling = !!ab.timer;
+    $('ab-status').innerHTML = `<div><span class="pill ${pill}">${label}</span>${esc(text)}</div>`
+      + (abDone() || c.alreadyInChat ? '' : `<div class="ab-row"><button class="btn sm" id="ab-recheck">Check now</button>${polling ? '<small class="help">checking every few seconds…</small>' : ''}</div>`);
+    const re = $('ab-recheck');
+    if (re) re.onclick = () => { runAbCheck(false); if (!ab.timer) startAbPolling(); };
+  }
+
+  $('ab-s3').hidden = !(c && c.inChat && !c.alreadyInChat);
+  $('ab-submit').disabled = !(c && c.inChat && !c.alreadyInChat);
+}
+
+// 'close' fires asynchronously: a dialog reopened meanwhile keeps its polling.
+$('add-bot-dlg').addEventListener('close', () => { if (!$('add-bot-dlg').open) stopAbPolling(); });
 $('ab-close').onclick = () => $('add-bot-dlg').close();
 $('ab-cancel').onclick = () => $('add-bot-dlg').close();
-$('ab-submit').onclick = async () => {
+$('ab-token').addEventListener('input', () => {
+  // A different token is a different bot — start over from step 1.
+  if (!ab) return;
+  stopAbPolling();
+  ab.check = null;
+  ab.token = '';
+  renderAddBot();
+});
+$('ab-token').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('ab-check-token').click(); } });
+$('ab-check-token').onclick = async () => {
+  if (!ab) return;
   const token = $('ab-token').value.trim();
-  const title = $('ab-title').value.trim();
+  if (!token) { $('ab-error').textContent = 'Paste a bot token first'; return; }
+  ab.token = token;
+  await runAbCheck(false);
+  if (ab && ab.check) { startAbPolling(); renderAddBot(); }
+};
+$('ab-submit').onclick = async () => {
+  if (!ab || !ab.check || !ab.check.inChat) return;
   const errBox = $('ab-error');
   errBox.textContent = '';
-  if (!token) { errBox.textContent = 'Paste a bot token first'; return; }
+  const who = ab.fromLane ? { fromLane: ab.fromLane } : { botToken: ab.token };
+  $('ab-submit').disabled = true;
   try {
     const res = await api('/admin/api/lanes', {
       method: 'POST',
-      body: JSON.stringify({ botToken: token, title, defaultChatId: addBotTargetChatId }),
+      body: JSON.stringify({ ...who, title: $('ab-title').value.trim(), defaultChatId: ab.chatId }),
     });
     $('add-bot-dlg').close();
     if (res.warning) await alertDlg({ title: 'Notice', message: res.warning });
     openLaneSlug = res.slug;
     toast('Bot added');
     await loadLanes();
-  } catch (err) { errBox.textContent = err.message; }
+  } catch (err) {
+    errBox.textContent = err.message;
+    $('ab-submit').disabled = false;
+  }
 };
 
 // ----------------- NEW CHAT WIZARD -----------------

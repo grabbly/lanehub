@@ -76,6 +76,10 @@ itself and silently takes every update away from the new hub. So:
 
 ## Version-specific notes
 
+### 0.14.3 — step-by-step «Add bot»
+
+- **Nothing to do:** new read-only admin endpoint and panel changes, no schema or setting changes.
+
 ### 0.14.2 — «＋ Add bot» picker visible again
 
 - **Nothing to do:** panel CSS fix only, no schema, setting or API changes.
