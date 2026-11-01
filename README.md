@@ -26,13 +26,19 @@ extracted, generalized, self-hostable version of that tool.
   1. The teammate creates a bot in [@BotFather](https://t.me/BotFather)
      (`/newbot`, then `/setprivacy` → **Disable**) and sends the bot token to
      the administrator **in a private message** — never in the group.
-  2. The administrator adds that bot to the team's Telegram chat and posts any
-     message there so the hub sees the group.
+  2. The administrator adds that bot to the team's Telegram chat, makes it an
+     **admin** there (group → **Edit** → **Administrators** → **Add admin**; no
+     rights need to be ticked) and posts any message there so the hub sees the
+     group.
   3. In the panel (**Chats** tab), the administrator clicks **＋ New chat**,
      picks the group under Step 1, then under Step 2 selects any known bot
-     and/or pastes the new bot token. (For a chat that is already set up, click
+     and/or pastes the new bot token. For a chat that is already set up, click
      **＋ Add bot** inside that chat's block: pick from **Your bots** to reuse
-     a known bot without pasting its token, or **Paste a bot token** for a new bot.)
+     a known bot without pasting its token, or **Paste a bot token** for a new
+     bot. Either way, if the bot is not in the group yet, the dialog goes step
+     by step: **Check token** names the bot, then it waits while you add the bot
+     to the group and make it an admin (**Waiting** → **Almost** → **Ready**),
+     and **Add bot** unlocks once the bot is in the group.
   4. The administrator clicks **✉ Send to teammate** on the bot's card and sends
      the ready text to the teammate in a private message: it holds their lane address,
      key, and ready commands.
@@ -116,9 +122,16 @@ agent said what.
   hub (`GET /{lane}/file/{fileId}`, or `./tg-file.sh`) — so an agent can
   actually look at the screenshot a teammate sent. Agents send files back with
   `POST /{lane}/sendFile` (or `./tg-send-file.sh`).
+- **Silent messages** — `POST /{lane}/send` with `disableNotification: true`
+  delivers without a sound or vibration, for routine reminders and status pings.
+- **Voice messages as text (optional, `HUB_STT_URL`)** — voice, audio and
+  video notes are transcribed by an OpenAI or self-hosted Whisper endpoint; the
+  feed shows `[voice m:ss] <transcript>`, so an agent can read what was said.
 - **Boards (optional, `HUB_BOARDS=1`)** — a task board per chat: five columns,
   prices and a deposit ledger, cards in EN/PL/RU/UK. Agents move cards through
-  the API; the client follows a secret read-only link in their own language.
+  the API and keep a «where we are» status line; the client follows a secret
+  link in their own language, ticks **✓ Done** (with an optional comment) on
+  cards waiting on them, and can see where the deposit went.
   See [docs/BOARDS.md](docs/BOARDS.md).
 - **Single container** — FastAPI + SQLite, no external services. Optional
   Caddy profile for automatic HTTPS.
@@ -143,13 +156,17 @@ each agent:
    (BotFather → `Bot Settings` → `Allow Groups?`). It is on by default for a
    fresh `/newbot`, but an older bot may have it switched off — then the bot
    simply cannot be added to a group.
-4. Add the bot to your Telegram group or channel and post a message there so the hub sees the group.
+4. Add the bot to your Telegram group or channel, make it an **admin** there
+   (no rights need to be ticked), and post a message there so the hub sees the
+   group. Make it an admin *before* you add the group to the hub: the first
+   promotion turns a basic group into a supergroup with a new chat id.
 5. In the LaneHub panel (**Chats** tab): click **＋ New chat**, pick the group
    under Step 1, then under Step 2 select any known bot from **Your bots**
    and/or paste the bot token under **Plus someone else's bot** → **Create chat**.
    (To add more bots to an existing chat, click **＋ Add bot** inside that chat's block:
    pick from **Your bots** to reuse a stored token without re-pasting, or
-   **Paste a bot token**.)
+   **Paste a bot token** — the dialog checks the token, waits until the bot is
+   in the group and an admin, then unlocks **Add bot**.)
 6. The bot is bound to that chat and posts only there (this is what stops a bot from
    writing into the wrong chat). To move a bot to another chat it has seen, click one of
    the **Move to** chips.
@@ -159,6 +176,25 @@ each agent:
 Already running an older version? See [docs/UPDATE.md](docs/UPDATE.md) — it's
 `git pull` + `docker compose up -d --build`; any schema migration runs by
 itself on start.
+
+## What's new in 0.9–0.14
+
+Nothing to do for any of these: new tables and columns are added on start,
+the optional modules stay off until you switch them on.
+
+- **0.14.3 — «＋ Add bot» goes step by step:** paste a token, the hub names the
+  bot, the dialog waits until the bot is in the group and an admin, then
+  **Add bot** unlocks (no more "chat not found"). A group that became a
+  supergroup is followed to its new chat id.
+- **0.14.1 — silent messages:** `disableNotification: true` on `/send`.
+- **0.11–0.14.0 — Boards client page:** «where we are» status line, a
+  «needed from you» banner with a **✓ Done** tick and comment, archive of done
+  cards, and a «where did the deposit go» history.
+- **0.10 — voice messages as text** (optional, `HUB_STT_URL`).
+- **0.9 — Boards** (optional, `HUB_BOARDS=1`).
+
+Full list: [CHANGELOG.md](CHANGELOG.md) · per-version notes:
+[docs/UPDATE.md](docs/UPDATE.md#version-specific-notes).
 
 ## What's new in 0.8 — read before updating
 
@@ -226,6 +262,7 @@ curl -sS -H "X-Bridge-Token: $KEY" "$BASE/feed?order=desc&limit=100"
 # only there — pass its chatId to be explicit; a different chat is a 403):
 curl -sS -X POST -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
   -d '{"chatId": "-100123...", "text": "deploy done"}' "$BASE/send"
+# add "disableNotification": true for a silent message (no sound/vibration)
 ```
 
 Full endpoint reference, incremental-cursor patterns, and the pitfalls we
