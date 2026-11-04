@@ -46,6 +46,10 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.14.4 — 2026-11-04
+
+- A group that became a supergroup keeps its history: older messages move to the new chat id, so the feed still shows them. Their message ids are stored negated, because the supergroup counts from 1 again.
+
 ## 0.14.3 — 2026-10-22
 
 - **«Add bot» walks you through it.** Pasting a token no longer fails with "chat not found" when the bot isn't in the group yet. Step 1: the hub names the bot. Step 2: add it to the group and make it an admin in Telegram — the dialog checks every few seconds and shows Waiting / Almost (not admin) / Ready. Step 3: **Add bot** unlocks once the bot is in the group. Picking a known bot from **Your bots** that isn't in the group opens the same steps.
