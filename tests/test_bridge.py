@@ -681,6 +681,27 @@ def test_group_upgrade_rebinds_lane(client):
     assert lane
 
 
+def test_group_upgrade_keeps_history_in_feed(client):
+    login(client)
+    make_lane(client)  # bound to -100500 (pretend it's the old basic-group id)
+    secret = {"X-Telegram-Bot-Api-Secret-Token": _webhook_secret("backend")}
+
+    def push(update_id, message_id, chat_id, **extra):
+        msg = {"message_id": message_id, "chat": {"id": chat_id, "type": "group"}, "date": update_id, **extra}
+        client.post("/backend/webhook", json={"update_id": update_id, "message": msg}, headers=secret)
+
+    push(1, 2, -100500, text="before the upgrade")
+    push(2, 9, -100500, migrate_to_chat_id=-1009998887776)
+    push(3, 2, -1009998887776, text="after the upgrade")  # the supergroup counts from 1 again
+
+    from app import db
+    h = {"X-Bridge-Token": db.get_lane("backend")["api_key"]}
+    rows = client.get("/backend/feed?order=asc", headers=h).json()["messages"]
+    texts = [r["text"] for r in rows if r["text"]]
+    assert texts == ["before the upgrade", "after the upgrade"]
+    assert len({r["seq"] for r in rows}) == len(rows)  # the reused message id got its own seq
+
+
 def _legacy_db(path, rows):
     """A pre-0.5 database file (no media/seq/author columns)."""
     import sqlite3
