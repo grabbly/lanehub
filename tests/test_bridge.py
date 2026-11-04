@@ -702,6 +702,25 @@ def test_group_upgrade_keeps_history_in_feed(client):
     assert len({r["seq"] for r in rows}) == len(rows)  # the reused message id got its own seq
 
 
+def test_group_upgrade_still_accepts_the_old_chat_id(client):
+    login(client)
+    make_lane(client)  # bound to -100500 (pretend it's the old basic-group id)
+    client.post(
+        "/backend/webhook",
+        json={"update_id": 3, "message": {"message_id": 9, "chat": {"id": -100500, "type": "group"},
+                                          "date": 1, "migrate_to_chat_id": -1009998887776}},
+        headers={"X-Telegram-Bot-Api-Secret-Token": _webhook_secret("backend")},
+    )
+    from app import db
+    h = {"X-Bridge-Token": db.get_lane("backend")["api_key"]}
+    assert client.post("/backend/send", json={"text": "x", "chatId": "-100500"}, headers=h).status_code == 200
+    assert client.post("/backend/send", json={"text": "x", "chatId": "-100777"}, headers=h).status_code == 403
+
+    # Rebound to some other chat: the old id must not follow it there.
+    db.update_lane("backend", {"default_chat_id": "-100888"})
+    assert client.post("/backend/send", json={"text": "x", "chatId": "-100500"}, headers=h).status_code == 403
+
+
 def _legacy_db(path, rows):
     """A pre-0.5 database file (no media/seq/author columns)."""
     import sqlite3

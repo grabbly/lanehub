@@ -87,6 +87,8 @@ def bound_chat(lane: dict, chat_id: str | None) -> str:
     alias = (db.get_lane_state(lane["slug"], "chat_alias") or "").strip()
     if alias and requested.lower() == alias.lower():
         requested = bound  # the @handle this lane was bound by before it became numeric
+    if (db.get_lane_state(lane["slug"], "chat_moved") or "").split() == [requested, bound]:
+        requested = bound  # the id this chat had before it became a supergroup
     if requested and requested != bound:
         raise HTTPException(
             status_code=403,

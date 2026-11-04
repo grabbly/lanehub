@@ -682,7 +682,8 @@ def query_feed(
 def migrate_chat(old_chat_id: int, new_chat_id: int) -> list[str]:
     """A basic group was upgraded to a supergroup (Telegram changes its id).
     Rebind lanes bound to the old id and carry the history over, or the feed
-    (filtered by the bound chat) loses it; returns the rebound slugs.
+    (filtered by the bound chat) loses it; returns the rebound slugs. Lanes
+    remember the move as `chat_moved`, so agents still sending the old id work.
 
     The supergroup numbers messages from 1 again, so old message ids are
     negated: left as they are, a new message would match an old row in
@@ -698,6 +699,11 @@ def migrate_chat(old_chat_id: int, new_chat_id: int) -> list[str]:
         conn.execute(
             "UPDATE messages SET chat_id = ?, message_id = -ABS(message_id) WHERE chat_id = ?",
             (new_chat_id, old_chat_id),
+        )
+        conn.executemany(
+            "INSERT INTO lane_state(lane_slug, key, value) VALUES(?, 'chat_moved', ?) "
+            "ON CONFLICT(lane_slug, key) DO UPDATE SET value = excluded.value",
+            [(r["slug"], f"{old_chat_id} {new_chat_id}") for r in rows],
         )
     return [r["slug"] for r in rows]
 

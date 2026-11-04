@@ -46,6 +46,10 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.14.5 — 2026-11-04
+
+- After a group becomes a supergroup, `/send` and `/sendFile` still accept the old chat id, so agents with the old `LANEHUB_CHAT_ID` keep working without any change.
+
 ## 0.14.4 — 2026-11-04
 
 - A group that became a supergroup keeps its history: older messages move to the new chat id, so the feed still shows them. Their message ids are stored negated, because the supergroup counts from 1 again.
