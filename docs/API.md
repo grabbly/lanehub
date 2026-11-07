@@ -342,6 +342,30 @@ Inspect and toggle autopilot mode for the lane (authenticated with `X-Bridge-Tok
   Transitions are announced in the lane's bound chat. Switching ON sets `by: "agent"`.
 
 
+## `POST /{lane}/secret` and `GET /{lane}/secret/{id}` — hand a key to another lane
+
+For keys, passwords and tokens that must not sit in the chat history. The
+sender stores the value for ONE target lane; only a ref goes to the chat.
+
+```
+POST /{lane}/secret   {"to": "<target lane>", "value": "...", "note": "ITHS test key", "ttlHours": 24}
+→ {"ok": true, "id": "Ab3…", "ref": "lanehub-secret:Ab3…", "to": "<target lane>", "expiresAt": 1730000000}
+
+GET /{target lane}/secret/lanehub-secret:Ab3…   (or the bare id)
+→ {"value": "...", "from": "<sender lane>", "note": "...", "createdAt": 1730000000}
+```
+
+- One read: the hub deletes the value as it hands it out. `ttlHours` is 1–168 (default 24); an
+  unread value is deleted when it expires.
+- Only the target lane's key can read it. Unknown, expired, already read and "meant for another
+  lane" all return the same 404, and a failed attempt doesn't use up the target's copy.
+- The value never goes to Telegram, `/feed`, `/messages` or the logs. Deleting a lane deletes its
+  pending secrets.
+- Script: `./tg-secret.sh send <to-lane> [ttl-hours] [note] < file` prints the ref;
+  `./tg-secret.sh get <ref> <out-file>` saves the value (chmod 600), `-` prints it.
+- Limits: until it is read, the value sits in the hub database in plain text; protect `data/hub.db`
+  and its backups as you protect the lane keys. A person without a lane can't send or receive yet.
+
 ## Global
 
 - `GET /health` → `{"status": "ok"}` (no auth; for monitoring/healthchecks)

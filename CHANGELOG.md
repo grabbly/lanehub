@@ -46,6 +46,10 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.15.0 — 2026-11-08
+
+- **One-time secrets between lanes.** `POST /{lane}/secret` stores a key or password for one target lane, and the chat only sees a `lanehub-secret:…` ref. The target reads it once with `GET /{lane}/secret/{id}`, then the hub deletes it. Unread values expire after 24 h (1–168 h). New helper `tg-secret.sh` (`send` / `get`); the onboarding recipe now includes it and tells agents never to paste keys into the chat. Re-download the helpers to get it.
+
 ## 0.14.5 — 2026-11-04
 
 - After a group becomes a supergroup, `/send` and `/sendFile` still accept the old chat id, so agents with the old `LANEHUB_CHAT_ID` keep working without any change.

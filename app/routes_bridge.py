@@ -5,6 +5,8 @@
     GET  /{lane}/messages  — this lane's history (humans + own sends)
     GET  /{lane}/feed      — the WHOLE chat merged across all lanes
     GET  /{lane}/file/{id} — download a chat attachment (photo, document…)
+    POST /{lane}/secret    — hand a key/password to another lane, once
+    GET  /{lane}/secret/{id} — read (and destroy) a secret handed to this lane
     GET  /{lane}/info      — lane diagnostics
     POST /{lane}/webhook   — Telegram push receiver (secret-token auth)
 
@@ -504,6 +506,49 @@ async def lane_log(lane_slug: str, req: LogEntry, x_bridge_token: str = Header(d
     if req.ctx_tokens is not None:
         db.set_lane_state(lane_slug, "last_ctx_tokens", str(int(req.ctx_tokens)))
     return {"ok": True}
+
+
+SECRET_TTL_HOURS_MAX = 168
+
+
+class SecretCreate(BaseModel):
+    to: str = Field(min_length=1, max_length=64)
+    value: str = Field(min_length=1, max_length=8000)
+    note: str = Field(default="", max_length=200)
+    ttl_hours: int = Field(default=24, ge=1, le=SECRET_TTL_HOURS_MAX, alias="ttlHours")
+
+    model_config = {"populate_by_name": True}
+
+
+@router.post("/{lane_slug}/secret")
+async def secret_create(lane_slug: str, req: SecretCreate, x_bridge_token: str = Header(default="")) -> dict:
+    """Hand a key/password to another lane without it ever entering the chat:
+    the hub keeps it until the target lane reads it once (or it expires), and
+    the sender posts only the returned `ref`, which is useless to anyone else."""
+    _auth_lane(lane_slug, x_bridge_token)
+    if not db.get_lane(req.to):
+        raise HTTPException(status_code=404, detail="unknown target lane")
+    created = db.create_secret(lane_slug, req.to, req.value, req.note.strip(), req.ttl_hours * 3600)
+    return {
+        "ok": True,
+        "id": created["id"],
+        "ref": f"lanehub-secret:{created['id']}",
+        "to": req.to,
+        "expiresAt": created["expires_at"],
+    }
+
+
+@router.get("/{lane_slug}/secret/{secret_id}")
+async def secret_take(lane_slug: str, secret_id: str, x_bridge_token: str = Header(default="")) -> Response:
+    """One read, then it is gone. Unknown, expired, already read and meant for
+    another lane all look the same, so a stray ref tells nobody anything."""
+    _auth_lane(lane_slug, x_bridge_token)
+    secret_id = secret_id.removeprefix("lanehub-secret:")
+    row = db.take_secret(lane_slug, secret_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="no such secret for this lane (already read, expired, or never sent)")
+    body = {"value": row["value"], "from": row["from_lane"], "note": row["note"], "createdAt": row["created_at"]}
+    return Response(json.dumps(body), media_type="application/json", headers={"Cache-Control": "no-store"})
 
 
 class OperatorNotice(BaseModel):

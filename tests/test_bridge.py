@@ -457,7 +457,7 @@ def test_info_warns_about_a_basic_group(client):
 
 
 def test_helper_scripts_served(client):
-    for name in ("tg-fetch.sh", "tg-report.sh", "tg-file.sh", "tg-send-file.sh", "ask-operator.sh"):
+    for name in ("tg-fetch.sh", "tg-report.sh", "tg-file.sh", "tg-send-file.sh", "ask-operator.sh", "tg-secret.sh"):
         resp = client.get(f"/{name}")
         assert resp.status_code == 200, name
         assert resp.text.startswith("#!/usr/bin/env bash")

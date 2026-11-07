@@ -2408,7 +2408,7 @@ function promptText(base, hub, lng, opts = {}) {
   const where = opts.chatName ? `«${opts.chatName}» (${chat})` : chat;
   const h = opts.handle || 'bot';
   const app = 'https://github.com/grabbly/lanehub/releases/latest/download/LaneHubAutopilot.zip';
-  const helpers = ['tg-fetch', 'tg-report', 'tg-file', 'tg-send-file', 'ask-operator', 'tg-autopilot'];
+  const helpers = ['tg-fetch', 'tg-report', 'tg-file', 'tg-send-file', 'ask-operator', 'tg-autopilot', 'tg-secret'];
   const curl = `curl -sS --remote-name-all ${helpers.map(n => `${hub}/${n}.sh`).join(' ')}\nchmod +x ${helpers.map(n => n + '.sh').join(' ')}`;
   if (lng === 'ru') return `Подключи этот проект к командному Telegram-чату через LaneHub. Один раз, по шагам:
 
@@ -2440,13 +2440,14 @@ ${curl}
 - Скачать фото/файл из чата: ./tg-file.sh <fileId> (fileId — в поле media строки лога)
 - Отправить файл: ./tg-send-file.sh <файл> "подпись" (до 50 МБ, больше — ссылкой)
 - Спросить владельца лично: ./ask-operator.sh "вопрос"
+- Передать ключ/пароль другому боту: ./tg-secret.sh send <его лейн> < файл → в чат пиши только напечатанную ссылку lanehub-secret:…; получить: ./tg-secret.sh get <ссылка> <файл> (один раз). Ключи в чат не вставляй.
 
 Автопилот (бот сам отвечает на упоминания, пока включён):
 - Включить/выключить: ./tg-autopilot.sh on [часы] | off | status. На Mac он запускается в приложении LaneHub Autopilot (строка меню): ${app}
 - В чате: /autopilot_on_${h} просит владельца включить, /autopilot_off_${h} выключает (может любой).
 - На автопилоте: на простой вопрос отвечай сразу; если непонятно — один уточняющий вопрос в чат и стоп; перед любыми изменениями — короткий план, «Делаю? Ответьте ok» и стоп до подтверждения; в конце — короткий отчёт. Хаб сам помечает ответы 🤖 auto.
 
-Правила: тред длиннее 3–4 сообщений — в issue-трекер; ключ никогда не публикуй.
+Правила: тред длиннее 3–4 сообщений — в issue-трекер; ключи никогда не публикуй — только через tg-secret.sh.
 ------ конец раздела ------`;
   return `Connect this project to our team Telegram chat through LaneHub. Once, step by step:
 
@@ -2478,13 +2479,14 @@ You are ${bot} in the Telegram chat ${where}. You post only there. Key and addre
 - Download a photo/file from the chat: ./tg-file.sh <fileId> (fileId is in the log row's media field)
 - Send a file: ./tg-send-file.sh <file> "caption" (up to 50 MB, bigger ones as a link)
 - Ask the owner privately: ./ask-operator.sh "question"
+- Hand a key/password to another bot: ./tg-secret.sh send <their lane> < file → post only the printed lanehub-secret:… ref; receive one: ./tg-secret.sh get <ref> <file> (once). Never paste keys into the chat.
 
 Autopilot (the bot answers mentions by itself while it's on):
 - Switch: ./tg-autopilot.sh on [hours] | off | status. On a Mac it runs in the LaneHub Autopilot menu-bar app: ${app}
 - In the chat: /autopilot_on_${h} asks the owner to switch it on, /autopilot_off_${h} switches it off (anyone).
 - On autopilot: answer plain questions right away; if unclear, ask one clarifying question in the chat and stop; before any change post a short plan, "Proceed? Reply ok." and stop until confirmed; finish with a short report. The hub marks replies 🤖 auto.
 
-Rules: threads longer than 3–4 messages go to the issue tracker; never post the key.
+Rules: threads longer than 3–4 messages go to the issue tracker; never post any key — use tg-secret.sh.
 ------ end of section ------`;
 }
 

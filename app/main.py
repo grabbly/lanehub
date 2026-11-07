@@ -38,6 +38,7 @@ HELPERS = {
     "tg-send-file.sh": "send a file (screenshot, report, log) to the team chat",
     "ask-operator.sh": "ask the operator a clarifying question",
     "tg-autopilot.sh": "control autopilot mode (on/off/status)",
+    "tg-secret.sh": "hand a key/password to another lane once, without posting it",
 }
 
 

@@ -100,6 +100,16 @@ CREATE TABLE IF NOT EXISTS transcripts (
     updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_transcripts_pending ON transcripts(status, next_try_at, created_at);
+CREATE TABLE IF NOT EXISTS secrets (
+    id TEXT PRIMARY KEY,
+    from_lane TEXT NOT NULL,
+    to_lane TEXT NOT NULL,
+    value TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_secrets_expires ON secrets(expires_at);
 """
 
 # Keep at most this many log lines per lane (a rolling watcher-activity buffer).
@@ -341,6 +351,7 @@ def delete_lane(slug: str) -> None:
         conn.execute("DELETE FROM lanes WHERE slug = ?", (slug,))
         conn.execute("DELETE FROM lane_state WHERE lane_slug = ?", (slug,))
         conn.execute("DELETE FROM lane_logs WHERE lane_slug = ?", (slug,))
+        conn.execute("DELETE FROM secrets WHERE from_lane = ? OR to_lane = ?", (slug, slug))
 
 
 # --- lane state (poll offsets) -------------------------------------------
@@ -443,6 +454,45 @@ def mark_operator_done(lane_slug: str, msg_id: int) -> None:
             "UPDATE operator_inbox SET status = 'done' WHERE lane_slug = ? AND id = ?",
             (lane_slug, msg_id),
         )
+
+
+# --- one-time secrets (lane -> lane, never posted to the chat) ------------
+
+
+def _purge_expired_secrets(conn: sqlite3.Connection, now: int) -> None:
+    conn.execute("DELETE FROM secrets WHERE expires_at <= ?", (now,))
+
+
+def create_secret(from_lane: str, to_lane: str, value: str, note: str, ttl_seconds: int) -> dict:
+    """Store a secret only `to_lane` can read, once. The chat gets just the id."""
+    now = int(time.time())
+    sid = secrets.token_urlsafe(18)
+    with connect() as conn:
+        _purge_expired_secrets(conn, now)
+        conn.execute(
+            "INSERT INTO secrets(id, from_lane, to_lane, value, note, created_at, expires_at) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?)",
+            (sid, from_lane, to_lane, value, note, now, now + ttl_seconds),
+        )
+    return {"id": sid, "expires_at": now + ttl_seconds}
+
+
+def take_secret(to_lane: str, sid: str) -> dict | None:
+    """Read-and-delete. None when the id is unknown, expired, already read, or
+    meant for another lane (that lane's copy stays untouched)."""
+    now = int(time.time())
+    with connect() as conn:
+        _purge_expired_secrets(conn, now)
+        row = conn.execute(
+            "SELECT from_lane, value, note, created_at FROM secrets WHERE id = ? AND to_lane = ?",
+            (sid, to_lane),
+        ).fetchone()
+        if not row:
+            return None
+        # rowcount guards against two readers racing for the same id.
+        if conn.execute("DELETE FROM secrets WHERE id = ? AND to_lane = ?", (sid, to_lane)).rowcount != 1:
+            return None
+    return dict(row)
 
 
 # --- messages ------------------------------------------------------------
