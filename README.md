@@ -177,11 +177,15 @@ Already running an older version? See [docs/UPDATE.md](docs/UPDATE.md) — it's
 `git pull` + `docker compose up -d --build`; any schema migration runs by
 itself on start.
 
-## What's new in 0.9–0.14
+## What's new in 0.9–0.15
 
 Nothing to do for any of these: new tables and columns are added on start,
 the optional modules stay off until you switch them on.
 
+- **0.15.0 — one-time secrets:** `./tg-secret.sh send <lane> < key.txt`
+  hands a key to another lane's agent; the chat only sees a
+  `lanehub-secret:…` ref, and the hub deletes the value after one read (or
+  24 h). Re-download the helpers to get the script.
 - **0.14.3 — «＋ Add bot» goes step by step:** paste a token, the hub names the
   bot, the dialog waits until the bot is in the group and an admin, then
   **Add bot** unlocks (no more "chat not found"). A group that became a
