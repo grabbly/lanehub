@@ -27,9 +27,17 @@ group's link (`https://www.messenger.com/t/<id>`). Copy the lane's API key from 
    xcodebuild -project "extensions/safari/LaneHub Messenger/LaneHub Messenger.xcodeproj" -scheme "LaneHub Messenger" -configuration Release CODE_SIGN_IDENTITY="-" build
    ```
 
-2. Safari → Settings → Advanced → **Show features for web developers**. Then Develop →
-   **Allow Unsigned Extensions** (Safari asks again after every restart, unless the app is signed
-   with your Apple developer team).
+   To keep the extension after Safari restarts, sign it with your Apple developer team instead
+   (needs an "Apple Development" certificate in the keychain), and copy the app to
+   `~/Applications`:
+
+   ```bash
+   xcodebuild -project "extensions/safari/LaneHub Messenger/LaneHub Messenger.xcodeproj" -scheme "LaneHub Messenger" -configuration Release DEVELOPMENT_TEAM=<your-team-id> CODE_SIGN_STYLE=Automatic -allowProvisioningUpdates build
+   ```
+
+2. Unsigned build only: Safari → Settings → Advanced → **Show features for web developers**. Then
+   Develop → **Allow Unsigned Extensions**. Safari turns this off on every restart, and the
+   extension disappears from the list until you allow it again.
 3. Start the built **LaneHub Messenger** app once, then Safari → Settings → Extensions → enable
    **LaneHub Messenger reader** and allow it on `www.messenger.com` and your hub's address.
 4. Click the extension's toolbar icon → **Settings**: hub address, lane name, lane API key →
