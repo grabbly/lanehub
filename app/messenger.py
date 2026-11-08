@@ -54,6 +54,14 @@ def thread_id(raw: str) -> str:
     return m.group(1) if m else ""
 
 
+def mentions(text: str, name: str) -> bool:
+    """True when `text` names the bot account. Messenger shows a picked
+    mention as the plain name, without "@"; typed "@Name" counts too."""
+    if not text or not name.strip():
+        return False
+    return re.search(rf"(?<![\w@])@?{re.escape(name.strip())}(?!\w)", text, re.IGNORECASE) is not None
+
+
 def message_number(ext_id: str) -> int:
     """A stable positive integer (53 bits, safe for JSON clients) for the
     extension's message id — the hub's message_id column is numeric."""

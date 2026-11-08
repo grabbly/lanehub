@@ -7,81 +7,85 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		03C72D0530A090B7009B1123 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03C72D0430A090B7009B1123 /* AppDelegate.swift */; };
-		03C72D0930A090B7009B1123 /* Main.html in Resources */ = {isa = PBXBuildFile; fileRef = 03C72D0730A090B7009B1123 /* Main.html */; };
-		03C72D0B30A090B7009B1123 /* Icon.png in Resources */ = {isa = PBXBuildFile; fileRef = 03C72D0A30A090B7009B1123 /* Icon.png */; };
-		03C72D0D30A090B7009B1123 /* Style.css in Resources */ = {isa = PBXBuildFile; fileRef = 03C72D0C30A090B7009B1123 /* Style.css */; };
-		03C72D0F30A090B7009B1123 /* Script.js in Resources */ = {isa = PBXBuildFile; fileRef = 03C72D0E30A090B7009B1123 /* Script.js */; };
-		03C72D1130A090B7009B1123 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03C72D1030A090B7009B1123 /* ViewController.swift */; };
-		03C72D1430A090B7009B1123 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 03C72D1230A090B7009B1123 /* Main.storyboard */; };
-		03C72D1630A090B8009B1123 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 03C72D1530A090B8009B1123 /* Assets.xcassets */; };
-		03C72D1D30A090B8009B1123 /* LaneHub Messenger Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 03C72D1C30A090B8009B1123 /* LaneHub Messenger Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		03C72D2230A090B8009B1123 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03C72D2130A090B8009B1123 /* SafariWebExtensionHandler.swift */; };
-		03C72D3730A090B8009B1123 /* popup.js in Resources */ = {isa = PBXBuildFile; fileRef = 03C72D2E30A090B8009B1123 /* popup.js */; };
-		03C72D3830A090B8009B1123 /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = 03C72D2F30A090B8009B1123 /* background.js */; };
-		03C72D3930A090B8009B1123 /* popup.html in Resources */ = {isa = PBXBuildFile; fileRef = 03C72D3030A090B8009B1123 /* popup.html */; };
-		03C72D3A30A090B8009B1123 /* options.js in Resources */ = {isa = PBXBuildFile; fileRef = 03C72D3130A090B8009B1123 /* options.js */; };
-		03C72D3B30A090B8009B1123 /* icons in Resources */ = {isa = PBXBuildFile; fileRef = 03C72D3230A090B8009B1123 /* icons */; };
-		03C72D3C30A090B8009B1123 /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = 03C72D3330A090B8009B1123 /* manifest.json */; };
-		03C72D3D30A090B8009B1123 /* options.html in Resources */ = {isa = PBXBuildFile; fileRef = 03C72D3430A090B8009B1123 /* options.html */; };
-		03C72D3E30A090B8009B1123 /* content.js in Resources */ = {isa = PBXBuildFile; fileRef = 03C72D3530A090B8009B1123 /* content.js */; };
-		03C72D3F30A090B8009B1123 /* parser.js in Resources */ = {isa = PBXBuildFile; fileRef = 03C72D3630A090B8009B1123 /* parser.js */; };
+		0312ED5830A0A352002B3A27 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0312ED5730A0A352002B3A27 /* AppDelegate.swift */; };
+		0312ED5C30A0A352002B3A27 /* Main.html in Resources */ = {isa = PBXBuildFile; fileRef = 0312ED5A30A0A352002B3A27 /* Main.html */; };
+		0312ED5E30A0A352002B3A27 /* Icon.png in Resources */ = {isa = PBXBuildFile; fileRef = 0312ED5D30A0A352002B3A27 /* Icon.png */; };
+		0312ED6030A0A352002B3A27 /* Style.css in Resources */ = {isa = PBXBuildFile; fileRef = 0312ED5F30A0A352002B3A27 /* Style.css */; };
+		0312ED6230A0A352002B3A27 /* Script.js in Resources */ = {isa = PBXBuildFile; fileRef = 0312ED6130A0A352002B3A27 /* Script.js */; };
+		0312ED6430A0A352002B3A27 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0312ED6330A0A352002B3A27 /* ViewController.swift */; };
+		0312ED6730A0A352002B3A27 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 0312ED6530A0A352002B3A27 /* Main.storyboard */; };
+		0312ED6930A0A353002B3A27 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0312ED6830A0A353002B3A27 /* Assets.xcassets */; };
+		0312ED7030A0A354002B3A27 /* LaneHub Messenger Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0312ED6F30A0A354002B3A27 /* LaneHub Messenger Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		0312ED7530A0A354002B3A27 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0312ED7430A0A354002B3A27 /* SafariWebExtensionHandler.swift */; };
+		0312ED8C30A0A354002B3A27 /* popup.js in Resources */ = {isa = PBXBuildFile; fileRef = 0312ED8130A0A354002B3A27 /* popup.js */; };
+		0312ED8D30A0A354002B3A27 /* page.js in Resources */ = {isa = PBXBuildFile; fileRef = 0312ED8230A0A354002B3A27 /* page.js */; };
+		0312ED8E30A0A354002B3A27 /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = 0312ED8330A0A354002B3A27 /* background.js */; };
+		0312ED8F30A0A354002B3A27 /* popup.html in Resources */ = {isa = PBXBuildFile; fileRef = 0312ED8430A0A354002B3A27 /* popup.html */; };
+		0312ED9030A0A354002B3A27 /* options.js in Resources */ = {isa = PBXBuildFile; fileRef = 0312ED8530A0A354002B3A27 /* options.js */; };
+		0312ED9130A0A354002B3A27 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 0312ED8630A0A354002B3A27 /* README.md */; };
+		0312ED9230A0A354002B3A27 /* icons in Resources */ = {isa = PBXBuildFile; fileRef = 0312ED8730A0A354002B3A27 /* icons */; };
+		0312ED9330A0A354002B3A27 /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = 0312ED8830A0A354002B3A27 /* manifest.json */; };
+		0312ED9430A0A354002B3A27 /* options.html in Resources */ = {isa = PBXBuildFile; fileRef = 0312ED8930A0A354002B3A27 /* options.html */; };
+		0312ED9530A0A354002B3A27 /* content.js in Resources */ = {isa = PBXBuildFile; fileRef = 0312ED8A30A0A354002B3A27 /* content.js */; };
+		0312ED9630A0A354002B3A27 /* parser.js in Resources */ = {isa = PBXBuildFile; fileRef = 0312ED8B30A0A354002B3A27 /* parser.js */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		03C72D1E30A090B8009B1123 /* PBXContainerItemProxy */ = {
+		0312ED7130A0A354002B3A27 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = 03C72CF930A090B7009B1123 /* Project object */;
+			containerPortal = 0312ED4C30A0A352002B3A27 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = 03C72D1B30A090B8009B1123;
+			remoteGlobalIDString = 0312ED6E30A0A354002B3A27;
 			remoteInfo = "LaneHub Messenger Extension";
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		03C72D2930A090B8009B1123 /* Embed Foundation Extensions */ = {
+		0312ED7C30A0A354002B3A27 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			dstPath = "";
 			dstSubfolder = PlugIns;
 			files = (
-				03C72D1D30A090B8009B1123 /* LaneHub Messenger Extension.appex in Embed Foundation Extensions */,
+				0312ED7030A0A354002B3A27 /* LaneHub Messenger Extension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		03C72D0130A090B7009B1123 /* LaneHub Messenger.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "LaneHub Messenger.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		03C72D0430A090B7009B1123 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		03C72D0830A090B7009B1123 /* Base */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = Base; path = Base.lproj/Main.html; sourceTree = "<group>"; };
-		03C72D0A30A090B7009B1123 /* Icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Icon.png; sourceTree = "<group>"; };
-		03C72D0C30A090B7009B1123 /* Style.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = Style.css; sourceTree = "<group>"; };
-		03C72D0E30A090B7009B1123 /* Script.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Script.js; sourceTree = "<group>"; };
-		03C72D1030A090B7009B1123 /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
-		03C72D1330A090B7009B1123 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
-		03C72D1530A090B8009B1123 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		03C72D1730A090B8009B1123 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		03C72D1C30A090B8009B1123 /* LaneHub Messenger Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "LaneHub Messenger Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
-		03C72D2130A090B8009B1123 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
-		03C72D2330A090B8009B1123 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		03C72D2E30A090B8009B1123 /* popup.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = popup.js; path = ../../../messenger/popup.js; sourceTree = "<group>"; };
-		03C72D2F30A090B8009B1123 /* background.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = background.js; path = ../../../messenger/background.js; sourceTree = "<group>"; };
-		03C72D3030A090B8009B1123 /* popup.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = popup.html; path = ../../../messenger/popup.html; sourceTree = "<group>"; };
-		03C72D3130A090B8009B1123 /* options.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = options.js; path = ../../../messenger/options.js; sourceTree = "<group>"; };
-		03C72D3230A090B8009B1123 /* icons */ = {isa = PBXFileReference; lastKnownFileType = folder; name = icons; path = ../../../messenger/icons; sourceTree = "<group>"; };
-		03C72D3330A090B8009B1123 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = manifest.json; path = ../../../messenger/manifest.json; sourceTree = "<group>"; };
-		03C72D3430A090B8009B1123 /* options.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = options.html; path = ../../../messenger/options.html; sourceTree = "<group>"; };
-		03C72D3530A090B8009B1123 /* content.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = content.js; path = ../../../messenger/content.js; sourceTree = "<group>"; };
-		03C72D3630A090B8009B1123 /* parser.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = parser.js; path = ../../../messenger/parser.js; sourceTree = "<group>"; };
+		0312ED5430A0A352002B3A27 /* LaneHub Messenger.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "LaneHub Messenger.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		0312ED5730A0A352002B3A27 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		0312ED5B30A0A352002B3A27 /* Base */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = Base; path = Base.lproj/Main.html; sourceTree = "<group>"; };
+		0312ED5D30A0A352002B3A27 /* Icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Icon.png; sourceTree = "<group>"; };
+		0312ED5F30A0A352002B3A27 /* Style.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = Style.css; sourceTree = "<group>"; };
+		0312ED6130A0A352002B3A27 /* Script.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Script.js; sourceTree = "<group>"; };
+		0312ED6330A0A352002B3A27 /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
+		0312ED6630A0A352002B3A27 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
+		0312ED6830A0A353002B3A27 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		0312ED6A30A0A353002B3A27 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		0312ED6F30A0A354002B3A27 /* LaneHub Messenger Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "LaneHub Messenger Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		0312ED7430A0A354002B3A27 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
+		0312ED7630A0A354002B3A27 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		0312ED8130A0A354002B3A27 /* popup.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = popup.js; path = ../../../messenger/popup.js; sourceTree = "<group>"; };
+		0312ED8230A0A354002B3A27 /* page.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = page.js; path = ../../../messenger/page.js; sourceTree = "<group>"; };
+		0312ED8330A0A354002B3A27 /* background.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = background.js; path = ../../../messenger/background.js; sourceTree = "<group>"; };
+		0312ED8430A0A354002B3A27 /* popup.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = popup.html; path = ../../../messenger/popup.html; sourceTree = "<group>"; };
+		0312ED8530A0A354002B3A27 /* options.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = options.js; path = ../../../messenger/options.js; sourceTree = "<group>"; };
+		0312ED8630A0A354002B3A27 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = README.md; path = ../../../messenger/README.md; sourceTree = "<group>"; };
+		0312ED8730A0A354002B3A27 /* icons */ = {isa = PBXFileReference; lastKnownFileType = folder; name = icons; path = ../../../messenger/icons; sourceTree = "<group>"; };
+		0312ED8830A0A354002B3A27 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = manifest.json; path = ../../../messenger/manifest.json; sourceTree = "<group>"; };
+		0312ED8930A0A354002B3A27 /* options.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = options.html; path = ../../../messenger/options.html; sourceTree = "<group>"; };
+		0312ED8A30A0A354002B3A27 /* content.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = content.js; path = ../../../messenger/content.js; sourceTree = "<group>"; };
+		0312ED8B30A0A354002B3A27 /* parser.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = parser.js; path = ../../../messenger/parser.js; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		03C72CFE30A090B7009B1123 /* Frameworks */ = {
+		0312ED5130A0A352002B3A27 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
 			);
 		};
-		03C72D1930A090B8009B1123 /* Frameworks */ = {
+		0312ED6C30A0A354002B3A27 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
 			);
@@ -89,70 +93,72 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		03C72CF830A090B7009B1123 = {
+		0312ED4B30A0A352002B3A27 = {
 			isa = PBXGroup;
 			children = (
-				03C72D0330A090B7009B1123 /* LaneHub Messenger */,
-				03C72D2030A090B8009B1123 /* LaneHub Messenger Extension */,
-				03C72D0230A090B7009B1123 /* Products */,
+				0312ED5630A0A352002B3A27 /* LaneHub Messenger */,
+				0312ED7330A0A354002B3A27 /* LaneHub Messenger Extension */,
+				0312ED5530A0A352002B3A27 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		03C72D0230A090B7009B1123 /* Products */ = {
+		0312ED5530A0A352002B3A27 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				03C72D0130A090B7009B1123 /* LaneHub Messenger.app */,
-				03C72D1C30A090B8009B1123 /* LaneHub Messenger Extension.appex */,
+				0312ED5430A0A352002B3A27 /* LaneHub Messenger.app */,
+				0312ED6F30A0A354002B3A27 /* LaneHub Messenger Extension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		03C72D0330A090B7009B1123 /* LaneHub Messenger */ = {
+		0312ED5630A0A352002B3A27 /* LaneHub Messenger */ = {
 			isa = PBXGroup;
 			children = (
-				03C72D0430A090B7009B1123 /* AppDelegate.swift */,
-				03C72D1030A090B7009B1123 /* ViewController.swift */,
-				03C72D1230A090B7009B1123 /* Main.storyboard */,
-				03C72D1530A090B8009B1123 /* Assets.xcassets */,
-				03C72D1730A090B8009B1123 /* Info.plist */,
-				03C72D0630A090B7009B1123 /* Resources */,
+				0312ED5730A0A352002B3A27 /* AppDelegate.swift */,
+				0312ED6330A0A352002B3A27 /* ViewController.swift */,
+				0312ED6530A0A352002B3A27 /* Main.storyboard */,
+				0312ED6830A0A353002B3A27 /* Assets.xcassets */,
+				0312ED6A30A0A353002B3A27 /* Info.plist */,
+				0312ED5930A0A352002B3A27 /* Resources */,
 			);
 			path = "LaneHub Messenger";
 			sourceTree = "<group>";
 		};
-		03C72D0630A090B7009B1123 /* Resources */ = {
+		0312ED5930A0A352002B3A27 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				03C72D0730A090B7009B1123 /* Main.html */,
-				03C72D0A30A090B7009B1123 /* Icon.png */,
-				03C72D0C30A090B7009B1123 /* Style.css */,
-				03C72D0E30A090B7009B1123 /* Script.js */,
+				0312ED5A30A0A352002B3A27 /* Main.html */,
+				0312ED5D30A0A352002B3A27 /* Icon.png */,
+				0312ED5F30A0A352002B3A27 /* Style.css */,
+				0312ED6130A0A352002B3A27 /* Script.js */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
 		};
-		03C72D2030A090B8009B1123 /* LaneHub Messenger Extension */ = {
+		0312ED7330A0A354002B3A27 /* LaneHub Messenger Extension */ = {
 			isa = PBXGroup;
 			children = (
-				03C72D2D30A090B8009B1123 /* Resources */,
-				03C72D2130A090B8009B1123 /* SafariWebExtensionHandler.swift */,
-				03C72D2330A090B8009B1123 /* Info.plist */,
+				0312ED8030A0A354002B3A27 /* Resources */,
+				0312ED7430A0A354002B3A27 /* SafariWebExtensionHandler.swift */,
+				0312ED7630A0A354002B3A27 /* Info.plist */,
 			);
 			path = "LaneHub Messenger Extension";
 			sourceTree = "<group>";
 		};
-		03C72D2D30A090B8009B1123 /* Resources */ = {
+		0312ED8030A0A354002B3A27 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				03C72D2E30A090B8009B1123 /* popup.js */,
-				03C72D2F30A090B8009B1123 /* background.js */,
-				03C72D3030A090B8009B1123 /* popup.html */,
-				03C72D3130A090B8009B1123 /* options.js */,
-				03C72D3230A090B8009B1123 /* icons */,
-				03C72D3330A090B8009B1123 /* manifest.json */,
-				03C72D3430A090B8009B1123 /* options.html */,
-				03C72D3530A090B8009B1123 /* content.js */,
-				03C72D3630A090B8009B1123 /* parser.js */,
+				0312ED8130A0A354002B3A27 /* popup.js */,
+				0312ED8230A0A354002B3A27 /* page.js */,
+				0312ED8330A0A354002B3A27 /* background.js */,
+				0312ED8430A0A354002B3A27 /* popup.html */,
+				0312ED8530A0A354002B3A27 /* options.js */,
+				0312ED8630A0A354002B3A27 /* README.md */,
+				0312ED8730A0A354002B3A27 /* icons */,
+				0312ED8830A0A354002B3A27 /* manifest.json */,
+				0312ED8930A0A354002B3A27 /* options.html */,
+				0312ED8A30A0A354002B3A27 /* content.js */,
+				0312ED8B30A0A354002B3A27 /* parser.js */,
 			);
 			name = Resources;
 			path = "LaneHub Messenger Extension";
@@ -161,143 +167,145 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		03C72D0030A090B7009B1123 /* LaneHub Messenger */ = {
+		0312ED5330A0A352002B3A27 /* LaneHub Messenger */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 03C72D2A30A090B8009B1123 /* Build configuration list for PBXNativeTarget "LaneHub Messenger" */;
+			buildConfigurationList = 0312ED7D30A0A354002B3A27 /* Build configuration list for PBXNativeTarget "LaneHub Messenger" */;
 			buildPhases = (
-				03C72CFD30A090B7009B1123 /* Sources */,
-				03C72CFE30A090B7009B1123 /* Frameworks */,
-				03C72CFF30A090B7009B1123 /* Resources */,
-				03C72D2930A090B8009B1123 /* Embed Foundation Extensions */,
+				0312ED5030A0A352002B3A27 /* Sources */,
+				0312ED5130A0A352002B3A27 /* Frameworks */,
+				0312ED5230A0A352002B3A27 /* Resources */,
+				0312ED7C30A0A354002B3A27 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				03C72D1F30A090B8009B1123 /* PBXTargetDependency */,
+				0312ED7230A0A354002B3A27 /* PBXTargetDependency */,
 			);
 			name = "LaneHub Messenger";
 			productName = "LaneHub Messenger";
-			productReference = 03C72D0130A090B7009B1123 /* LaneHub Messenger.app */;
+			productReference = 0312ED5430A0A352002B3A27 /* LaneHub Messenger.app */;
 			productType = "com.apple.product-type.application";
 		};
-		03C72D1B30A090B8009B1123 /* LaneHub Messenger Extension */ = {
+		0312ED6E30A0A354002B3A27 /* LaneHub Messenger Extension */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 03C72D2630A090B8009B1123 /* Build configuration list for PBXNativeTarget "LaneHub Messenger Extension" */;
+			buildConfigurationList = 0312ED7930A0A354002B3A27 /* Build configuration list for PBXNativeTarget "LaneHub Messenger Extension" */;
 			buildPhases = (
-				03C72D1830A090B8009B1123 /* Sources */,
-				03C72D1930A090B8009B1123 /* Frameworks */,
-				03C72D1A30A090B8009B1123 /* Resources */,
+				0312ED6B30A0A354002B3A27 /* Sources */,
+				0312ED6C30A0A354002B3A27 /* Frameworks */,
+				0312ED6D30A0A354002B3A27 /* Resources */,
 			);
 			buildRules = (
 			);
 			name = "LaneHub Messenger Extension";
 			productName = "LaneHub Messenger Extension";
-			productReference = 03C72D1C30A090B8009B1123 /* LaneHub Messenger Extension.appex */;
+			productReference = 0312ED6F30A0A354002B3A27 /* LaneHub Messenger Extension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		03C72CF930A090B7009B1123 /* Project object */ = {
+		0312ED4C30A0A352002B3A27 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2700;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
-					03C72D0030A090B7009B1123 = {
+					0312ED5330A0A352002B3A27 = {
 						CreatedOnToolsVersion = 27.0;
 					};
-					03C72D1B30A090B8009B1123 = {
+					0312ED6E30A0A354002B3A27 = {
 						CreatedOnToolsVersion = 27.0;
 					};
 				};
 			};
-			buildConfigurationList = 03C72CFC30A090B7009B1123 /* Build configuration list for PBXProject "LaneHub Messenger" */;
+			buildConfigurationList = 0312ED4F30A0A352002B3A27 /* Build configuration list for PBXProject "LaneHub Messenger" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
 				Base,
 			);
-			mainGroup = 03C72CF830A090B7009B1123;
+			mainGroup = 0312ED4B30A0A352002B3A27;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
-			productRefGroup = 03C72D0230A090B7009B1123 /* Products */;
+			productRefGroup = 0312ED5530A0A352002B3A27 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				03C72D0030A090B7009B1123 /* LaneHub Messenger */,
-				03C72D1B30A090B8009B1123 /* LaneHub Messenger Extension */,
+				0312ED5330A0A352002B3A27 /* LaneHub Messenger */,
+				0312ED6E30A0A354002B3A27 /* LaneHub Messenger Extension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		03C72CFF30A090B7009B1123 /* Resources */ = {
+		0312ED5230A0A352002B3A27 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
-				03C72D0B30A090B7009B1123 /* Icon.png in Resources */,
-				03C72D1430A090B7009B1123 /* Main.storyboard in Resources */,
-				03C72D0F30A090B7009B1123 /* Script.js in Resources */,
-				03C72D0930A090B7009B1123 /* Main.html in Resources */,
-				03C72D1630A090B8009B1123 /* Assets.xcassets in Resources */,
-				03C72D0D30A090B7009B1123 /* Style.css in Resources */,
+				0312ED5E30A0A352002B3A27 /* Icon.png in Resources */,
+				0312ED6730A0A352002B3A27 /* Main.storyboard in Resources */,
+				0312ED6230A0A352002B3A27 /* Script.js in Resources */,
+				0312ED5C30A0A352002B3A27 /* Main.html in Resources */,
+				0312ED6930A0A353002B3A27 /* Assets.xcassets in Resources */,
+				0312ED6030A0A352002B3A27 /* Style.css in Resources */,
 			);
 		};
-		03C72D1A30A090B8009B1123 /* Resources */ = {
+		0312ED6D30A0A354002B3A27 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
-				03C72D3E30A090B8009B1123 /* content.js in Resources */,
-				03C72D3D30A090B8009B1123 /* options.html in Resources */,
-				03C72D3830A090B8009B1123 /* background.js in Resources */,
-				03C72D3A30A090B8009B1123 /* options.js in Resources */,
-				03C72D3930A090B8009B1123 /* popup.html in Resources */,
-				03C72D3F30A090B8009B1123 /* parser.js in Resources */,
-				03C72D3B30A090B8009B1123 /* icons in Resources */,
-				03C72D3C30A090B8009B1123 /* manifest.json in Resources */,
-				03C72D3730A090B8009B1123 /* popup.js in Resources */,
+				0312ED9130A0A354002B3A27 /* README.md in Resources */,
+				0312ED8C30A0A354002B3A27 /* popup.js in Resources */,
+				0312ED8F30A0A354002B3A27 /* popup.html in Resources */,
+				0312ED8E30A0A354002B3A27 /* background.js in Resources */,
+				0312ED9530A0A354002B3A27 /* content.js in Resources */,
+				0312ED9330A0A354002B3A27 /* manifest.json in Resources */,
+				0312ED8D30A0A354002B3A27 /* page.js in Resources */,
+				0312ED9230A0A354002B3A27 /* icons in Resources */,
+				0312ED9030A0A354002B3A27 /* options.js in Resources */,
+				0312ED9630A0A354002B3A27 /* parser.js in Resources */,
+				0312ED9430A0A354002B3A27 /* options.html in Resources */,
 			);
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		03C72CFD30A090B7009B1123 /* Sources */ = {
+		0312ED5030A0A352002B3A27 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
-				03C72D1130A090B7009B1123 /* ViewController.swift in Sources */,
-				03C72D0530A090B7009B1123 /* AppDelegate.swift in Sources */,
+				0312ED6430A0A352002B3A27 /* ViewController.swift in Sources */,
+				0312ED5830A0A352002B3A27 /* AppDelegate.swift in Sources */,
 			);
 		};
-		03C72D1830A090B8009B1123 /* Sources */ = {
+		0312ED6B30A0A354002B3A27 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
-				03C72D2230A090B8009B1123 /* SafariWebExtensionHandler.swift in Sources */,
+				0312ED7530A0A354002B3A27 /* SafariWebExtensionHandler.swift in Sources */,
 			);
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		03C72D1F30A090B8009B1123 /* PBXTargetDependency */ = {
+		0312ED7230A0A354002B3A27 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 03C72D1B30A090B8009B1123 /* LaneHub Messenger Extension */;
-			targetProxy = 03C72D1E30A090B8009B1123 /* PBXContainerItemProxy */;
+			target = 0312ED6E30A0A354002B3A27 /* LaneHub Messenger Extension */;
+			targetProxy = 0312ED7130A0A354002B3A27 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
-		03C72D0730A090B7009B1123 /* Main.html */ = {
+		0312ED5A30A0A352002B3A27 /* Main.html */ = {
 			isa = PBXVariantGroup;
 			children = (
-				03C72D0830A090B7009B1123 /* Base */,
+				0312ED5B30A0A352002B3A27 /* Base */,
 			);
 			name = Main.html;
 			sourceTree = "<group>";
 		};
-		03C72D1230A090B7009B1123 /* Main.storyboard */ = {
+		0312ED6530A0A352002B3A27 /* Main.storyboard */ = {
 			isa = PBXVariantGroup;
 			children = (
-				03C72D1330A090B7009B1123 /* Base */,
+				0312ED6630A0A352002B3A27 /* Base */,
 			);
 			name = Main.storyboard;
 			sourceTree = "<group>";
@@ -305,7 +313,7 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
-		03C72D2430A090B8009B1123 /* Debug configuration for PBXProject "LaneHub Messenger" */ = {
+		0312ED7730A0A354002B3A27 /* Debug configuration for PBXProject "LaneHub Messenger" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -368,7 +376,7 @@
 			};
 			name = Debug;
 		};
-		03C72D2530A090B8009B1123 /* Release configuration for PBXProject "LaneHub Messenger" */ = {
+		0312ED7830A0A354002B3A27 /* Release configuration for PBXProject "LaneHub Messenger" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -423,7 +431,7 @@
 			};
 			name = Release;
 		};
-		03C72D2730A090B8009B1123 /* Debug configuration for PBXNativeTarget "LaneHub Messenger Extension" */ = {
+		0312ED7A30A0A354002B3A27 /* Debug configuration for PBXNativeTarget "LaneHub Messenger Extension" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -457,7 +465,7 @@
 			};
 			name = Debug;
 		};
-		03C72D2830A090B8009B1123 /* Release configuration for PBXNativeTarget "LaneHub Messenger Extension" */ = {
+		0312ED7B30A0A354002B3A27 /* Release configuration for PBXNativeTarget "LaneHub Messenger Extension" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -491,7 +499,7 @@
 			};
 			name = Release;
 		};
-		03C72D2B30A090B8009B1123 /* Debug configuration for PBXNativeTarget "LaneHub Messenger" */ = {
+		0312ED7E30A0A354002B3A27 /* Debug configuration for PBXNativeTarget "LaneHub Messenger" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -533,7 +541,7 @@
 			};
 			name = Debug;
 		};
-		03C72D2C30A090B8009B1123 /* Release configuration for PBXNativeTarget "LaneHub Messenger" */ = {
+		0312ED7F30A0A354002B3A27 /* Release configuration for PBXNativeTarget "LaneHub Messenger" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -578,32 +586,32 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		03C72CFC30A090B7009B1123 /* Build configuration list for PBXProject "LaneHub Messenger" */ = {
+		0312ED4F30A0A352002B3A27 /* Build configuration list for PBXProject "LaneHub Messenger" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				03C72D2430A090B8009B1123 /* Debug configuration for PBXProject "LaneHub Messenger" */,
-				03C72D2530A090B8009B1123 /* Release configuration for PBXProject "LaneHub Messenger" */,
+				0312ED7730A0A354002B3A27 /* Debug configuration for PBXProject "LaneHub Messenger" */,
+				0312ED7830A0A354002B3A27 /* Release configuration for PBXProject "LaneHub Messenger" */,
 			);
 			defaultConfigurationName = Release;
 		};
-		03C72D2630A090B8009B1123 /* Build configuration list for PBXNativeTarget "LaneHub Messenger Extension" */ = {
+		0312ED7930A0A354002B3A27 /* Build configuration list for PBXNativeTarget "LaneHub Messenger Extension" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				03C72D2730A090B8009B1123 /* Debug configuration for PBXNativeTarget "LaneHub Messenger Extension" */,
-				03C72D2830A090B8009B1123 /* Release configuration for PBXNativeTarget "LaneHub Messenger Extension" */,
+				0312ED7A30A0A354002B3A27 /* Debug configuration for PBXNativeTarget "LaneHub Messenger Extension" */,
+				0312ED7B30A0A354002B3A27 /* Release configuration for PBXNativeTarget "LaneHub Messenger Extension" */,
 			);
 			defaultConfigurationName = Release;
 		};
-		03C72D2A30A090B8009B1123 /* Build configuration list for PBXNativeTarget "LaneHub Messenger" */ = {
+		0312ED7D30A0A354002B3A27 /* Build configuration list for PBXNativeTarget "LaneHub Messenger" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				03C72D2B30A090B8009B1123 /* Debug configuration for PBXNativeTarget "LaneHub Messenger" */,
-				03C72D2C30A090B8009B1123 /* Release configuration for PBXNativeTarget "LaneHub Messenger" */,
+				0312ED7E30A0A354002B3A27 /* Debug configuration for PBXNativeTarget "LaneHub Messenger" */,
+				0312ED7F30A0A354002B3A27 /* Release configuration for PBXNativeTarget "LaneHub Messenger" */,
 			);
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
-	rootObject = 03C72CF930A090B7009B1123 /* Project object */;
+	rootObject = 0312ED4C30A0A352002B3A27 /* Project object */;
 	validationLevel = 1;
 }

@@ -7,6 +7,13 @@
   const P = globalThis.LaneHubParser;
 
   const SCAN_DEBOUNCE_MS = 800;
+
+  // page.js runs in the page's own context to find voice clip URLs (React
+  // props are invisible from here).
+  const pageScript = document.createElement("script");
+  pageScript.src = api.runtime.getURL("page.js");
+  pageScript.onload = () => pageScript.remove();
+  (document.head || document.documentElement).appendChild(pageScript);
   const DRAFT_POLL_MS = 8000;
 
   let lane = null; // /messenger/status of the configured lane
@@ -44,7 +51,7 @@
   // --- reading -------------------------------------------------------------
 
   async function scan() {
-    const msgs = P.readMessages();
+    const msgs = P.readMessages(lane.botUsername);
     if (!msgs.length) return;
     // A message is live when it appears below every message already known
     // (new at the bottom); anything above that is history scrolled into view.

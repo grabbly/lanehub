@@ -172,3 +172,11 @@ def test_edit_and_delete_messenger_lane(client):
     assert client.delete("/admin/api/lanes/fbgroup").status_code == 200
     assert client.fake_tg.calls == []
     assert lane["slug"] == "fbgroup"
+
+
+def test_mention_without_at_sign():
+    from app.messenger import mentions
+    assert mentions("Lane Bot can you check?", "Lane Bot")
+    assert mentions("hey @lane bot", "Lane Bot")
+    assert not mentions("Lane Botany notes", "Lane Bot")
+    assert not mentions("ask Lane", "Lane Bot")

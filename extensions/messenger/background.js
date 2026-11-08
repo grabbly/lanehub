@@ -44,7 +44,7 @@ async function uploadVoice({ messageId, chatId, url, base64, mime, duration }) {
   if (base64) {
     blob = new Blob([fromBase64(base64)], { type: mime || "audio/mp4" });
   } else {
-    const resp = await fetch(url, { credentials: "include" });
+    const resp = await fetch(url); // signed CDN link, no cookies needed
     if (!resp.ok) throw new Error(`voice clip download failed: HTTP ${resp.status}`);
     blob = await resp.blob();
   }
