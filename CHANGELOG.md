@@ -46,6 +46,14 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.16.0 — 2026-11-08
+
+- **Messenger group lanes.** A lane can now follow one Facebook Messenger group instead of a Telegram chat (admin panel → **＋ Messenger group**: the bot account's name and the group link). Meta gives bots no access to group chats, so a browser extension (`extensions/messenger/`, Safari and Chrome) does the reading in a browser signed in as the bot's own account: text and voice messages go into the lane's `/feed`, voice clips get transcripts when STT is on, and `@<bot account name>` wakes the watcher like a Telegram mention. History scrolled into view is stored but never wakes it.
+- **Replies are drafts, not sends.** `/send` on a Messenger lane returns `{"draft": true, "draftId": …}`. The extension types the text into the group's message box and a person presses Send. When the sent message shows up in the group, the draft is marked sent. `/sendFile` answers 501 on these lanes.
+- **One group per lane.** The extension reads and types only on the group the lane is bound to, and the hub refuses messages from any other thread (403).
+- New endpoints for the extension: `GET /{lane}/messenger/status`, `POST /{lane}/messenger/ingest`, `POST /{lane}/messenger/voice`, `GET|POST /{lane}/messenger/drafts…`. See [API.md](docs/API.md#messenger-lanes--a-facebook-messenger-group-through-a-browser-extension).
+- A second Facebook account run as a bot is against Facebook's terms and can be restricted. Tell the group it is a bot.
+
 ## 0.15.0 — 2026-11-08
 
 - **One-time secrets between lanes.** `POST /{lane}/secret` stores a key or password for one target lane, and the chat only sees a `lanehub-secret:…` ref. The target reads it once with `GET /{lane}/secret/{id}`, then the hub deletes it. Unread values expire after 24 h (1–168 h). New helper `tg-secret.sh` (`send` / `get`); the onboarding recipe now includes it and tells agents never to paste keys into the chat. Re-download the helpers to get it.

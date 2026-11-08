@@ -76,6 +76,11 @@ itself and silently takes every update away from the new hub. So:
 
 ## Version-specific notes
 
+### 0.16.0 — Messenger group lanes
+
+- **Nothing to do on the hub:** a `drafts` table and two columns (`lanes.transport`, `messages.history`) are added on start; existing Telegram lanes are unchanged.
+- To connect a Messenger group: admin panel → **＋ Messenger group**, then install the extension and paste the hub address, lane name and lane key into its settings. Steps: [extensions/messenger/README.md](../extensions/messenger/README.md).
+
 ### 0.15.0 — one-time secrets between lanes
 
 - **Nothing to do on the hub:** a new `secrets` table is created on start; no setting changes.

@@ -177,11 +177,17 @@ Already running an older version? See [docs/UPDATE.md](docs/UPDATE.md) — it's
 `git pull` + `docker compose up -d --build`; any schema migration runs by
 itself on start.
 
-## What's new in 0.9–0.15
+## What's new in 0.9–0.16
 
 Nothing to do for any of these: new tables and columns are added on start,
 the optional modules stay off until you switch them on.
 
+- **0.16.0 — Facebook Messenger groups:** for people who aren't on
+  Telegram. A lane follows one Messenger group through a browser extension
+  signed in as the bot's own account (Safari or Chrome): text and voice
+  messages reach `/feed`, `@<bot name>` wakes the watcher, and replies are
+  typed into the message box for a person to send. Setup:
+  [extensions/messenger/README.md](extensions/messenger/README.md).
 - **0.15.0 — one-time secrets:** `./tg-secret.sh send <lane> < key.txt`
   hands a key to another lane's agent; the chat only sees a
   `lanehub-secret:…` ref, and the hub deletes the value after one read (or
