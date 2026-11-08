@@ -454,6 +454,7 @@
       <h1>Your chats</h1>
       <span class="spacer"></span>
       <button class="btn primary" id="new-chat-btn">＋ New chat</button>
+      <button class="btn" id="new-messenger-btn">＋ Messenger group</button>
       <p class="sub">Each Telegram group gets its own block. Bots inside it post only there.</p>
     </div>
     <div id="chats"></div>
@@ -626,6 +627,41 @@
   <div class="dlg-ft">
     <button class="btn" id="ab-cancel">Cancel</button>
     <button class="btn primary" id="ab-submit" disabled>Add bot</button>
+  </div>
+</dialog>
+
+<!-- Messenger lane dialog: bot account name + group link/id -> create -->
+<dialog id="messenger-lane-dlg">
+  <div class="dlg-hd">
+    <h2 id="ml-head">Add a Messenger group</h2>
+    <button class="ghost" id="ml-close" aria-label="Close">✕</button>
+  </div>
+  <div class="dlg-bd">
+    <div>
+      <label class="lbl" for="ml-bot-name">Bot account name <span style="color:var(--danger)">*</span></label>
+      <input class="txt" id="ml-bot-name" placeholder="e.g. Lane Bot" autocomplete="off">
+      <div class="help">The name of your bot account as Messenger shows it. Mentions of this name wake the agent.</div>
+    </div>
+    <div style="margin-top:12px;">
+      <label class="lbl" for="ml-chat-id">Group link or ID (optional)</label>
+      <input class="txt mono" id="ml-chat-id" placeholder="https://www.messenger.com/t/1234567890 or numeric ID" autocomplete="off">
+      <div class="help">Messenger group thread link or numeric thread ID.</div>
+    </div>
+    <div style="margin-top:12px;">
+      <label class="lbl" for="ml-title">Title (optional)</label>
+      <input class="txt" id="ml-title" placeholder="e.g. Sales Team">
+      <div class="help">Friendly name for this group in the panel.</div>
+    </div>
+    <div style="margin-top:12px;">
+      <label class="lbl" for="ml-slug">Lane name (optional)</label>
+      <input class="txt mono" id="ml-slug" placeholder="e.g. sales-team">
+      <div class="help">Used in the API address: /&lt;slug&gt;. Derived from bot name if empty.</div>
+    </div>
+    <div class="error" id="ml-error" style="margin-top:10px;"></div>
+  </div>
+  <div class="dlg-ft">
+    <button class="btn" id="ml-cancel">Cancel</button>
+    <button class="btn primary" id="ml-submit">Add Messenger group</button>
   </div>
 </dialog>
 
@@ -1258,6 +1294,7 @@ $('theme-btn').onclick = () => {
 function getDistinctBots() {
   const map = new Map();
   lanes.forEach(l => {
+    if (l.transport === 'messenger') return;
     const k = (l.botUsername || l.slug).toLowerCase();
     if (!map.has(k)) {
       map.set(k, {
@@ -1285,6 +1322,10 @@ function renderChatsTab() {
   box.innerHTML = '';
 
   const titleOf = {};
+  lanes.forEach(l => {
+    const cid = (l.defaultChatId || '').trim();
+    if (cid && l.title && !titleOf[cid]) titleOf[cid] = l.title;
+  });
   seenChatsHub.forEach(c => { if (c.title) titleOf[String(c.chatId)] = c.title; });
   lanes.forEach(l => (l.seenChats || []).forEach(c => { if (c.title) titleOf[String(c.chatId)] = c.title; }));
   Object.entries(chatNames).forEach(([id, name]) => { titleOf[id] = name; });
@@ -1319,7 +1360,7 @@ function renderChatsTab() {
         const cIni = getInitials(g.title || g.chatId, 'TG');
         const botNames = (g.lanes || []).map(slug => {
           const found = lanes.find(x => x.slug === slug);
-          return found && found.botUsername ? '@' + found.botUsername : slug;
+          return found && found.botUsername ? (found.transport === 'messenger' ? found.botUsername : '@' + found.botUsername) : slug;
         }).filter(Boolean);
         const seenText = 'seen ' + timeAgo(g.lastDate) + (botNames.length ? ' by ' + botNames.join(', ') : '');
         return `<div class="opt" style="margin-top:6px;">
@@ -1352,14 +1393,18 @@ function renderChatsTab() {
   if (lanes.length === 0) {
     emptyState.hidden = false;
     emptyState.innerHTML = `<h3>No chats or bots yet</h3>
-      <div class="help">Connect a Telegram group to turn it into a shared bus where your bots and team collaborate.</div>
+      <div class="help">Connect a Telegram or Messenger group to turn it into a shared bus where your bots and team collaborate.</div>
       <ol class="help" style="margin:6px 0; padding-left:20px; line-height:1.7;">
         <li>Make a Telegram group and add your bot (or create one in @BotFather).</li>
         <li>Post any message so the hub sees the group.</li>
-        <li>Click <b>＋ New chat</b> to set up the group and lane.</li>
+        <li>Click <b>＋ New chat</b> to set up the group and lane, or <b>＋ Messenger group</b> to link a Facebook Messenger chat.</li>
       </ol>
-      <div><button class="btn primary" id="empty-new-chat-btn">＋ New chat</button></div>`;
+      <div style="display:flex; gap:8px;">
+        <button class="btn primary" id="empty-new-chat-btn">＋ New chat</button>
+        <button class="btn" id="empty-new-messenger-btn">＋ Messenger group</button>
+      </div>`;
     $('empty-new-chat-btn').onclick = () => openNewChatWizard();
+    $('empty-new-messenger-btn').onclick = () => openMessengerLaneDialog();
   } else {
     emptyState.hidden = true;
   }
@@ -1370,22 +1415,29 @@ function createChatSection(chatId, chatTitle, groupLanes, titleOf) {
   sec.className = 'chat';
   sec.style.marginBottom = '16px';
   const cColor = colorFor(chatId);
-  const cIni = getInitials(chatTitle, 'TG');
+  const isMessenger = groupLanes.some(l => l.transport === 'messenger');
+  const cIni = getInitials(chatTitle, isMessenger ? 'MS' : 'TG');
   sec.style.setProperty('--cc', cColor);
 
   const boardBtnHtml = (sessionState && sessionState.boardsEnabled)
     ? `<button class="btn sm" data-open-board="${esc(chatId)}">Board</button>`
     : '';
 
+  const addRowHtml = isMessenger ? '' : `
+    <div class="add-row">
+      <button class="link-btn" data-add-bot="${esc(chatId)}">＋ Add bot</button>
+      <div class="picker-container" data-picker-for="${esc(chatId)}"></div>
+    </div>`;
+
   sec.innerHTML = `
     <div class="chat-hd">
       <span class="chat-ava" style="--av:${cColor}">${cIni}</span>
       <div class="chat-meta">
-        <div class="chat-name">${esc(chatTitle)} <button class="ghost rename-btn" data-rename-chat="${esc(chatId)}" title="Rename this chat in the panel" aria-label="Rename chat">✎</button></div>
+        <div class="chat-name">${esc(chatTitle)}${isMessenger ? ' <span class="pill" style="vertical-align:middle; font-size:11px; margin-left:4px;">Messenger</span>' : ''} <button class="ghost rename-btn" data-rename-chat="${esc(chatId)}" title="Rename this chat in the panel" aria-label="Rename chat">✎</button></div>
         <div class="rename-box" data-rename-box="${esc(chatId)}" hidden>
           <input class="txt" style="max-width:260px; padding:4px 8px;" value="${esc(chatNames[String(chatId)] || chatTitle)}" maxlength="80" data-rename-input>
           <button class="btn sm primary" data-rename-save="${esc(chatId)}">Save</button>
-          <button class="btn sm" data-rename-reset="${esc(chatId)}" title="Use the name from Telegram">Telegram name</button>
+          <button class="btn sm" data-rename-reset="${esc(chatId)}" title="Use original name">${isMessenger ? 'Original name' : 'Telegram name'}</button>
         </div>
         <div class="chat-sub">${groupLanes.length} bot${groupLanes.length > 1 ? 's' : ''} · <span class="mono">${esc(chatId)}</span></div>
       </div>
@@ -1393,10 +1445,7 @@ function createChatSection(chatId, chatTitle, groupLanes, titleOf) {
       ${boardBtnHtml}
     </div>
     <div class="bots"></div>
-    <div class="add-row">
-      <button class="link-btn" data-add-bot="${esc(chatId)}">＋ Add bot</button>
-      <div class="picker-container" data-picker-for="${esc(chatId)}"></div>
-    </div>`;
+    ${addRowHtml}`;
 
   const bdBtn = sec.querySelector(`[data-open-board="${chatId}"]`);
   if (bdBtn) {
@@ -1416,16 +1465,20 @@ function createLaneRow(l, chatId, titleOf, isUnboundBlock) {
   const isOpen = (openLaneSlug === l.slug);
   rowWrap.className = 'bot' + (isOpen ? ' open' : '');
 
-  const bUser = l.botUsername ? '@' + l.botUsername : l.slug;
+  const isMessenger = (l.transport === 'messenger');
+  const bUser = isMessenger ? (l.botUsername || l.slug) : (l.botUsername ? '@' + l.botUsername : l.slug);
   const bColor = colorFor(l.botUsername || l.slug);
-  const bIni = getInitials(bUser, 'BT');
+  const bIni = getInitials(bUser, isMessenger ? 'MS' : 'BT');
 
   const recvPill = l.receiveMode === 'hub'
     ? '<span class="pill ok">reads &amp; posts</span>'
     : '<span class="pill">posts only</span>';
+  const messengerPill = '<span class="pill">Messenger</span>';
   const statusPill = !l.enabled ? '<span class="pill warn">paused</span>'
+    : isMessenger ? messengerPill
     : l.webhookLost ? '<span class="pill danger" title="Telegram delivers this bot\'s updates somewhere else">updates go elsewhere</span>'
     : recvPill;
+  const extraPill = (isMessenger && !l.enabled) ? '<span class="pill">Messenger</span> ' : '';
   const autoPill = l.autopilot?.on ? '<span class="pill ok">🤖 autopilot</span>' : '';
 
   rowWrap.innerHTML = `
@@ -1437,7 +1490,7 @@ function createLaneRow(l, chatId, titleOf, isUnboundBlock) {
         <span class="bot-sub" style="display:block">${l.storedMessages} msg${l.storedMessages !== 1 ? 's' : ''} · /${esc(l.slug)}</span>
       </span>
       ${autoPill}
-      ${statusPill}
+      ${extraPill}${statusPill}
       <span class="chev">›</span>
     </button>
     ${isOpen ? createLaneDetailHTML(l, chatId, titleOf, isUnboundBlock) : ''}`;
@@ -1452,34 +1505,68 @@ function createLaneRow(l, chatId, titleOf, isUnboundBlock) {
 function createLaneDetailHTML(l, chatId, titleOf, isUnboundBlock) {
   const baseUrl = (sessionState?.publicBaseUrl || location.origin).replace(/\/+$/, '');
   const laneUrl = `${baseUrl}/${l.slug}`;
+  const isMessenger = (l.transport === 'messenger');
+  const bUser = isMessenger ? (l.botUsername || l.slug) : (l.botUsername ? '@' + l.botUsername : l.slug);
 
-  // Sibling bots in other chats
-  const siblingChats = (l.botLanes || []).map(slug => {
-    const sLane = lanes.find(x => x.slug === slug);
-    if (!sLane) return '/' + slug;
-    const cid = sLane.defaultChatId;
-    return cid ? (titleOf[String(cid)] || cid) : '/' + slug;
-  });
+  let middleKvHtml = '';
 
-  // Seen chats for moving
-  const otherSeen = (l.seenChats || []).filter(c => String(c.chatId) !== String(l.defaultChatId || ''));
-
-  return `<div class="bot-detail">
-    <div class="kv">
-      <span>API address</span>
+  if (isMessenger) {
+    const threadUrl = l.defaultChatId ? `https://www.messenger.com/t/${l.defaultChatId}` : '';
+    middleKvHtml = `
+      <span>Transport</span>
       <span class="inline">
-        <span class="field mono">${esc(laneUrl)}</span>
-        <button class="btn sm" data-copy-addr="${esc(laneUrl)}">Copy</button>
+        <span class="pill">Messenger</span>
       </span>
 
-      <span>API key</span>
+      <span>Bot account</span>
       <span class="inline">
-        <span class="field mono" data-key-val>••••••••••••••••</span>
-        <button class="btn sm" data-act="reveal-key">Show</button>
-        <button class="btn sm" data-act="copy-key">Copy</button>
-        <button class="btn sm" data-act="rotate-key">New key</button>
+        <input class="txt" style="max-width:240px; padding:4px 8px;" value="${esc(l.botUsername || '')}" placeholder="Bot name in Messenger" data-bot-name>
+        <button class="btn sm" data-act="save-bot-name">Save</button>
+        <span class="help">As Messenger shows it</span>
       </span>
 
+      <span>Group link</span>
+      <span class="inline">
+        ${threadUrl
+          ? `<a href="${esc(threadUrl)}" target="_blank" rel="noopener" class="mono" style="font-size:13px; color:var(--accent); text-decoration:underline;">${esc(threadUrl)}</a>`
+          : '<span class="pill warn">Not set</span>'}
+      </span>
+
+      <span>Edit group link</span>
+      <span class="inline">
+        <input class="txt mono" style="max-width:280px; padding:4px 8px;" value="${esc(threadUrl || l.defaultChatId || '')}" placeholder="https://www.messenger.com/t/<id> or numeric id" data-group-link>
+        <button class="btn sm" data-act="save-group-link">Save</button>
+        ${l.defaultChatId ? '<button class="btn sm danger" data-act="unbind-chat">Unbind</button>' : ''}
+      </span>
+
+      <span>Name</span>
+      <span class="inline">
+        <input class="txt" style="max-width:220px; padding:4px 8px;" value="${esc(l.title || '')}" maxlength="80" placeholder="e.g. Sales Team" data-lane-title>
+        <button class="btn sm" data-act="save-title">Save</button>
+        <span class="help">Shown next to ${esc(bUser)}. The API address /${esc(l.slug)} stays the same.</span>
+      </span>
+
+      <span>Autopilot</span>
+      <span class="inline">
+        ${l.autopilot?.on
+          ? `<span class="pill ok">ON until ${fmtTime(l.autopilot.until)} · ${l.autopilot.watcherOnline ? 'computer online' : 'computer offline'}</span>
+             <button class="btn sm danger" data-act="turn-off-autopilot">Turn off</button>`
+          : '<span class="pill">OFF</span>'}
+        <span class="help" style="display:block; width:100%;">Switch on from the bot\'s computer: Start in the LaneHub Autopilot menu-bar app, or ask its Claude. Replies arrive as drafts in the group\'s message box; a person sends them.</span>
+      </span>`;
+  } else {
+    // Sibling bots in other chats
+    const siblingChats = (l.botLanes || []).map(slug => {
+      const sLane = lanes.find(x => x.slug === slug);
+      if (!sLane) return '/' + slug;
+      const cid = sLane.defaultChatId;
+      return cid ? (titleOf[String(cid)] || cid) : '/' + slug;
+    });
+
+    // Seen chats for moving
+    const otherSeen = (l.seenChats || []).filter(c => String(c.chatId) !== String(l.defaultChatId || ''));
+
+    middleKvHtml = `
       <span>Messages</span>
       <span class="inline">
         <span class="seg" data-seg-mode>
@@ -1514,7 +1601,7 @@ function createLaneDetailHTML(l, chatId, titleOf, isUnboundBlock) {
       <span class="inline">
         <input class="txt" style="max-width:220px; padding:4px 8px;" value="${esc(l.title || '')}" maxlength="80" placeholder="e.g. Designer agent" data-lane-title>
         <button class="btn sm" data-act="save-title">Save</button>
-        <span class="help">Shown next to ${esc(l.botUsername ? '@' + l.botUsername : l.slug)}. The API address /${esc(l.slug)} stays the same.</span>
+        <span class="help">Shown next to ${esc(bUser)}. The API address /${esc(l.slug)} stays the same.</span>
       </span>
 
       <span>Debug chat</span>
@@ -1547,9 +1634,19 @@ function createLaneDetailHTML(l, chatId, titleOf, isUnboundBlock) {
       ${siblingChats.length > 0 ? `
         <span>Same bot also in</span>
         <span class="help">${siblingChats.map(esc).join(' · ')}</span>
-      ` : ''}
-    </div>
+      ` : ''}`;
+  }
 
+  const moreSettingsHtml = isMessenger ? `
+    <details style="margin-top:4px;">
+      <summary style="font-size:13px; color:var(--muted); cursor:pointer;">More settings (logs)</summary>
+      <div style="padding-top:8px; display:grid; gap:8px;">
+        <div class="inline">
+          <span style="font-size:13px; color:var(--muted); min-width:90px;">Session log:</span>
+          <button class="btn sm" data-act="open-log">Session log</button>
+        </div>
+      </div>
+    </details>` : `
     <details style="margin-top:4px;">
       <summary style="font-size:13px; color:var(--muted); cursor:pointer;">More settings (bot token, logs)</summary>
       <div style="padding-top:8px; display:grid; gap:8px;">
@@ -1564,7 +1661,28 @@ function createLaneDetailHTML(l, chatId, titleOf, isUnboundBlock) {
           <button class="btn sm" data-act="open-log">Session log</button>
         </div>
       </div>
-    </details>
+    </details>`;
+
+  return `<div class="bot-detail">
+    <div class="kv">
+      <span>API address</span>
+      <span class="inline">
+        <span class="field mono">${esc(laneUrl)}</span>
+        <button class="btn sm" data-copy-addr="${esc(laneUrl)}">Copy</button>
+      </span>
+
+      <span>API key</span>
+      <span class="inline">
+        <span class="field mono" data-key-val>••••••••••••••••</span>
+        <button class="btn sm" data-act="reveal-key">Show</button>
+        <button class="btn sm" data-act="copy-key">Copy</button>
+        <button class="btn sm" data-act="rotate-key">New key</button>
+      </span>
+
+      ${middleKvHtml}
+    </div>
+
+    ${moreSettingsHtml}
 
     <div class="actions">
       <button class="btn primary sm" data-act="send-teammate">✉ Send to teammate</button>
@@ -1721,6 +1839,43 @@ function wireLaneDetailEvents(wrap, l, titleOf) {
       toast('Name saved');
       await loadLanes();
     } catch (err) { setErr(err.message); }
+  });
+
+  // Save bot account name (Messenger lanes)
+  wrap.querySelector('[data-act="save-bot-name"]')?.addEventListener('click', async () => {
+    const inp = wrap.querySelector('[data-bot-name]');
+    const val = inp ? inp.value.trim() : '';
+    if (!val) { setErr('Bot account name cannot be empty'); return; }
+    setErr('');
+    try {
+      await api(`/admin/api/lanes/${l.slug}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ botName: val }),
+      });
+      toast('Bot name saved');
+      await loadLanes();
+    } catch (err) { setErr(err.message); }
+  });
+  wrap.querySelector('[data-bot-name]')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); wrap.querySelector('[data-act="save-bot-name"]')?.click(); }
+  });
+
+  // Save group link (Messenger lanes)
+  wrap.querySelector('[data-act="save-group-link"]')?.addEventListener('click', async () => {
+    const inp = wrap.querySelector('[data-group-link]');
+    const val = inp ? inp.value.trim() : '';
+    setErr('');
+    try {
+      await api(`/admin/api/lanes/${l.slug}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ defaultChatId: val }),
+      });
+      toast('Group link saved');
+      await loadLanes();
+    } catch (err) { setErr(err.message); }
+  });
+  wrap.querySelector('[data-group-link]')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); wrap.querySelector('[data-act="save-group-link"]')?.click(); }
   });
 
   wrap.querySelector('[data-act="save-opchat"]')?.addEventListener('click', async () => {
@@ -2139,6 +2294,69 @@ $('ab-submit').onclick = async () => {
   }
 };
 
+// ----------------- MESSENGER LANE DIALOG -----------------
+function openMessengerLaneDialog() {
+  $('ml-bot-name').value = '';
+  $('ml-chat-id').value = '';
+  $('ml-title').value = '';
+  $('ml-slug').value = '';
+  $('ml-error').textContent = '';
+  $('ml-submit').disabled = false;
+  $('messenger-lane-dlg').showModal();
+  $('ml-bot-name').focus();
+}
+
+$('new-messenger-btn').onclick = () => openMessengerLaneDialog();
+$('ml-close').onclick = () => $('messenger-lane-dlg').close();
+$('ml-cancel').onclick = () => $('messenger-lane-dlg').close();
+
+['ml-bot-name', 'ml-chat-id', 'ml-title', 'ml-slug'].forEach(id => {
+  $(id)?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      $('ml-submit').click();
+    }
+  });
+});
+
+$('ml-submit').onclick = async () => {
+  const errBox = $('ml-error');
+  errBox.textContent = '';
+  const botName = $('ml-bot-name').value.trim();
+  if (!botName) {
+    errBox.textContent = 'Bot account name is required';
+    $('ml-bot-name').focus();
+    return;
+  }
+  const payload = {
+    transport: 'messenger',
+    botName: botName,
+  };
+  const chatId = $('ml-chat-id').value.trim();
+  if (chatId) payload.defaultChatId = chatId;
+  const slug = $('ml-slug').value.trim();
+  if (slug) payload.slug = slug;
+  const title = $('ml-title').value.trim();
+  if (title) payload.title = title;
+
+  $('ml-submit').disabled = true;
+  try {
+    const res = await api('/admin/api/lanes', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    $('messenger-lane-dlg').close();
+    if (res.warning) await alertDlg({ title: 'Notice', message: res.warning });
+    openLaneSlug = res.slug;
+    toast('Messenger group added');
+    await loadLanes();
+  } catch (err) {
+    errBox.textContent = err.message;
+  } finally {
+    $('ml-submit').disabled = false;
+  }
+};
+
 // ----------------- NEW CHAT WIZARD -----------------
 let wizardState = {};
 function openNewChatWizard(preselectedGroupId) {
@@ -2335,15 +2553,17 @@ function renderRecipesDialog() {
   $('rec-lang-en').className = activeRecipesLang === 'en' ? 'btn sm primary' : 'btn sm';
 
   const statusBox = $('rec-status');
+  const isMessenger = (l.transport === 'messenger');
   if (l.defaultChatId) {
     statusBox.innerHTML = `<p class="help" style="margin:0 0 10px;">Copy and paste it into <b>Claude Code opened in the agent's project folder</b>. Claude sets everything up, saves the instructions to CLAUDE.md (without the key) and posts “connected” to the chat. The key is inside, so send it only by DM.</p>`;
   } else {
     statusBox.innerHTML = `<p class="error" style="margin:0 0 10px;">⚠️ This lane is not bound to a chat yet, so it cannot post. Bind it to a chat first.</p>`;
   }
-  $('rec-admin-warn').innerHTML = botAdminWarning(activeRecipesLang);
+  $('rec-admin-warn').innerHTML = isMessenger ? '' : botAdminWarning(activeRecipesLang);
   $('rec-prompt').value = promptText(laneBase, hubBase, activeRecipesLang, {
-    apiKey: l.apiKey, chatId: l.defaultChatId, bot: l.botUsername ? '@' + l.botUsername : '/' + l.slug,
-    chatName: (chatNames[String(l.defaultChatId)] || ((l.seenChats || []).find(c => String(c.chatId) === String(l.defaultChatId)) || {}).title || ''),
+    apiKey: l.apiKey, chatId: l.defaultChatId,
+    bot: l.botUsername ? (isMessenger ? l.botUsername : '@' + l.botUsername) : '/' + l.slug,
+    chatName: (chatNames[String(l.defaultChatId)] || ((l.seenChats || []).find(c => String(c.chatId) === String(l.defaultChatId)) || {}).title || (isMessenger && l.title ? l.title : '')),
     handle: commandHandle(l.botUsername || l.slug),
   });
 }
@@ -2362,7 +2582,8 @@ function commandHandle(username) {
 function handoffText(l, lng) {
   const baseUrl = (sessionState?.publicBaseUrl || location.origin).replace(/\/+$/, '');
   const base = `${baseUrl}/${l.slug}`;
-  const bot = l.botUsername ? '@' + l.botUsername : '/' + l.slug;
+  const isMessenger = (l.transport === 'messenger');
+  const bot = l.botUsername ? (isMessenger ? l.botUsername : '@' + l.botUsername) : '/' + l.slug;
   const rot = l.keyRotatedAt ? new Date(l.keyRotatedAt * 1000) : null;
   const dd = rot && `${String(rot.getDate()).padStart(2, '0')}.${String(rot.getMonth() + 1).padStart(2, '0')}`;
   const cmds = (ru) => `  ${ru ? 'Прочитать общий чат' : 'Read the shared chat'}:
@@ -2600,7 +2821,7 @@ async function loadFeed() {
     const curVal = sel.value;
     const enabledLanes = lanes.filter(l => l.enabled);
     sel.innerHTML = enabledLanes.map(l => {
-      const bText = l.botUsername ? `@${l.botUsername}` : `/${l.slug}`;
+      const bText = l.transport === 'messenger' ? (l.botUsername || `/${l.slug}`) : (l.botUsername ? `@${l.botUsername}` : `/${l.slug}`);
       const cText = l.defaultChatId ? ` · ${l.defaultChatId}` : '';
       return `<option value="${esc(l.slug)}">as ${esc(bText)}${esc(cText)}</option>`;
     }).join('');
@@ -2732,6 +2953,7 @@ function getChatTitle(chatId) {
   for (const l of lanes) {
     const sc = (l.seenChats || []).find(c => String(c.chatId) === idStr);
     if (sc && sc.title) return sc.title;
+    if (String(l.defaultChatId || '') === idStr && l.title) return l.title;
   }
   return idStr;
 }
