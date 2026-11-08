@@ -28,3 +28,4 @@ macos/build/
 
 # Xcode per-user state of the Safari wrapper
 extensions/safari/**/xcuserdata/
+extensions/safari/build/
