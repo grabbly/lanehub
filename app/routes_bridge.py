@@ -9,6 +9,7 @@
     GET  /{lane}/secret/{id} — read (and destroy) a secret handed to this lane
     GET  /{lane}/info      — lane diagnostics
     POST /{lane}/webhook   — Telegram push receiver (secret-token auth)
+    /{lane}/messenger/...  — the browser extension of a Messenger lane (messenger.py)
 
 Auth: X-Bridge-Token header must equal the lane's API key (except /webhook,
 which Telegram authenticates with X-Telegram-Bot-Api-Secret-Token).
@@ -25,7 +26,7 @@ from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from . import db, operator, telegram
+from . import db, messenger, operator, telegram
 from .autopilot import (
     AUTO_PREFIX,
     get_autopilot_state,
@@ -118,8 +119,15 @@ async def perform_send(
     silent: bool = False,
 ) -> dict:
     """Send text as the lane's bot to its bound chat, splitting long text into
-    <=4000-char parts (a reply goes on the first part only)."""
+    <=4000-char parts (a reply goes on the first part only).
+
+    A Messenger lane can't post by itself: the text becomes a draft that the
+    browser extension types into the chat, and a person sends it."""
     target = bound_chat(lane, chat_id)
+    if messenger.is_messenger(lane):
+        draft = db.create_draft(lane["slug"], text)
+        return {"ok": True, "draft": True, "draftId": draft["id"], "messageId": None, "messageIds": [],
+                "chatId": int(target), "parts": 1, "seq": None, "updateId": None}
     parts = telegram.chunk_text(text)
     first: dict | None = None
     rows: list[dict] = []
@@ -176,6 +184,8 @@ async def send_file(
     `asDocument=true` forces a document (no recompression)."""
     lane = _auth_lane(lane_slug, x_bridge_token)
     target = bound_chat(lane, chat_id)
+    if messenger.is_messenger(lane):
+        raise HTTPException(status_code=501, detail="a Messenger lane can only send text (as a draft)")
     content = await file.read(telegram.UPLOAD_MAX + 1)
     if not content:
         raise HTTPException(status_code=422, detail="empty file")
@@ -261,6 +271,8 @@ async def get_file(lane_slug: str, file_id: str, x_bridge_token: str = Header(de
     the lane that recorded it."""
     lane = _auth_lane(lane_slug, x_bridge_token)
     via_slug, fid = db.resolve_media_file(lane_slug, file_id, lane["default_chat_id"] or "")
+    if fid.startswith(messenger.FILE_PREFIX):
+        return _messenger_file(lane_slug, lane, fid)
     via = lane if via_slug == lane_slug else (db.get_lane(via_slug) or lane)
     try:
         info = await telegram.get_file(via["bot_token"], fid)
@@ -278,6 +290,23 @@ async def get_file(lane_slug: str, file_id: str, x_bridge_token: str = Header(de
         content=data,
         media_type=ctype,
         headers={"Content-Disposition": f'inline; filename="{name}"', "Cache-Control": "private, max-age=3600"},
+    )
+
+
+def _messenger_file(lane_slug: str, lane: dict, fid: str) -> Response:
+    """A voice clip the Messenger extension uploaded, kept on the hub's disk.
+    Readable by the lane that stored it and by lanes bound to its chat."""
+    msg = db.find_media_message(fid)
+    bound = (lane.get("default_chat_id") or "").strip()
+    data = messenger.read_file(fid)
+    if not msg or data is None or (msg["lane_slug"] != lane_slug and str(msg["chat_id"]) != bound):
+        raise HTTPException(status_code=404, detail="file not found")
+    media = json.loads(msg["media"])
+    return Response(
+        content=data,
+        media_type=media.get("mime") or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{media.get("name") or fid}"',
+                 "Cache-Control": "private, max-age=3600"},
     )
 
 
@@ -687,6 +716,8 @@ async def _chat_type(lane: dict) -> str | None:
 @router.get("/{lane_slug}/info")
 async def info(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict:
     lane = _auth_lane(lane_slug, x_bridge_token)
+    if messenger.is_messenger(lane):
+        return _messenger_info(lane)
     mode = settings.resolved_delivery_mode()
     chat_type = await _chat_type(lane)
     lost = webhook_lost(lane_slug)
@@ -836,3 +867,125 @@ async def lane_autopilot_set(
         reason = "stopped on the bot's computer" if req.by == "app" else "by the agent"
         await set_autopilot_off(lane, reason=reason, now=now)
         return {"ok": True, "on": False, "until": None}
+
+
+# --- Messenger lanes: the browser extension's side -------------------------
+
+
+def _messenger_lane(lane_slug: str, token: str) -> dict:
+    lane = _auth_lane(lane_slug, token)
+    if not messenger.is_messenger(lane):
+        raise HTTPException(status_code=400, detail="not a Messenger lane")
+    return lane
+
+
+def _messenger_info(lane: dict) -> dict:
+    cursor_raw = db.get_lane_state(lane["slug"], "wake_cursor")
+    return {
+        "lane": lane["slug"],
+        "transport": "messenger",
+        "botUsername": lane["bot_username"],
+        "defaultChatId": lane["default_chat_id"] or None,
+        "threadUrl": f"https://www.messenger.com/t/{lane['default_chat_id']}" if lane["default_chat_id"] else None,
+        # when the extension last pushed what it read — the lane's "is anyone reading?" signal
+        "extensionSeen": int(db.get_lane_state(lane["slug"], "extension_seen") or 0) or None,
+        "openDrafts": db.list_drafts(lane["slug"]),
+        "storedMessages": db.count_messages(lane["slug"]),
+        "wake": {"armed": cursor_raw is not None,
+                 "cursor": int(cursor_raw) if cursor_raw is not None else None,
+                 "claudeSessionId": db.get_lane_state(lane["slug"], "claude_session_id")},
+        "sttEnabled": settings.stt_enabled,
+    }
+
+
+class MessengerMessage(BaseModel):
+    id: str = Field(min_length=1, max_length=512)
+    from_user: str = Field(default="", alias="from", max_length=200)
+    text: str = Field(default="", max_length=64000)
+    date: int | None = None
+    outgoing: bool = False
+    reply_to: str | None = Field(default=None, alias="replyTo", max_length=200)
+    kind: Literal["text", "voice"] = "text"
+
+    model_config = {"populate_by_name": True}
+
+
+class MessengerIngest(BaseModel):
+    chat_id: str = Field(alias="chatId")
+    chat_title: str = Field(default="", alias="chatTitle", max_length=200)
+    messages: list[MessengerMessage] = Field(default_factory=list, max_length=500)
+
+    model_config = {"populate_by_name": True}
+
+
+def _messenger_chat(lane: dict, chat_id: str) -> None:
+    """The extension may only write into the thread the lane is bound to."""
+    bound = (lane["default_chat_id"] or "").strip()
+    if not bound:
+        raise HTTPException(status_code=503, detail="lane is not bound to a Messenger thread yet")
+    if messenger.thread_id(chat_id) != bound:
+        raise HTTPException(status_code=403, detail=f"lane '{lane['slug']}' reads thread {bound}, not {chat_id}")
+
+
+@router.get("/{lane_slug}/messenger/status")
+async def messenger_status(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict:
+    """What the extension needs to start: which thread to read and the bot
+    account's name (its own messages are the outgoing ones)."""
+    return _messenger_info(_messenger_lane(lane_slug, x_bridge_token))
+
+
+@router.post("/{lane_slug}/messenger/ingest")
+async def messenger_ingest(lane_slug: str, req: MessengerIngest, x_bridge_token: str = Header(default="")) -> dict:
+    """Messages the extension read from the thread (new ones and re-reads).
+    Re-sending a known id updates it in place; nothing is duplicated."""
+    lane = _messenger_lane(lane_slug, x_bridge_token)
+    _messenger_chat(lane, req.chat_id)
+    db.set_lane_state(lane_slug, "extension_seen", str(int(time.time())))
+    rows = messenger.ingest(lane, req.chat_title, [m.model_dump(by_alias=True) for m in req.messages])
+    return {"ok": True, "stored": rows, "new": sum(1 for r in rows if r["new"])}
+
+
+@router.post("/{lane_slug}/messenger/voice")
+async def messenger_voice(
+    lane_slug: str,
+    file: UploadFile = File(...),
+    message_id: str = Form(alias="messageId", min_length=1, max_length=512),
+    chat_id: str = Form(alias="chatId"),
+    duration: int | None = Form(default=None),
+    x_bridge_token: str = Header(default=""),
+) -> dict:
+    """The audio of a voice message already sent through /messenger/ingest.
+    Kept on the hub (GET /{lane}/file/{fileId}) and transcribed when STT is on."""
+    lane = _messenger_lane(lane_slug, x_bridge_token)
+    _messenger_chat(lane, chat_id)
+    content = await file.read(messenger.VOICE_MAX + 1)
+    if not content:
+        raise HTTPException(status_code=422, detail="empty file")
+    if len(content) > messenger.VOICE_MAX:
+        raise HTTPException(status_code=413, detail="voice clip is larger than 25 MB")
+    mime = (file.content_type or "audio/mp4").split(";")[0].strip()
+    media = messenger.attach_voice(lane, message_id, content, mime, duration)
+    if media is None:
+        raise HTTPException(status_code=404, detail="ingest the message before its voice clip")
+    return {"ok": True, "media": media}
+
+
+@router.get("/{lane_slug}/messenger/drafts")
+async def messenger_drafts(lane_slug: str, x_bridge_token: str = Header(default="")) -> dict:
+    """Replies waiting to be typed into the chat (pending) or already in the
+    message box (filled), oldest first."""
+    lane = _messenger_lane(lane_slug, x_bridge_token)
+    return {"drafts": db.list_drafts(lane["slug"])}
+
+
+class DraftUpdate(BaseModel):
+    status: Literal["filled", "sent", "dismissed"]
+
+
+@router.post("/{lane_slug}/messenger/drafts/{draft_id}")
+async def messenger_draft_update(lane_slug: str, draft_id: int, req: DraftUpdate,
+                                 x_bridge_token: str = Header(default="")) -> dict:
+    lane = _messenger_lane(lane_slug, x_bridge_token)
+    if not db.set_draft_status(lane["slug"], draft_id, req.status):
+        raise HTTPException(status_code=404, detail="unknown draft")
+    return {"ok": True}

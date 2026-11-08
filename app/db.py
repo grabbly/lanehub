@@ -110,6 +110,15 @@ CREATE TABLE IF NOT EXISTS secrets (
     expires_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_secrets_expires ON secrets(expires_at);
+CREATE TABLE IF NOT EXISTS drafts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lane_slug TEXT NOT NULL,
+    text TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_drafts ON drafts(lane_slug, status, id);
 """
 
 # Keep at most this many log lines per lane (a rolling watcher-activity buffer).
@@ -151,6 +160,10 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
         # 'hub' = the hub owns the bot's updates (webhook/polling); 'send_only' =
         # another system owns them and the hub must never touch the webhook.
         conn.execute("ALTER TABLE lanes ADD COLUMN receive_mode TEXT NOT NULL DEFAULT 'hub'")
+    if "transport" not in cols:
+        # 'telegram' = a bot in a Telegram chat; 'messenger' = a Facebook
+        # Messenger group read and written by a browser extension (messenger.py).
+        conn.execute("ALTER TABLE lanes ADD COLUMN transport TEXT NOT NULL DEFAULT 'telegram'")
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(lane_logs)")}
     if "cost_usd" not in cols:
         conn.execute("ALTER TABLE lane_logs ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0")
@@ -276,6 +289,7 @@ def lane_to_dict(row: sqlite3.Row, include_secrets: bool = False) -> dict:
         "botUsername": row["bot_username"],
         "defaultChatId": row["default_chat_id"],
         "enabled": bool(row["enabled"]),
+        "transport": row["transport"],
         "createdAt": row["created_at"],
     }
     if include_secrets:
@@ -287,11 +301,11 @@ RECEIVE_MODES = ("hub", "send_only")
 
 
 def create_lane(slug: str, title: str, bot_token: str, bot_username: str, default_chat_id: str,
-                receive_mode: str = "hub") -> dict:
+                receive_mode: str = "hub", transport: str = "telegram") -> dict:
     with connect() as conn:
         conn.execute(
             "INSERT INTO lanes(slug, title, bot_token, bot_username, api_key, webhook_secret, "
-            "default_chat_id, enabled, created_at, receive_mode) VALUES(?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
+            "default_chat_id, enabled, created_at, receive_mode, transport) VALUES(?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
             (
                 slug,
                 title,
@@ -302,6 +316,7 @@ def create_lane(slug: str, title: str, bot_token: str, bot_username: str, defaul
                 default_chat_id,
                 int(time.time()),
                 receive_mode,
+                transport,
             ),
         )
     return get_lane(slug)  # type: ignore[return-value]
@@ -352,6 +367,7 @@ def delete_lane(slug: str) -> None:
         conn.execute("DELETE FROM lane_state WHERE lane_slug = ?", (slug,))
         conn.execute("DELETE FROM lane_logs WHERE lane_slug = ?", (slug,))
         conn.execute("DELETE FROM secrets WHERE from_lane = ? OR to_lane = ?", (slug, slug))
+        conn.execute("DELETE FROM drafts WHERE lane_slug = ?", (slug,))
 
 
 # --- lane state (poll offsets) -------------------------------------------
@@ -994,3 +1010,54 @@ def backfill_transcripts(since_ts: int, max_seconds: int = 900) -> int:
                 queued += 1
         conn.commit()
     return queued
+
+
+# --- Messenger drafts ----------------------------------------------------
+#
+# A Messenger lane cannot post by itself: /send queues the text here, the
+# browser extension types it into the chat's message box and a person
+# presses Send. Statuses: pending -> filled (in the box) -> sent (seen in the
+# chat) | dismissed (the person threw it away).
+
+DRAFT_STATUSES = ("pending", "filled", "sent", "dismissed")
+
+
+def create_draft(lane_slug: str, text: str) -> dict:
+    now = int(time.time())
+    with connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO drafts(lane_slug, text, status, created_at, updated_at) VALUES(?, ?, 'pending', ?, ?)",
+            (lane_slug, text, now, now),
+        )
+        draft_id = cur.lastrowid
+    return {"id": draft_id, "text": text, "status": "pending", "createdAt": now, "updatedAt": now}
+
+
+def list_drafts(lane_slug: str, statuses: tuple[str, ...] = ("pending", "filled"), limit: int = 20) -> list[dict]:
+    marks = ", ".join("?" for _ in statuses)
+    with connect() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM drafts WHERE lane_slug = ? AND status IN ({marks}) ORDER BY id LIMIT ?",
+            (lane_slug, *statuses, limit),
+        ).fetchall()
+    return [{"id": r["id"], "text": r["text"], "status": r["status"],
+             "createdAt": r["created_at"], "updatedAt": r["updated_at"]} for r in rows]
+
+
+def set_draft_status(lane_slug: str, draft_id: int, status: str) -> bool:
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE drafts SET status = ?, updated_at = ? WHERE lane_slug = ? AND id = ?",
+            (status, int(time.time()), lane_slug, draft_id),
+        )
+        return cur.rowcount > 0
+
+
+def existing_message(lane_slug: str, chat_id: int, message_id: int) -> dict | None:
+    """The lane's row for one chat message, if it has been stored already."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM messages WHERE lane_slug = ? AND chat_id = ? AND message_id = ?",
+            (lane_slug, chat_id, message_id),
+        ).fetchone()
+        return dict(row) if row else None

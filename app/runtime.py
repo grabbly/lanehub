@@ -27,7 +27,7 @@ import json
 import logging
 import time
 
-from . import db, operator, telegram
+from . import db, messenger, operator, telegram
 from .autopilot import autopilot_check_pass, handle_incoming_update_commands
 from .config import settings
 
@@ -213,6 +213,8 @@ class LaneRuntime:
 
         Returns a warning string when something needs the operator's attention
         (the lane rows themselves are already saved) so callers can surface it."""
+        if messenger.is_messenger_token(bot_token):
+            return None  # the browser extension delivers, nothing to set up
         lanes = db.bot_lanes(bot_token)
         for slug in [*(lane["slug"] for lane in lanes), *released]:
             self._stop_poller(slug)
@@ -278,6 +280,8 @@ class LaneRuntime:
         none left, only a webhook that is ours is removed — never another
         system's."""
         self._stop_poller(lane["slug"])
+        if messenger.is_messenger(lane):
+            return
         if db.bot_lanes(lane["bot_token"]):
             await self.sync_bot(lane["bot_token"], released=(lane["slug"],))
             return
@@ -353,6 +357,8 @@ class LaneRuntime:
                 LOG.warning("lane %s: getWebhookInfo failed: %s", lane["slug"], exc)
 
     async def check_bot(self, bot_token: str) -> None:
+        if messenger.is_messenger_token(bot_token):
+            return
         receiver = self.receiver(bot_token)
         if receiver is None:  # send-only or disabled: the hub doesn't receive for it
             return
@@ -491,12 +497,19 @@ class LaneRuntime:
             db.update_transcript_failed(fuid, attempts=attempts + 1, error="lane missing or disabled")
             return True
         try:
-            info = await telegram.get_file(lane["bot_token"], file_id)
-            file_path = info.get("file_path")
-            if not file_path:
-                raise telegram.TelegramError("telegram returned no file_path")
-            data, ctype = await telegram.download_file(lane["bot_token"], file_path)
-            filename = file_path.rsplit("/", 1)[-1] if "/" in file_path else file_path
+            if file_id.startswith(messenger.FILE_PREFIX):
+                data = messenger.read_file(file_id)
+                if data is None:
+                    raise FileNotFoundError(f"messenger clip {file_id} is missing")
+                media = json.loads((db.find_media_message(file_id) or {}).get("media") or "{}")
+                filename, ctype = media.get("name") or file_id, media.get("mime") or "audio/mp4"
+            else:
+                info = await telegram.get_file(lane["bot_token"], file_id)
+                file_path = info.get("file_path")
+                if not file_path:
+                    raise telegram.TelegramError("telegram returned no file_path")
+                data, ctype = await telegram.download_file(lane["bot_token"], file_path)
+                filename = file_path.rsplit("/", 1)[-1] if "/" in file_path else file_path
             from . import stt
             result = await stt.transcribe(data, filename, ctype)
             text = (result.get("text") or "").strip()

@@ -11,7 +11,7 @@ Kept free of route imports so it never creates an import cycle.
 """
 from __future__ import annotations
 
-from . import db, telegram
+from . import db, messenger, telegram
 
 
 def lane_operator_chat(lane_slug: str) -> str:
@@ -22,8 +22,8 @@ def lane_operator_chat(lane_slug: str) -> str:
 def _ready(lane_slug: str) -> tuple[str, dict] | None:
     chat = lane_operator_chat(lane_slug)
     lane = db.get_lane(lane_slug)
-    if not chat or not lane or not lane.get("enabled"):
-        return None
+    if not chat or not lane or not lane.get("enabled") or messenger.is_messenger(lane):
+        return None  # a Messenger lane has no bot to post to an operator chat
     return chat, lane
 
 

@@ -18,7 +18,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from . import db, telegram
+from . import db, messenger, telegram
 from .autopilot import get_autopilot_state, set_autopilot_off
 from .config import settings
 from .routes_bridge import _receiver_url, perform_send
@@ -76,11 +76,12 @@ def _lane_view(lane: dict) -> dict:
         "defaultChatId": lane["default_chat_id"],
         "enabled": bool(lane["enabled"]),
         "receiveMode": lane.get("receive_mode") or "hub",
+        "transport": lane.get("transport") or "telegram",
         "createdAt": lane["created_at"],
         "keyRotatedAt": int(db.get_lane_state(lane["slug"], "key_rotated_at") or 0) or None,
         "deliveryMode": mode,
         "operatorChatId": db.get_lane_state(lane["slug"], "operator_chat_id") or "",
-        "webhookUrl": _receiver_url(lane) if mode == "webhook" else None,
+        "webhookUrl": _receiver_url(lane) if mode == "webhook" and not messenger.is_messenger(lane) else None,
         "polling": runtime.polling(lane["slug"]),
         "webhookLost": webhook_lost(lane["slug"]),  # {url, since} while updates go elsewhere
         "storedMessages": db.count_messages(lane["slug"]),
@@ -131,6 +132,11 @@ class LaneCreate(BaseModel):
     # already does (then the lane becomes send_only). 'hub' = take the webhook
     # over even so; 'send_only' = never touch it.
     receive_mode: Literal["hub", "send_only"] | None = Field(default=None, alias="receiveMode")
+    # 'messenger' = a Facebook Messenger group read by the browser extension:
+    # no bot token; `botName` is the bot account's name as Messenger shows it,
+    # `defaultChatId` the thread id or its messenger.com/t/<id> URL.
+    transport: Literal["telegram", "messenger"] = "telegram"
+    bot_name: str = Field(default="", alias="botName", max_length=100)
 
     model_config = {"populate_by_name": True}
 
@@ -159,6 +165,7 @@ class LaneUpdate(BaseModel):
     enabled: bool | None = None
     operator_chat_id: str | None = Field(default=None, alias="operatorChatId")
     receive_mode: Literal["hub", "send_only"] | None = Field(default=None, alias="receiveMode")
+    bot_name: str | None = Field(default=None, alias="botName", max_length=100)  # Messenger lanes
     autopilot_owner: str | None = Field(default=None, alias="autopilotOwner")
     autopilot: AutopilotUpdate | None = None
 
@@ -295,6 +302,8 @@ async def lanes_create(req: LaneCreate, hub_session: str | None = Cookie(default
             raise HTTPException(status_code=422, detail=f"slug '{slug}' is reserved")
         if db.get_lane(slug):
             raise HTTPException(status_code=409, detail="lane already exists")
+    if req.transport == "messenger":
+        return _create_messenger_lane(slug, req)
     token = _bot_token_of(req.bot_token, req.from_lane)
     me = await _get_me_or_422(token)
     if not slug:
@@ -321,6 +330,31 @@ async def lanes_create(req: LaneCreate, hub_session: str | None = Cookie(default
     return view
 
 
+def _messenger_thread_or_422(raw: str) -> str:
+    raw = (raw or "").strip()
+    thread = messenger.thread_id(raw)
+    if raw and not thread:
+        raise HTTPException(status_code=422, detail="paste the group's messenger.com/t/<id> link or its numeric id")
+    return thread
+
+
+def _create_messenger_lane(slug: str, req: LaneCreate) -> dict:
+    name = req.bot_name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="botName (the bot account's name in Messenger) is required")
+    if not slug:
+        slug = derive_slug(name.replace(" ", "_"))
+    lane = db.create_lane(
+        slug=slug,
+        title=req.title.strip() or name,
+        bot_token=messenger.placeholder_token(slug),
+        bot_username=name,
+        default_chat_id=_messenger_thread_or_422(req.default_chat_id),
+        transport="messenger",
+    )
+    return _lane_view(lane)
+
+
 @router.patch("/lanes/{slug}")
 async def lanes_update(slug: str, req: LaneUpdate, hub_session: str | None = Cookie(default=None)) -> dict:
     require_admin(hub_session)
@@ -344,6 +378,16 @@ async def lanes_update(slug: str, req: LaneUpdate, hub_session: str | None = Coo
                 status_code=422,
                 detail="autopilot can only be switched on from the bot's computer",
             )
+    if messenger.is_messenger(lane):
+        if req.bot_token is not None or req.receive_mode is not None:
+            raise HTTPException(status_code=422, detail="a Messenger lane has no bot token or webhook")
+        if req.bot_name is not None:
+            if not req.bot_name.strip():
+                raise HTTPException(status_code=422, detail="botName can't be empty")
+            fields["bot_username"] = req.bot_name.strip()
+        if req.default_chat_id is not None:
+            fields["default_chat_id"] = _messenger_thread_or_422(req.default_chat_id)
+        return _lane_view(db.update_lane(slug, fields) or lane)
     if req.bot_token is not None:
         token = req.bot_token.strip()
         try:
@@ -405,6 +449,8 @@ async def lanes_webhook_info(slug: str, hub_session: str | None = Cookie(default
     lane = db.get_lane(slug)
     if not lane:
         raise HTTPException(status_code=404, detail="unknown lane")
+    if messenger.is_messenger(lane):
+        raise HTTPException(status_code=422, detail="a Messenger lane has no webhook")
     try:
         return await telegram.get_webhook_info(lane["bot_token"])
     except telegram.TelegramError as exc:

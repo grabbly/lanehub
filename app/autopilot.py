@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from . import db, operator, telegram
+from . import db, messenger, operator, telegram
 
 LOG = logging.getLogger("lanehub.autopilot")
 
@@ -175,7 +175,7 @@ async def set_autopilot_on(
                     f"marked 🤖 auto. Anyone can switch it off: /{off_cmd}")
 
     chat_id = (lane.get("default_chat_id") or "").strip()
-    if chat_id:
+    if chat_id and not messenger.is_messenger(lane):  # a Messenger lane can't post on its own
         try:
             res = await telegram.send_message(lane["bot_token"], chat_id, announcement)
             record_outgoing(lane, res, announcement)
@@ -210,7 +210,7 @@ async def set_autopilot_off(
     announcement = f"🤖 Autopilot OFF for {bot_tag} ({reason})."
 
     chat_id = (lane.get("default_chat_id") or "").strip()
-    if chat_id:
+    if chat_id and not messenger.is_messenger(lane):  # a Messenger lane can't post on its own
         try:
             res = await telegram.send_message(lane["bot_token"], chat_id, announcement)
             record_outgoing(lane, res, announcement)
