@@ -412,7 +412,7 @@ def _scan_mention(lane: dict, cursor: int) -> tuple[dict | None, list[dict]]:
         bound = (lane.get("default_chat_id") or "").strip()
         candidates = [r for r in scanned if str(r.get("chatId")) == bound]
     for r in candidates:
-        if is_autopilot_command(r.get("text") or ""):
+        if is_autopilot_command(r.get("text") or "") or r.get("history"):
             continue
         sender = (r.get("from") or "").lstrip("@").lower()
         if sender == bot_username.lstrip("@").lower():
@@ -914,6 +914,8 @@ class MessengerIngest(BaseModel):
     chat_id: str = Field(alias="chatId")
     chat_title: str = Field(default="", alias="chatTitle", max_length=200)
     messages: list[MessengerMessage] = Field(default_factory=list, max_length=500)
+    # history that was on the page already — stored, but never wakes the watcher
+    backfill: bool = False
 
     model_config = {"populate_by_name": True}
 
@@ -941,7 +943,7 @@ async def messenger_ingest(lane_slug: str, req: MessengerIngest, x_bridge_token:
     lane = _messenger_lane(lane_slug, x_bridge_token)
     _messenger_chat(lane, req.chat_id)
     db.set_lane_state(lane_slug, "extension_seen", str(int(time.time())))
-    rows = messenger.ingest(lane, req.chat_title, [m.model_dump(by_alias=True) for m in req.messages])
+    rows = messenger.ingest(lane, req.chat_title, [m.model_dump(by_alias=True) for m in req.messages], req.backfill)
     return {"ok": True, "stored": rows, "new": sum(1 for r in rows if r["new"])}
 
 

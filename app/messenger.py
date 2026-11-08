@@ -84,13 +84,17 @@ def _match_draft(lane_slug: str, text: str) -> None:
             return
 
 
-def ingest(lane: dict, chat_title: str, messages: list[dict]) -> list[dict]:
+def ingest(lane: dict, chat_title: str, messages: list[dict], backfill: bool = False) -> list[dict]:
     """Store messages the extension read from the lane's bound chat.
 
     Each message: {id, from, text, date?, outgoing?, replyTo?, kind?}. `id` is
     the extension's stable id for the message; sending the same id again
     refreshes the row (text edits) without making a new one, and keeps media
-    and date already stored. `outgoing` marks the bot account's own messages."""
+    and date already stored. `outgoing` marks the bot account's own messages.
+
+    `backfill`: history already on the page when it was opened (or scrolled
+    up to), not something just said. It is stored as history: an old
+    @mention in it never wakes the watcher."""
     chat_id = int(lane["default_chat_id"])
     now = int(time.time())
     out = []
@@ -115,6 +119,7 @@ def ingest(lane: dict, chat_title: str, messages: list[dict]) -> list[dict]:
             from_username=m.get("from") or None,
             from_is_bot=outgoing,
             reply_to_username=m.get("replyTo") or None,
+            history=bool(old["history"]) if old else backfill,
         )
         if outgoing and not old:
             _match_draft(lane["slug"], text)
@@ -162,7 +167,7 @@ def attach_voice(lane: dict, ext_id: str, content: bytes, mime: str, duration: i
         chat_title=old["chat_title"], from_user=old["from_user"], text=old["text"], date=old["date"],
         is_outgoing=bool(old["is_outgoing"]), media=media, from_username=old["from_username"],
         from_is_bot=None if old["from_is_bot"] is None else bool(old["from_is_bot"]),
-        reply_to_username=old["reply_to_username"],
+        reply_to_username=old["reply_to_username"], history=bool(old["history"]),
     )
     if settings.stt_enabled:
         too_long = duration is not None and duration > settings.stt_max_seconds

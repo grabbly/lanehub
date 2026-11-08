@@ -19,9 +19,9 @@ def _h(lane):
     return {"X-Bridge-Token": lane["apiKey"]}
 
 
-def _ingest(client, lane, messages, chat=THREAD):
+def _ingest(client, lane, messages, chat=THREAD, backfill=False):
     resp = client.post(f"/{lane['slug']}/messenger/ingest", headers=_h(lane),
-                       json={"chatId": chat, "chatTitle": "Team", "messages": messages})
+                       json={"chatId": chat, "chatTitle": "Team", "messages": messages, "backfill": backfill})
     assert resp.status_code == 200, resp.text
     return resp.json()
 
@@ -111,6 +111,19 @@ def test_wake_on_mention_of_bot_account_name(client):
     assert w["text"] == "@Lane Bot can you look?"
     assert w["from"] == "Anna"
     assert client.fake_tg.calls == []  # autopilot isn't announced through Telegram
+
+
+def test_backfilled_history_never_wakes(client):
+    lane = make_messenger_lane(client)
+    client.get("/fbgroup/wake", headers=_h(lane))  # watcher armed, nothing stored yet
+    client.post("/fbgroup/autopilot", headers=_h(lane), json={"on": True, "hours": 1})
+    _ingest(client, lane, [{"id": "h1", "from": "Anna", "text": "@Lane Bot old question"}], backfill=True)
+    assert client.get("/fbgroup/wake", headers=_h(lane)).json()["wake"] is False
+    _ingest(client, lane, [{"id": "n1", "from": "Anna", "text": "@Lane Bot new question"}])
+    _ingest(client, lane, [{"id": "h0", "from": "Anna", "text": "@Lane Bot older"}], backfill=True)
+    w = client.get("/fbgroup/wake", headers=_h(lane)).json()
+    # the live mention still waits, an older one scrolled into view doesn't jump the queue
+    assert w["wake"] is True and w["text"] == "@Lane Bot new question"
 
 
 def test_voice_clip_stored_served_and_transcribed(client, monkeypatch):
