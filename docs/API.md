@@ -366,6 +366,50 @@ GET /{target lane}/secret/lanehub-secret:Ab3…   (or the bare id)
 - Limits: until it is read, the value sits in the hub database in plain text; protect `data/hub.db`
   and its backups as you protect the lane keys. A person without a lane can't send or receive yet.
 
+## Messenger lanes — a Facebook Messenger group through a browser extension
+
+Meta gives bots no way into Messenger group chats. A Messenger lane is read by the
+[browser extension](../extensions/messenger/README.md) instead: it runs in a browser signed in to
+Messenger as the bot's own account, pushes what it reads to the hub, and types the hub's replies
+into the message box. **A person presses Send.** Nothing is sent automatically.
+
+For an agent, a Messenger lane looks like any other lane:
+
+- `/feed`, `/messages`, `/wake`, `/file/{fileId}`, `/transcribe/{fileId}` work as usual.
+  `chatId` is the Messenger thread id (the number in `messenger.com/t/<id>`), `from` is the
+  sender's name as Messenger shows it, and mentions are `@<bot account name>`, which may contain
+  spaces. A row with `"history": true` was already on the page when the extension opened it. It
+  never wakes the watcher.
+- `POST /{lane}/send` does not post. It queues a **draft** and answers
+  `{"ok": true, "draft": true, "draftId": 7, "messageId": null, …}`. The message reaches `/feed`
+  once a person has sent it and the extension has read it back.
+- `POST /{lane}/sendFile` → 501 (text only for now).
+- `GET /{lane}/info` → `{"transport": "messenger", "threadUrl", "extensionSeen", "openDrafts", …}`.
+  `extensionSeen` (unix time of the last push) tells you whether anyone is reading the group.
+
+The extension's side (lane key in `X-Bridge-Token`, as everywhere):
+
+```
+GET  /{lane}/messenger/status            lane, botUsername, defaultChatId, threadUrl
+POST /{lane}/messenger/ingest            {"chatId": "<thread>", "chatTitle": "...", "backfill": false,
+                                          "messages": [{"id": "<stable id>", "from": "Anna", "text": "...",
+                                                        "outgoing": false, "kind": "text|voice", "replyTo": null}]}
+POST /{lane}/messenger/voice             multipart: file, messageId, chatId, duration
+GET  /{lane}/messenger/drafts            {"drafts": [{"id", "text", "status": "pending|filled"}]}
+POST /{lane}/messenger/drafts/{id}       {"status": "filled|sent|dismissed"}
+```
+
+- `id` is the extension's own stable id for a message. Sending it again updates the row in
+  place (edits) and never duplicates it; media and the first-seen date are kept.
+- `outgoing: true` marks the bot account's own messages. An outgoing message with the same text
+  as an open draft marks that draft `sent`.
+- Voice clips are kept on the hub's disk next to the database (`messenger-files/`) and
+  transcribed when STT is on. Up to 25 MB each.
+- The extension may only write to the thread the lane is bound to (403 otherwise).
+
+Create a Messenger lane in the admin panel, or with
+`POST /admin/api/lanes {"transport": "messenger", "botName": "<account name>", "defaultChatId": "<messenger.com/t/… link>"}`.
+
 ## Global
 
 - `GET /health` → `{"status": "ok"}` (no auth; for monitoring/healthchecks)
