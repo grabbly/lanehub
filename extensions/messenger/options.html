@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LaneHub Messenger reader</title>
+<style>
+  body { font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 560px; margin: 32px auto; padding: 0 16px; color: #1c1c1e; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.lead { color: #6b6b70; margin: 0 0 20px; }
+  label { display: block; font-weight: 600; margin: 14px 0 4px; }
+  input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #c7c7cc; border-radius: 8px; font: inherit; }
+  .hint { color: #6b6b70; font-size: 12px; margin-top: 3px; }
+  button { margin-top: 18px; padding: 8px 16px; border: 0; border-radius: 8px; background: #0a84ff; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  #result { margin-top: 16px; padding: 10px 12px; border-radius: 8px; white-space: pre-wrap; display: none; }
+  #result.ok { display: block; background: #e8f7ec; color: #1d5c2f; }
+  #result.err { display: block; background: #fdecec; color: #8a1f1f; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #1c1c1e; color: #f2f2f7; }
+    input { background: #2c2c2e; border-color: #48484a; color: #f2f2f7; }
+    #result.ok { background: #1f3b28; color: #b9e8c6; }
+    #result.err { background: #3d1f1f; color: #f3b9b9; }
+  }
+</style>
+</head>
+<body>
+  <h1>LaneHub Messenger reader</h1>
+  <p class="lead">Reads one Messenger group into a LaneHub lane. Replies from the hub are typed into the message box; you press Send.</p>
+
+  <label for="hubUrl">Hub address</label>
+  <input id="hubUrl" type="url" placeholder="https://hub.example.com" autocomplete="off">
+
+  <label for="lane">Lane</label>
+  <input id="lane" placeholder="fbgroup" autocomplete="off">
+  <div class="hint">The Messenger lane's name in the hub's admin panel.</div>
+
+  <label for="key">Lane API key</label>
+  <input id="key" type="password" autocomplete="off">
+  <div class="hint">From the lane's card in the admin panel. Stored only in this browser.</div>
+
+  <button id="save">Save and check</button>
+  <div id="result"></div>
+
+  <script src="options.js"></script>
+</body>
+</html>

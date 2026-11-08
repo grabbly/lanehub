@@ -25,3 +25,6 @@ watch.config.json
 macos/build/
 .lanehub-autopilot.log
 
+
+# Xcode per-user state of the Safari wrapper
+extensions/safari/**/xcuserdata/
