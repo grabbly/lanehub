@@ -48,9 +48,16 @@
     api.storage.local.set({ lastStatus: { text, tone, at: Date.now() } });
   }
 
+  // Only the lane's own group is ever read or typed into. Checked again
+  // before every step, because Messenger switches chats without a page load.
+  function onLaneThread() {
+    return !!lane && P.threadId() === String(lane.defaultChatId);
+  }
+
   // --- reading -------------------------------------------------------------
 
   async function scan() {
+    if (!onLaneThread()) return stop();
     const msgs = P.readMessages(lane.botUsername);
     if (!msgs.length) return;
     // A message is live when it appears below every message already known
@@ -71,7 +78,7 @@
       if (!batch.length) continue;
       const res = await call("ingest", {
         payload: {
-          chatId: lane.defaultChatId,
+          chatId: P.threadId(),
           chatTitle: P.threadTitle(),
           backfill: isBackfill,
           messages: batch.map(({ id, from, text, outgoing, kind, replyTo }) => ({ id, from, text, outgoing, kind, replyTo })),
@@ -89,10 +96,11 @@
 
   async function uploadVoices(msgs) {
     for (const m of msgs) {
+      if (!onLaneThread()) return;
       if (m.kind !== "voice" || voiceDone.has(m.id)) continue;
       const clip = await P.voiceClip(m);
       if (!clip) continue; // its audio isn't on the page yet
-      const res = await call("voice", { messageId: m.id, chatId: lane.defaultChatId, ...clip });
+      const res = await call("voice", { messageId: m.id, chatId: P.threadId(), ...clip });
       if (res.ok) voiceDone.add(m.id);
       else status(`voice: ${res.error}`, "warn");
     }
@@ -110,6 +118,7 @@
     if (!res.ok) return;
     const next = res.data.drafts.find((d) => d.status === "pending");
     if (!next) return;
+    if (!onLaneThread()) return stop();
     const box = P.composer();
     if (!box) return;
     if ((box.innerText || "").trim()) {
@@ -131,6 +140,8 @@
     observer = null;
     clearInterval(draftTimer);
     draftTimer = null;
+    clearTimeout(scanTimer);
+    scanTimer = null;
     known = [];
   }
 
@@ -142,7 +153,7 @@
       return;
     }
     lane = res.data;
-    if (P.threadId() !== String(lane.defaultChatId)) {
+    if (!onLaneThread()) {
       if (pill) pill.remove(), (pill = null);
       return; // another chat: stay quiet
     }
