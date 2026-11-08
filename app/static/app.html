@@ -1552,13 +1552,7 @@ function createLaneDetailHTML(l, chatId, titleOf, isUnboundBlock) {
           ? `<span class="pill ok">ON until ${fmtTime(l.autopilot.until)} · ${l.autopilot.watcherOnline ? 'computer online' : 'computer offline'}</span>
              <button class="btn sm danger" data-act="turn-off-autopilot">Turn off</button>`
           : '<span class="pill">OFF</span>'}
-        <span class="help" style="display:block; width:100%;">Switch on from the bot\'s computer: Start in the LaneHub Autopilot menu-bar app, or ask its Claude. In the chat anyone can request it with /autopilot @${esc(l.botUsername || 'bot')}</span>
-      </span>
-
-      <span>Owner</span>
-      <span class="inline">
-        <input class="txt mono" style="max-width:180px; padding:4px 8px;" value="${esc(l.autopilot?.owner || '')}" placeholder="username (no @)" data-ap-owner>
-        <button class="btn sm" data-act="save-ap-owner">Save</button>
+        <span class="help" style="display:block; width:100%;">Switch on from the bot\'s computer: Start in the LaneHub Autopilot menu-bar app, or ask its Claude. Replies arrive as drafts in the group\'s message box; a person sends them.</span>
       </span>`;
   } else {
     // Sibling bots in other chats
