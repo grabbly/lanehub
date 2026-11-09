@@ -7,6 +7,11 @@
   const P = globalThis.LaneHubParser;
 
   const SCAN_DEBOUNCE_MS = 800;
+  // A photo message waits this long for page.js to find its pictures before
+  // it goes to the hub without them (messages below it wait too, to keep
+  // the chat's order).
+  const PHOTO_WAIT_MS = 8000;
+  const PHOTO_TRIES = 3;
 
   // page.js runs in the page's own context to find voice clip URLs (React
   // props are invisible from here).
@@ -22,6 +27,10 @@
   let draftTimer = null;
   const sent = new Map(); // message id -> text last pushed to the hub
   const voiceDone = new Set(); // message ids whose clip went up
+  const photoFiles = new Map(); // message id -> [{fileId, width, height}] on the hub
+  const photoTries = new Map(); // message id -> failed uploads
+  const firstSeen = new Map(); // message id -> when a scan first saw it
+  const isLive = new Map(); // message id -> new at the bottom (true) or history (false)
   let known = []; // ids in page order after the last scan
 
   function call(type, extra = {}) {
@@ -58,22 +67,26 @@
 
   async function scan() {
     if (!onLaneThread()) return stop();
-    const msgs = P.readMessages(lane.botUsername);
-    if (!msgs.length) return;
+    const all = P.readMessages(lane.botUsername);
+    if (!all.length) return;
     // A message is live when it appears below every message already known
     // (new at the bottom); anything above that is history scrolled into view.
-    // The first scan of a page is all history.
+    // The first scan of a page is all history. Decided when a message is
+    // first seen, even if it waits for its photos and goes up later.
     const seen = new Set(known);
     let lastKnown = -1;
-    msgs.forEach((m, i) => { if (seen.has(m.id)) lastKnown = i; });
+    all.forEach((m, i) => { if (seen.has(m.id)) lastKnown = i; });
+    all.forEach((m, i) => {
+      if (!isLive.has(m.id)) isLive.set(m.id, lastKnown >= 0 && i > lastKnown && !seen.has(m.id));
+    });
+    known = all.map((m) => m.id);
+    const msgs = await withPhotos(all);
     const live = [];
     const backfill = [];
-    msgs.forEach((m, i) => {
-      const body = `${m.from}\u0000${m.text}`;
-      if (sent.get(m.id) === body) return;
-      (lastKnown >= 0 && i > lastKnown && !seen.has(m.id) ? live : backfill).push(m);
-    });
-    known = msgs.map((m) => m.id);
+    for (const m of msgs) {
+      if (sent.get(m.id) === bodyOf(m)) continue;
+      (isLive.get(m.id) ? live : backfill).push(m);
+    }
     for (const [batch, isBackfill] of [[backfill, true], [live, false]]) {
       if (!batch.length) continue;
       const res = await call("ingest", {
@@ -81,17 +94,98 @@
           chatId: P.threadId(),
           chatTitle: P.threadTitle(),
           backfill: isBackfill,
-          messages: batch.map(({ id, from, text, outgoing, kind, replyTo }) => ({ id, from, text, outgoing, kind, replyTo })),
+          messages: batch.map(({ id, from, text, outgoing, kind, replyTo, fileRefs }) => ({
+            id, from, text, outgoing, kind, replyTo, ...(fileRefs?.length ? { photos: fileRefs } : {}),
+          })),
         },
       });
       if (!res.ok) {
         status(res.error, "err");
         return;
       }
-      for (const m of batch) sent.set(m.id, `${m.from}\u0000${m.text}`);
+      for (const m of batch) sent.set(m.id, bodyOf(m));
     }
     await uploadVoices(msgs);
-    status(`reading · ${msgs.length} on screen`);
+    status(`reading · ${all.length} on screen`);
+  }
+
+  // What was last pushed for a message; a change (an edit, photos that
+  // finally went up) sends it again.
+  function bodyOf(m) {
+    return `${m.from}\u0000${m.text}\u0000${(m.fileRefs || []).map((f) => f.fileId).join(",")}`;
+  }
+
+  // Upload each photo message's pictures before the message itself goes to
+  // the hub, so its feed row has them from the start. Returns the messages
+  // that are ready, in page order: a photo message whose pictures page.js
+  // has not found yet holds back itself and everything below it, for up to
+  // PHOTO_WAIT_MS.
+  async function withPhotos(msgs) {
+    const now = Date.now();
+    const ready = [];
+    let retry = false;
+    for (const m of msgs) {
+      if (!firstSeen.has(m.id)) firstSeen.set(m.id, now);
+      if (m.kind !== "photo") {
+        ready.push(m);
+        continue;
+      }
+      const waited = now - firstSeen.get(m.id);
+      // no pictures found yet, or only on-screen previews: give page.js time
+      // to find the full-size ones
+      if ((m.photoPending || m.photos.some((p) => p.preview)) && waited < PHOTO_WAIT_MS) {
+        retry = true;
+        break;
+      }
+      if (!onLaneThread()) return [];
+      let refs = photoFiles.get(m.id);
+      const tries = photoTries.get(m.id) || 0;
+      const wanted = m.photos.length;
+      if (wanted && (!refs || refs.length < wanted) && tries < PHOTO_TRIES) {
+        const got = [];
+        for (const p of m.photos) {
+          let res;
+          try {
+            res = await call("photo", { chatId: P.threadId(), ...(await photoSource(p)) });
+          } catch (e) {
+            res = { ok: false, error: String(e?.message ?? e) };
+          }
+          if (!res.ok) {
+            photoTries.set(m.id, tries + 1);
+            status(`photo: ${res.error}`, "warn");
+            retry = true;
+            break;
+          }
+          got.push({ fileId: res.data.fileId, width: p.width || undefined, height: p.height || undefined });
+          if (p.preview) status("photo: only a preview was found on the page", "warn");
+        }
+        if (got.length === wanted) refs = got;
+        if (refs) photoFiles.set(m.id, refs);
+      }
+      if (!refs && tries < PHOTO_TRIES && wanted && waited < PHOTO_WAIT_MS) {
+        retry = true;
+        break; // try again shortly, keeping the order
+      }
+      ready.push({ ...m, fileRefs: refs || [] });
+    }
+    if (retry) {
+      clearTimeout(photoTimer);
+      photoTimer = setTimeout(scheduleScan, 2000);
+    }
+    return ready;
+  }
+  let photoTimer = null;
+
+  // A blob: URL (an end-to-end encrypted chat) only opens in this page, so
+  // its bytes travel to the background as base64; https links are fetched
+  // there.
+  async function photoSource(p) {
+    if (!p.url.startsWith("blob:")) return { url: p.url };
+    const blob = await (await fetch(p.url)).blob();
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return { base64: btoa(bin), mime: blob.type };
   }
 
   async function uploadVoices(msgs) {
@@ -142,7 +236,10 @@
     draftTimer = null;
     clearTimeout(scanTimer);
     scanTimer = null;
+    clearTimeout(photoTimer);
+    photoTimer = null;
     known = [];
+    isLive.clear();
   }
 
   async function start() {
@@ -158,7 +255,10 @@
       return; // another chat: stay quiet
     }
     observer = new MutationObserver(scheduleScan);
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    observer.observe(document.body, {
+      childList: true, subtree: true, characterData: true,
+      attributes: true, attributeFilter: ["data-lanehub-photos", "data-lanehub-audio"],
+    });
     draftTimer = setInterval(() => pollDrafts().catch(() => {}), DRAFT_POLL_MS);
     scheduleScan();
   }

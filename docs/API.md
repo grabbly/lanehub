@@ -380,6 +380,13 @@ For an agent, a Messenger lane looks like any other lane:
   sender's name as Messenger shows it, and mentions are `@<bot account name>`, which may contain
   spaces. A row with `"history": true` was already on the page when the extension opened it. It
   never wakes the watcher.
+- **Photos** arrive as files, like Telegram ones: the row's `media` is
+  `{"kind": "photo", "fileId": "mx_…", "mime": "image/jpeg", "size": …, "name": "messenger-20261109-101500-1a2b3c4d-1.jpg", "index": 1, "count": 1, "width"?, "height"?}`
+  and `GET /{lane}/file/{fileId}` (`./tg-file.sh <fileId>`) returns the full-size image. Text is
+  `[photo] <caption>`. A message with several photos becomes one row per photo, like a Telegram
+  album: `[photo 1/3] <caption>`, `[photo 2/3]`, `[photo 3/3]`, each with its own `media`
+  (`index`/`count` say which). Every row keeps one `media` object, so feed readers need no
+  change.
 - `POST /{lane}/send` does not post. It queues a **draft** and answers
   `{"ok": true, "draft": true, "draftId": 7, "messageId": null, …}`. The message reaches `/feed`
   once a person has sent it and the extension has read it back.
@@ -393,8 +400,10 @@ The extension's side (lane key in `X-Bridge-Token`, as everywhere):
 GET  /{lane}/messenger/status            lane, botUsername, defaultChatId, threadUrl
 POST /{lane}/messenger/ingest            {"chatId": "<thread>", "chatTitle": "...", "backfill": false,
                                           "messages": [{"id": "<stable id>", "from": "Anna", "text": "...",
-                                                        "outgoing": false, "kind": "text|voice", "replyTo": null}]}
+                                                        "outgoing": false, "kind": "text|voice|photo", "replyTo": null,
+                                                        "photos": [{"fileId": "mx_…", "width": 1600, "height": 1200}]}]}
 POST /{lane}/messenger/voice             multipart: file, messageId, chatId, duration
+POST /{lane}/messenger/photo             multipart: file, chatId → {"fileId", "mime", "size"}
 GET  /{lane}/messenger/drafts            {"drafts": [{"id", "text", "status": "pending|filled"}]}
 POST /{lane}/messenger/drafts/{id}       {"status": "filled|sent|dismissed"}
 ```
@@ -405,6 +414,12 @@ POST /{lane}/messenger/drafts/{id}       {"status": "filled|sent|dismissed"}
   as an open draft marks that draft `sent`.
 - Voice clips are kept on the hub's disk next to the database (`messenger-files/`) and
   transcribed when STT is on. Up to 25 MB each.
+- Photos go up **before** their message: `/messenger/photo` stores the image (JPEG, PNG, GIF,
+  WebP, HEIC or AVIF, told apart by its bytes; up to 25 MB, 415 otherwise) and returns its
+  `fileId`; the message then lists it in `photos` (up to 30). Unknown ids are dropped. The file
+  becomes downloadable once a stored message points at it. Photos sent for a message that is
+  already stored never change its row (a reader may have fetched it); they get rows of their own,
+  `<id>#photo<n>`, with fresh `seq`s.
 - The extension may only write to the thread the lane is bound to (403 otherwise).
 
 Create a Messenger lane in the admin panel, or with

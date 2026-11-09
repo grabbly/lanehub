@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LaneHub Messenger reader",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Reads one Messenger group chat into a LaneHub lane and types the hub's replies into the message box. A person presses Send.",
   "icons": {
     "16": "icons/icon-16.png",

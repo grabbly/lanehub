@@ -180,3 +180,126 @@ def test_mention_without_at_sign():
     assert mentions("hey @lane bot", "Lane Bot")
     assert not mentions("Lane Botany notes", "Lane Bot")
     assert not mentions("ask Lane", "Lane Bot")
+
+
+# --- photos ------------------------------------------------------------------
+
+JPEG = b"\xff\xd8\xff\xe0" + b"jpeg-body-1" * 10
+JPEG2 = b"\xff\xd8\xff\xe0" + b"jpeg-body-2" * 10
+PNG = b"\x89PNG\r\n\x1a\n" + b"png-body" * 10
+
+
+def _photo(client, lane, content, name="p.jpg", mime="image/jpeg", chat=THREAD):
+    return client.post(f"/{lane['slug']}/messenger/photo", headers=_h(lane),
+                       data={"chatId": chat}, files={"file": (name, content, mime)})
+
+
+def _feed(client, lane):
+    return client.get(f"/{lane['slug']}/feed?order=asc", headers=_h(lane)).json()["messages"]
+
+
+def test_photo_upload_checks_thread_size_and_type(client):
+    lane = make_messenger_lane(client)
+    assert _photo(client, lane, JPEG, chat="123456789").status_code == 403
+    assert _photo(client, lane, b"").status_code == 422
+    r = _photo(client, lane, b"<html>not a picture</html>", mime="image/jpeg")
+    assert r.status_code == 415  # the bytes decide, not the declared type
+    r = _photo(client, lane, PNG, name="x.bin", mime="application/octet-stream")
+    assert r.status_code == 200, r.text
+    assert r.json()["mime"] == "image/png" and r.json()["size"] == len(PNG)
+    assert r.json()["fileId"].startswith("mx_")
+    # uploaded but not in any message yet: not downloadable
+    assert client.get(f"/fbgroup/file/{r.json()['fileId']}", headers=_h(lane)).status_code == 404
+
+
+def test_single_photo_lands_in_feed_and_downloads(client):
+    lane = make_messenger_lane(client)
+    fid = _photo(client, lane, JPEG).json()["fileId"]
+    _ingest(client, lane, [{"id": "p1", "from": "Justyna", "kind": "photo", "text": "",
+                            "photos": [{"fileId": fid, "width": 1600, "height": 1200}]}])
+    rows = _feed(client, lane)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["text"] == "[photo]"
+    media = row["media"]
+    assert media["kind"] == "photo" and media["fileId"] == fid
+    assert media["mime"] == "image/jpeg" and media["size"] == len(JPEG)
+    assert media["name"].startswith("messenger-") and media["name"].endswith("-1.jpg")
+    assert media["width"] == 1600 and media["height"] == 1200
+    got = client.get(f"/fbgroup/file/{fid}", headers=_h(lane))
+    assert got.status_code == 200 and got.content == JPEG
+    assert got.headers["content-type"].startswith("image/jpeg")
+    assert media["name"] in got.headers["content-disposition"]
+
+
+def test_several_photos_become_one_row_each(client):
+    lane = make_messenger_lane(client)
+    ids = [_photo(client, lane, c).json()["fileId"] for c in (JPEG, JPEG2, PNG)]
+    _ingest(client, lane, [
+        {"id": "a1", "from": "Justyna", "kind": "photo", "text": "remove these",
+         "photos": [{"fileId": f} for f in ids]},
+        {"id": "a2", "from": "Bartek", "text": "ok"},
+    ])
+    rows = _feed(client, lane)
+    assert [r["text"] for r in rows] == ["[photo 1/3] remove these", "[photo 2/3]", "[photo 3/3]", "ok"]
+    assert [r["media"]["fileId"] for r in rows[:3]] == ids
+    assert [r["media"]["index"] for r in rows[:3]] == [1, 2, 3]
+    assert {r["media"]["count"] for r in rows[:3]} == {3}
+    assert [r["from"] for r in rows[:3]] == ["Justyna"] * 3
+    assert rows[2]["media"]["name"].endswith("-3.png")
+    assert len({r["updateId"] for r in rows}) == 4  # tg-fetch.sh dedupes by lane:update_id
+    for fid, content in zip(ids, (JPEG, JPEG2, PNG)):
+        assert client.get(f"/fbgroup/file/{fid}", headers=_h(lane)).content == content
+    # reading the message again (page reload) duplicates nothing and keeps media
+    _ingest(client, lane, [{"id": "a1", "from": "Justyna", "kind": "photo", "text": "remove these",
+                            "photos": [{"fileId": f} for f in ids]}], backfill=True)
+    _ingest(client, lane, [{"id": "a1", "from": "Justyna", "kind": "photo", "text": "remove these"}])
+    again = _feed(client, lane)
+    assert [r["text"] for r in again] == [r["text"] for r in rows]
+    assert again[0]["media"]["fileId"] == ids[0]
+
+
+def test_photos_arriving_after_their_message_get_rows_of_their_own(client):
+    # The 0.1 extension stored photo messages as "[photo]" without media; a
+    # feed reader may already have that row, so it is not changed afterwards.
+    lane = make_messenger_lane(client)
+    _ingest(client, lane, [{"id": "late", "from": "Justyna", "text": "[photo]"}])
+    before = _feed(client, lane)
+    assert before[0]["media"] is None
+    fid = _photo(client, lane, JPEG).json()["fileId"]
+    _ingest(client, lane, [{"id": "late", "from": "Justyna", "kind": "photo", "text": "",
+                            "photos": [{"fileId": fid}]}], backfill=True)
+    rows = _feed(client, lane)
+    assert len(rows) == 2
+    assert rows[0]["media"] is None and rows[0]["text"] == "[photo]"
+    assert rows[1]["media"]["fileId"] == fid and rows[1]["text"] == "[photo]"
+    assert rows[1]["seq"] > before[0]["seq"]  # a cursor reader picks it up
+    assert rows[1].get("history") is None  # follows its message, which was live
+
+
+def test_unknown_or_foreign_photo_ids_are_ignored(client):
+    lane = make_messenger_lane(client)
+    _ingest(client, lane, [{"id": "x1", "from": "Anna", "kind": "photo", "text": "",
+                            "photos": [{"fileId": "mx_" + "0" * 32}, {"fileId": "../../hub.db"}]}])
+    rows = _feed(client, lane)
+    assert len(rows) == 1 and rows[0]["media"] is None and rows[0]["text"] == "[photo]"
+
+
+def test_photo_file_is_private_to_lanes_of_its_chat(client):
+    lane = make_messenger_lane(client)
+    other = make_messenger_lane(client, slug="other", chat="https://www.messenger.com/t/1234567890")
+    fid = _photo(client, lane, JPEG).json()["fileId"]
+    _ingest(client, lane, [{"id": "s1", "from": "Anna", "kind": "photo", "photos": [{"fileId": fid}]}])
+    assert client.get(f"/fbgroup/file/{fid}", headers=_h(lane)).status_code == 200
+    assert client.get(f"/other/file/{fid}", headers=_h(other)).status_code == 404
+
+
+def test_photo_mention_in_caption_wakes(client):
+    lane = make_messenger_lane(client)
+    client.get("/fbgroup/wake", headers=_h(lane))
+    client.post("/fbgroup/autopilot", headers=_h(lane), json={"on": True, "hours": 1})
+    fid = _photo(client, lane, JPEG).json()["fileId"]
+    _ingest(client, lane, [{"id": "w1", "from": "Justyna", "kind": "photo", "text": "@Lane Bot this one",
+                            "photos": [{"fileId": fid}]}])
+    w = client.get("/fbgroup/wake", headers=_h(lane)).json()
+    assert w["wake"] is True and w["text"] == "[photo] @Lane Bot this one"

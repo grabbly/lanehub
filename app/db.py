@@ -965,13 +965,18 @@ def list_transcripts(status: str | None = None, limit: int = 50) -> list[dict]:
         return [dict(r) for r in rows]
 
 
-def find_media_message(file_id: str) -> dict | None:
+def find_media_message(file_id: str, lane_slug: str | None = None, chat_id: str | None = None) -> dict | None:
+    """A stored message whose media is `file_id`. With `lane_slug`, only a
+    row of that lane or (with `chat_id`) of that chat counts — the same file
+    can sit in several lanes' rows (Messenger file ids are content hashes)."""
     pattern = f'%"fileId": "{file_id}"%'
+    sql = "SELECT * FROM messages WHERE media LIKE ?"
+    args: list = [pattern]
+    if lane_slug is not None:
+        sql += " AND (lane_slug = ? OR CAST(chat_id AS TEXT) = ?)"
+        args += [lane_slug, chat_id or ""]
     with connect() as conn:
-        row = conn.execute(
-            "SELECT * FROM messages WHERE media LIKE ? ORDER BY message_id IS NULL LIMIT 1",
-            (pattern,),
-        ).fetchone()
+        row = conn.execute(sql + " ORDER BY message_id IS NULL LIMIT 1", args).fetchone()
         return dict(row) if row else None
 
 

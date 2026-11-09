@@ -9,8 +9,10 @@
 //       [dir=auto] (nested, duplicated)     the text
 //       [role=button]{Play} + [role=timer]  a voice message and its length ("1:45")
 //   [role=textbox][contenteditable]         the message box (Lexical editor)
-// A voice clip's URL is not in the DOM; page.js copies it from React's props
-// into data-lanehub-audio on the message.
+//       img (in the bubble, >= 80 px)      a photo; several form a grid in one message
+// A voice clip's URL and a photo's full-size URL are not in the DOM; page.js
+// copies them from React's props into data-lanehub-audio / data-lanehub-photos
+// on the message.
 
 globalThis.LaneHubParser = (() => {
   function threadId() {
@@ -85,19 +87,45 @@ globalThis.LaneHubParser = (() => {
       const voice = !!el.querySelector('[role="slider"]') && !!el.querySelector('[role="timer"]');
       let text = textOf(el);
       if (heading && text.startsWith(heading)) text = text.slice(heading.length).trim();
-      if (!text && !voice) text = el.querySelector("img:not([alt=''])") ? "[photo]" : "[attachment]";
+      const photos = voice ? [] : photosOf(el);
+      // a photo page.js has not got to yet
+      const photoPending = !voice && !photos.length && !el.hasAttribute("data-lanehub-photos") && hasBubbleImage(el);
+      const photo = photos.length > 0 || photoPending;
+      if (!text && !voice && !photo) text = el.querySelector("img:not([alt=''])") ? "[photo]" : "[attachment]";
       out.push({
         id,
         from,
         text,
         outgoing: own,
-        kind: voice ? "voice" : "text",
+        kind: voice ? "voice" : photo ? "photo" : "text",
         replyTo: null,
         duration: voice ? durationOf(el) : undefined,
+        photos,
+        photoPending,
         el,
       });
     }
     return out;
+  }
+
+  // [{url, width, height, preview?}] page.js found for the message.
+  function photosOf(el) {
+    try {
+      const list = JSON.parse(el.getAttribute("data-lanehub-photos") || "[]");
+      return Array.isArray(list) ? list.filter((p) => typeof p?.url === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+
+  // Same test as page.js: a picture in the bubble big enough to be a photo
+  // (avatars and emoji are smaller).
+  function hasBubbleImage(el) {
+    return [...el.querySelectorAll("img")].some((img) => {
+      if (img.closest("h1,h2,h3,h4,h5,h6")) return false;
+      const r = img.getBoundingClientRect();
+      return r.width >= 80 && r.height >= 60;
+    });
   }
 
   function durationOf(el) {

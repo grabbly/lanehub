@@ -56,12 +56,37 @@ async function uploadVoice({ messageId, chatId, url, base64, mime, duration }) {
   return hub("/messenger/voice", { method: "POST", form });
 }
 
+const PHOTO_MAX = 25 * 1024 * 1024;
+
+// A photo from the thread, full size: fetched from Messenger's CDN (a signed
+// link, no cookies needed) or handed over as base64 by the content script.
+// The hub answers with its fileId, which the message then lists.
+async function uploadPhoto({ chatId, url, base64, mime }) {
+  let blob;
+  if (base64) {
+    blob = new Blob([fromBase64(base64)], { type: mime || "image/jpeg" });
+  } else {
+    if (!/^https:\/\/[^/]+\.(fbcdn\.net|fbsbx\.com)\//.test(url || "")) throw new Error("photo link is not Messenger's");
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`photo download failed: HTTP ${resp.status}`);
+    blob = await resp.blob();
+  }
+  if (!blob.size) throw new Error("photo is empty");
+  if (blob.size > PHOTO_MAX) throw new Error("photo is larger than 25 MB");
+  const ext = { "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp" }[blob.type] ?? ".jpg";
+  const form = new FormData();
+  form.append("file", blob, "photo" + ext);
+  form.append("chatId", chatId);
+  return hub("/messenger/photo", { method: "POST", form });
+}
+
 const handlers = {
   status: () => hub("/messenger/status"),
   ingest: ({ payload }) => hub("/messenger/ingest", { method: "POST", json: payload }),
   drafts: () => hub("/messenger/drafts"),
   draft: ({ id, status }) => hub(`/messenger/drafts/${id}`, { method: "POST", json: { status } }),
   voice: (msg) => uploadVoice(msg),
+  photo: (msg) => uploadPhoto(msg),
 };
 
 api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {

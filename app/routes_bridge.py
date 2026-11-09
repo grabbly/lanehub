@@ -294,12 +294,13 @@ async def get_file(lane_slug: str, file_id: str, x_bridge_token: str = Header(de
 
 
 def _messenger_file(lane_slug: str, lane: dict, fid: str) -> Response:
-    """A voice clip the Messenger extension uploaded, kept on the hub's disk.
-    Readable by the lane that stored it and by lanes bound to its chat."""
-    msg = db.find_media_message(fid)
+    """A voice clip or photo the Messenger extension uploaded, kept on the
+    hub's disk. Readable by the lane that stored it and by lanes bound to its
+    chat."""
     bound = (lane.get("default_chat_id") or "").strip()
+    msg = db.find_media_message(fid, lane_slug=lane_slug, chat_id=bound)
     data = messenger.read_file(fid)
-    if not msg or data is None or (msg["lane_slug"] != lane_slug and str(msg["chat_id"]) != bound):
+    if not msg or data is None:
         raise HTTPException(status_code=404, detail="file not found")
     media = json.loads(msg["media"])
     return Response(
@@ -900,6 +901,14 @@ def _messenger_info(lane: dict) -> dict:
     }
 
 
+class MessengerPhoto(BaseModel):
+    file_id: str = Field(alias="fileId", min_length=1, max_length=64)
+    width: int | None = Field(default=None, ge=1, le=100000)
+    height: int | None = Field(default=None, ge=1, le=100000)
+
+    model_config = {"populate_by_name": True}
+
+
 class MessengerMessage(BaseModel):
     id: str = Field(min_length=1, max_length=512)
     from_user: str = Field(default="", alias="from", max_length=200)
@@ -907,7 +916,9 @@ class MessengerMessage(BaseModel):
     date: int | None = None
     outgoing: bool = False
     reply_to: str | None = Field(default=None, alias="replyTo", max_length=200)
-    kind: Literal["text", "voice"] = "text"
+    kind: Literal["text", "voice", "photo"] = "text"
+    # images uploaded first through /messenger/photo, in the message's order
+    photos: list[MessengerPhoto] = Field(default_factory=list, max_length=messenger.PHOTOS_PER_MESSAGE)
 
     model_config = {"populate_by_name": True}
 
@@ -972,6 +983,30 @@ async def messenger_voice(
     if media is None:
         raise HTTPException(status_code=404, detail="ingest the message before its voice clip")
     return {"ok": True, "media": media}
+
+
+@router.post("/{lane_slug}/messenger/photo")
+async def messenger_photo(
+    lane_slug: str,
+    file: UploadFile = File(...),
+    chat_id: str = Form(alias="chatId"),
+    x_bridge_token: str = Header(default=""),
+) -> dict:
+    """A photo from the thread, uploaded before the message that shows it.
+    Returns its fileId; the extension then lists it in that message's
+    `photos` on /messenger/ingest. The file can be downloaded
+    (GET /{lane}/file/{fileId}) once a stored message points at it."""
+    lane = _messenger_lane(lane_slug, x_bridge_token)
+    _messenger_chat(lane, chat_id)
+    content = await file.read(messenger.PHOTO_MAX + 1)
+    if not content:
+        raise HTTPException(status_code=422, detail="empty file")
+    if len(content) > messenger.PHOTO_MAX:
+        raise HTTPException(status_code=413, detail="photo is larger than 25 MB")
+    kind = messenger.image_type(content)
+    if not kind:
+        raise HTTPException(status_code=415, detail="not an image (JPEG, PNG, GIF, WebP, HEIC or AVIF)")
+    return {"ok": True, "fileId": messenger.save_file(content), "mime": kind[0], "size": len(content)}
 
 
 @router.get("/{lane_slug}/messenger/drafts")

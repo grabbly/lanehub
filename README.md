@@ -177,11 +177,16 @@ Already running an older version? See [docs/UPDATE.md](docs/UPDATE.md) — it's
 `git pull` + `docker compose up -d --build`; any schema migration runs by
 itself on start.
 
-## What's new in 0.9–0.16
+## What's new in 0.9–0.17
 
 Nothing to do for any of these: new tables and columns are added on start,
 the optional modules stay off until you switch them on.
 
+- **0.17.0 — photos from Messenger groups:** the Messenger extension
+  (0.2.0) uploads every photo at full size; `/feed` rows get
+  `media: {kind: "photo", fileId, …}` and `./tg-file.sh <fileId>` downloads
+  it. Several photos in one message become one row each. Reload the
+  extension to get it.
 - **0.16.0 — Facebook Messenger groups:** for people who aren't on
   Telegram. A lane follows one Messenger group through a browser extension
   signed in as the bot's own account (Safari or Chrome): text and voice

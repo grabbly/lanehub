@@ -6,8 +6,9 @@ instead:
 
 - It runs in a browser signed in to Messenger as the **bot's own account** (a separate account
   that is a member of the group).
-- It reads the group's text and voice messages and sends them to the hub, so agents see them in
-  `/feed` and the watcher wakes on `@<bot account name>`.
+- It reads the group's text, voice messages and photos and sends them to the hub, so agents see
+  them in `/feed` and the watcher wakes on `@<bot account name>`. Photos go up at full size, and
+  `./tg-file.sh <fileId>` downloads them.
 - It types the hub's replies (drafts) into the message box. **A person presses Send.** The
   extension never sends anything itself.
 
@@ -48,8 +49,26 @@ build again and reload the extension.
 
 ## 3. Install in Chrome
 
-`chrome://extensions` → Developer mode → **Load unpacked** → pick `extensions/messenger/`. Then
-open the extension's settings as above.
+1. Get the files: `git clone` the LaneHub repository (or `git pull` in your copy).
+2. Open `chrome://extensions` and switch on **Developer mode** (top right).
+3. **Load unpacked** → pick the `extensions/messenger/` folder. The card shows **LaneHub
+   Messenger reader** and its version.
+4. Pin it (puzzle icon → pin), click its icon → **Settings**: hub address, lane name, lane API
+   key → **Save and check**. Chrome asks to allow the hub's address; allow it.
+5. In the same Chrome profile, sign in to messenger.com as the bot account and open the group.
+
+## Updating
+
+The version is on the extension's card (`chrome://extensions`) and in `manifest.json`.
+
+- **Chrome:** `git pull` in the repository, then `chrome://extensions` → **Reload** (the circular
+  arrow) on LaneHub Messenger reader, then reload the Messenger tab. Settings are kept.
+- **Safari:** `git pull`, build the wrapper app again (step 2.1), start it once, and reload the
+  Messenger tab.
+
+To check the new version is running: the label in the bottom-left corner of the group page shows
+**reading · N on screen**, and a photo posted in the group shows up in `/feed` with
+`media.kind = "photo"` within a few seconds.
 
 ## Using it
 
@@ -62,15 +81,25 @@ see it):
   it, edit it if needed, and send it, or clear the box to drop it.
 - **draft waiting — clear the message box** — you are typing yourself. The extension never types
   over that.
+- **photo: …** — a photo could not be taken (the reason follows). The message still reaches the
+  hub, as `[photo]` without a file. **photo: only a preview was found on the page** — the
+  full-size link was not found, so the smaller picture shown in the chat went up instead.
 
 Only the tab with the lane's group is read. Other chats in the same browser are ignored.
 
 ## Limits and risks
 
 - Messenger's web page changes without notice. Everything that depends on its markup is in
-  `parser.js`. When reading stops, that file needs an update.
+  `parser.js` and `page.js`. When reading stops, those files need an update. If photos arrive as
+  previews or not at all, open the group, select a photo message in DevTools → Elements, and run
+  `lanehubPhotoDebug($0)` in the console (page context, not the extension's): it lists the
+  attachment props `page.js` sees.
 - Running a second account as a bot is against Facebook's terms. The account can be restricted
   or blocked. Tell the group members that this account is a bot and that its messages pass
   through LaneHub.
-- Text and voice only. Photos and files are not read yet, and the hub cannot send files to a
-  Messenger lane.
+- Text, voice and photos. Videos and other files are not read yet (they show as `[attachment]` or
+  `[photo]` without a file), and the hub cannot send files to a Messenger lane.
+- A photo message waits up to 8 seconds for its full-size link before it goes to the hub; the
+  messages below it wait with it, so the order stays right.
+- Photos already in the hub before 0.2.0 (rows that say `[photo]` with no file) get rows of their
+  own with the file when those messages are on screen again — scroll up to them once.

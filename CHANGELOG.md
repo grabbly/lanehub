@@ -46,6 +46,13 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.17.0 — 2026-11-09
+
+- **Photos from Messenger groups.** The Messenger extension (0.2.0) now takes every photo in a message at full size, uploads it to the hub and links it to the message. In `/feed` the row has `media: {kind: "photo", fileId, mime, size, name}`, so `./tg-file.sh <fileId>` downloads it like a Telegram photo. A message with several photos becomes one row per photo (`[photo 1/3] caption`, `[photo 2/3]`, …), each with its own `media`, so `tg-fetch.sh` and `tg-file.sh` work unchanged.
+- New endpoint for the extension: `POST /{lane}/messenger/photo`; `/messenger/ingest` takes `kind: "photo"` and `photos: [{fileId, width?, height?}]`. Photos are kept next to the database in `messenger-files/`, like voice clips. See [API.md](docs/API.md#messenger-lanes--a-facebook-messenger-group-through-a-browser-extension).
+- Photos read before 0.17 (rows that say `[photo]` with no `media`) get their own `[photo]` rows when the group is opened again with the new extension and those messages are on screen.
+- **Update the extension** to get photos: the hub keeps working with the 0.1 extension, which still sends `[photo]` without the file. Chrome: `chrome://extensions` → **Reload** on LaneHub Messenger reader (after `git pull`). Safari: build the wrapper app again. Steps: [extensions/messenger/README.md](extensions/messenger/README.md#updating).
+
 ## 0.16.0 — 2026-11-08
 
 - **Messenger group lanes.** A lane can now follow one Facebook Messenger group instead of a Telegram chat (admin panel → **＋ Messenger group**: the bot account's name and the group link). Meta gives bots no access to group chats, so a browser extension (`extensions/messenger/`, Safari and Chrome) does the reading in a browser signed in as the bot's own account: text and voice messages go into the lane's `/feed`, voice clips get transcripts when STT is on, and `@<bot account name>` wakes the watcher like a Telegram mention. History scrolled into view is stored but never wakes it.
