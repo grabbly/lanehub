@@ -1026,7 +1026,12 @@ class DraftUpdate(BaseModel):
 @router.post("/{lane_slug}/messenger/drafts/{draft_id}")
 async def messenger_draft_update(lane_slug: str, draft_id: int, req: DraftUpdate,
                                  x_bridge_token: str = Header(default="")) -> dict:
+    """filled: typed into the message box; sent / dismissed: done with it.
+    A draft that is already sent or dismissed keeps its status (409)."""
     lane = _messenger_lane(lane_slug, x_bridge_token)
     if not db.set_draft_status(lane["slug"], draft_id, req.status):
-        raise HTTPException(status_code=404, detail="unknown draft")
+        draft = db.get_draft(lane["slug"], draft_id)
+        if not draft:
+            raise HTTPException(status_code=404, detail="unknown draft")
+        raise HTTPException(status_code=409, detail=f"draft is already {draft['status']}")
     return {"ok": True}

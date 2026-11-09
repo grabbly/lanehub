@@ -405,13 +405,18 @@ POST /{lane}/messenger/ingest            {"chatId": "<thread>", "chatTitle": "..
 POST /{lane}/messenger/voice             multipart: file, messageId, chatId, duration
 POST /{lane}/messenger/photo             multipart: file, chatId → {"fileId", "mime", "size"}
 GET  /{lane}/messenger/drafts            {"drafts": [{"id", "text", "status": "pending|filled"}]}
-POST /{lane}/messenger/drafts/{id}       {"status": "filled|sent|dismissed"}
+POST /{lane}/messenger/drafts/{id}       {"status": "filled|sent|dismissed"}  (409 once sent/dismissed)
 ```
 
 - `id` is the extension's own stable id for a message. Sending it again updates the row in
   place (edits) and never duplicates it; media and the first-seen date are kept.
-- `outgoing: true` marks the bot account's own messages. An outgoing message with the same text
-  as an open draft marks that draft `sent`.
+- `outgoing: true` marks the bot account's own messages. A new message with the same text as an
+  open draft marks that draft `sent`, whoever posted it. Emoji, punctuation and case are ignored;
+  a draft of 20+ letters also matches a message that contains it (a reply quoting another
+  message) or that it starts with (a long message cut at "See more").
+- The extension types each draft once. When a person clears the box, the draft is closed:
+  `sent` if its text is in the chat, `dismissed` if not. A sent or dismissed draft can't be
+  reopened (409).
 - Voice clips are kept on the hub's disk next to the database (`messenger-files/`) and
   transcribed when STT is on. Up to 25 MB each.
 - Photos go up **before** their message: `/messenger/photo` stores the image (JPEG, PNG, GIF,

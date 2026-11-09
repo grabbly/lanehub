@@ -277,24 +277,88 @@
 
   // --- drafts --------------------------------------------------------------
 
+  // Each draft is typed into the box once, ever: the ids are kept in the
+  // browser, so neither a failed update at the hub nor a page reload types
+  // it again. A filled draft whose box a person has emptied is closed: sent
+  // when its text is now in the chat, dismissed when not.
+  const TYPE_TRIES = 3;
+  let typedIds = null; // Set of draft ids typed in this browser
+  const typeFails = new Map(); // draft id -> failed attempts
+  const emptySeen = new Map(); // filled draft id -> polls that found the box empty
+
+  async function loadTyped() {
+    if (typedIds) return typedIds;
+    const key = `typedDrafts:${lane.lane}`;
+    const saved = (await api.storage.local.get(key))[key];
+    typedIds = new Set(Array.isArray(saved) ? saved : []);
+    return typedIds;
+  }
+
+  function saveTyped() {
+    // the newest 200 are plenty: drafts are closed within minutes
+    api.storage.local.set({ [`typedDrafts:${lane.lane}`]: [...typedIds].slice(-200) });
+  }
+
+  async function closeEmptied(drafts, box) {
+    let open = false;
+    const empty = !(box.innerText || "").trim();
+    for (const d of drafts.filter((x) => x.status === "filled")) {
+      if (!empty) {
+        emptySeen.delete(d.id);
+        open = true;
+        continue;
+      }
+      // twice in a row (a poll apart), so a message that is just being sent
+      // has time to show up in the chat first
+      const seen = (emptySeen.get(d.id) || 0) + 1;
+      emptySeen.set(d.id, seen);
+      if (seen < 2) {
+        open = true;
+        continue;
+      }
+      const recent = P.readMessages(lane.botUsername).slice(-15);
+      const sentNow = recent.some((m) => P.draftMatches(d.text, m.text));
+      await call("draft", { id: d.id, status: sentNow ? "sent" : "dismissed" });
+      emptySeen.delete(d.id);
+      status(sentNow ? "draft sent" : "draft dropped (the box was cleared)");
+    }
+    return open;
+  }
+
   async function pollDrafts() {
     const res = await call("drafts");
     if (!res.ok) return;
-    const next = res.data.drafts.find((d) => d.status === "pending");
-    if (!next) return;
     if (!onLaneThread()) return stop();
     const box = P.composer();
     if (!box) return;
+    const typed = await loadTyped();
+    if (await closeEmptied(res.data.drafts, box)) return; // one draft in the box at a time
+    const next = res.data.drafts.find((d) => d.status === "pending" && !typed.has(d.id));
+    if (!next) return;
     if ((box.innerText || "").trim()) {
       status("draft waiting — clear the message box", "warn");
       return; // never type over what a person is writing
     }
-    if (!P.typeInto(box, next.text)) {
-      status("could not type the draft", "err");
+    // already in the chat (a person sent the same text before it was typed)
+    if (P.readMessages(lane.botUsername).slice(-15).some((m) => P.draftMatches(next.text, m.text))) {
+      typed.add(next.id);
+      saveTyped();
+      await call("draft", { id: next.id, status: "sent" });
       return;
     }
-    await call("draft", { id: next.id, status: "filled" });
-    status("draft in the box — press Enter to send", "warn");
+    const ok = await P.typeInto(box, next.text);
+    const fails = ok ? 0 : (typeFails.get(next.id) || 0) + 1;
+    if (ok || fails >= TYPE_TRIES) {
+      typed.add(next.id);
+      saveTyped();
+    }
+    if (!ok) {
+      typeFails.set(next.id, fails);
+      status(fails >= TYPE_TRIES ? "could not type the draft — read it in the hub" : "could not type the draft, retrying", "err");
+      return;
+    }
+    const upd = await call("draft", { id: next.id, status: "filled" });
+    status(upd.ok ? "draft in the box — press Enter to send" : `draft in the box (hub: ${upd.error})`, "warn");
   }
 
   // --- lifecycle -----------------------------------------------------------
@@ -310,6 +374,8 @@
     photoTimer = null;
     known = [];
     isLive.clear();
+    typedIds = null;
+    emptySeen.clear();
   }
 
   async function start() {

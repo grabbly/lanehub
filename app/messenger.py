@@ -90,17 +90,32 @@ def _next_update_id(lane_slug: str) -> int:
     return n
 
 
-def _norm(text: str) -> str:
-    return " ".join((text or "").split())
+def draft_key(text: str) -> str:
+    """Letters and digits only, case-folded: what is left of a text after
+    Messenger has shown it (emoji become pictures, links and spacing change,
+    line breaks collapse)."""
+    return "".join(ch for ch in (text or "").casefold() if ch.isalnum())
+
+
+# Below this many letters a draft must match a message exactly; above it, a
+# message that contains the draft (a reply that quotes another message) or
+# that the draft starts with (a long message cut at "See more") counts too.
+_DRAFT_LOOSE_MIN = 20
+
+
+def draft_matches(draft_text: str, said: str) -> bool:
+    d, s = draft_key(draft_text), draft_key(said)
+    if not d or not s:
+        return False
+    if d == s:
+        return True
+    return min(len(d), len(s)) >= _DRAFT_LOOSE_MIN and (d in s or d.startswith(s))
 
 
 def _match_draft(lane_slug: str, text: str) -> None:
     """Mark the oldest open draft with this text as sent."""
-    said = _norm(text)
-    if not said:
-        return
     for draft in db.list_drafts(lane_slug):
-        if _norm(draft["text"]) == said:
+        if draft_matches(draft["text"], text):
             db.set_draft_status(lane_slug, draft["id"], "sent")
             return
 
@@ -154,7 +169,10 @@ def ingest(lane: dict, chat_title: str, messages: list[dict], backfill: bool = F
             reply_to_username=m.get("replyTo") or None,
             history=bool(old["history"]) if old else backfill,
         )
-        if outgoing and not old:
+        if not old:
+            # Whoever sent it: the bot account's message may not be told
+            # apart as its own (a quoted reply shifts the bubble), and a
+            # person may post the text from their own account instead.
             _match_draft(lane["slug"], text)
         out.append({"id": m["id"], "new": old is None, **row})
         if photos:

@@ -138,9 +138,14 @@ globalThis.LaneHubParser = (() => {
     return document.querySelector('[role="main"] [role="textbox"][contenteditable="true"]');
   }
 
-  // Type text into Messenger's editor the way a paste would, so its own
-  // state (the Send button) follows. Leaves the caret at the end.
-  function typeInto(box, text) {
+  // Type text into Messenger's editor so its own state (the Send button)
+  // follows. Leaves the caret at the end. The editor (Lexical) redraws the
+  // box a moment later, so the result is checked after a pause, not at once;
+  // if insertText left it empty, a paste is tried. True when the box then
+  // holds text.
+  async function typeInto(box, text) {
+    const settle = () => new Promise((r) => setTimeout(r, 400));
+    const filled = () => (box.innerText || "").trim().length > 0;
     box.focus();
     const range = document.createRange();
     range.selectNodeContents(box);
@@ -149,7 +154,26 @@ globalThis.LaneHubParser = (() => {
     sel.removeAllRanges();
     sel.addRange(range);
     document.execCommand("insertText", false, text);
-    return (box.innerText || "").trim().length > 0;
+    await settle();
+    if (filled()) return true;
+    const data = new DataTransfer();
+    data.setData("text/plain", text);
+    box.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    await settle();
+    return filled();
+  }
+
+  // Same rule as the hub's draft_matches (app/messenger.py).
+  function draftKey(text) {
+    return (text || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  }
+
+  function draftMatches(draft, said) {
+    const d = draftKey(draft);
+    const s = draftKey(said);
+    if (!d || !s) return false;
+    if (d === s) return true;
+    return Math.min(d.length, s.length) >= 20 && (s.includes(d) || d.startsWith(s));
   }
 
   // {url, duration} of a voice message once page.js has found its clip.
@@ -178,5 +202,7 @@ globalThis.LaneHubParser = (() => {
     return messageList()?.querySelectorAll("[data-message-id]").length ?? 0;
   }
 
-  return { threadId, threadTitle, readMessages, composer, typeInto, voiceClip, scroller, messageCount };
+  return {
+    threadId, threadTitle, readMessages, composer, typeInto, voiceClip, scroller, messageCount, draftMatches,
+  };
 })();

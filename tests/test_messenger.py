@@ -324,3 +324,58 @@ def test_status_counts_old_photos_without_files_until_fetched(client):
     assert status["photosMissing"] == {"count": 0, "since": None}
     rows = _feed(client, lane)
     assert [r["media"]["fileId"] for r in rows if r["media"]] == [fid]
+
+
+# --- drafts ------------------------------------------------------------------
+
+def _drafts(client, lane):
+    return client.get(f"/{lane['slug']}/messenger/drafts", headers=_h(lane)).json()["drafts"]
+
+
+def _set_draft(client, lane, did, status):
+    return client.post(f"/{lane['slug']}/messenger/drafts/{did}", headers=_h(lane), json={"status": status})
+
+
+def test_closed_draft_is_not_reopened(client):
+    lane = make_messenger_lane(client)
+    did = client.post("/fbgroup/send", headers=_h(lane), json={"text": "Poprawione teksty są już na stronie"}).json()["draftId"]
+    assert _set_draft(client, lane, did, "filled").status_code == 200
+    assert _set_draft(client, lane, did, "filled").status_code == 200  # repeating is harmless
+    assert _set_draft(client, lane, did, "dismissed").status_code == 200
+    # a late "filled" from a stale tab must not bring it back into the queue
+    r = _set_draft(client, lane, did, "filled")
+    assert r.status_code == 409 and "dismissed" in r.json()["detail"]
+    assert _drafts(client, lane) == []
+    assert _set_draft(client, lane, 999, "sent").status_code == 404
+
+
+def test_draft_matched_whoever_sends_it_and_however_it_shows(client):
+    lane = make_messenger_lane(client)
+    texts = [
+        "Poprawione teksty są już na stronie 👍",     # sent from a person's own account
+        "Sprawdzę zdjęcia jutro rano, dzięki!",       # the bot's own, but quoted in a reply
+        "ok",                                         # short: exact only
+    ]
+    ids = [client.post("/fbgroup/send", headers=_h(lane), json={"text": t}).json()["draftId"] for t in texts]
+    _ingest(client, lane, [
+        # emoji is a picture on the page; not recognised as the bot account's message
+        {"id": "s1", "from": "Alex", "text": "Poprawione teksty są już  na stronie"},
+        # a reply quoting another message: the quote comes first
+        {"id": "s2", "from": "Lane Bot", "outgoing": True,
+         "text": "Justyna\nCzy możesz sprawdzić?\nSprawdzę zdjęcia jutro rano, dzięki!"},
+        {"id": "s3", "from": "Anna", "text": "ok, I will look at it tomorrow"},
+    ])
+    assert [d["id"] for d in _drafts(client, lane)] == [ids[2]]  # the first two are sent
+    _ingest(client, lane, [{"id": "s4", "from": "Lane Bot", "text": "OK", "outgoing": True}])
+    assert _drafts(client, lane) == []
+
+
+def test_draft_text_matching_rules():
+    from app.messenger import draft_matches
+    assert draft_matches("Hej, wszystko gotowe!", "hej wszystko gotowe")
+    assert not draft_matches("tak", "tak, ale później")
+    long = "Teksty na stronie głównej są poprawione zgodnie z uwagami"
+    assert draft_matches(long, long[:30])  # cut at "See more"
+    assert draft_matches(long, "Bartek\nCo z tekstami?\n" + long)
+    assert not draft_matches(long, "zupełnie inna wiadomość o zdjęciach na stronie")
+    assert not draft_matches("", "")

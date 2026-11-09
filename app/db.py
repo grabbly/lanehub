@@ -1058,10 +1058,20 @@ def list_drafts(lane_slug: str, statuses: tuple[str, ...] = ("pending", "filled"
              "createdAt": r["created_at"], "updatedAt": r["updated_at"]} for r in rows]
 
 
+def get_draft(lane_slug: str, draft_id: int) -> dict | None:
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM drafts WHERE lane_slug = ? AND id = ?", (lane_slug, draft_id)).fetchone()
+    return {"id": row["id"], "text": row["text"], "status": row["status"]} if row else None
+
+
 def set_draft_status(lane_slug: str, draft_id: int, status: str) -> bool:
+    """Move an open draft (pending/filled) on. A sent or dismissed draft
+    stays as it is: a late "filled" must not bring it back. False when
+    there is no such open draft."""
     with connect() as conn:
         cur = conn.execute(
-            "UPDATE drafts SET status = ?, updated_at = ? WHERE lane_slug = ? AND id = ?",
+            "UPDATE drafts SET status = ?, updated_at = ? WHERE lane_slug = ? AND id = ? "
+            "AND status IN ('pending', 'filled')",
             (status, int(time.time()), lane_slug, draft_id),
         )
         return cur.rowcount > 0

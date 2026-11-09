@@ -81,6 +81,8 @@ see it):
   it, edit it if needed, and send it, or clear the box to drop it.
 - **draft waiting — clear the message box** — you are typing yourself. The extension never types
   over that.
+- To drop a draft, clear the message box: after a few seconds it is closed as **dismissed** and
+  is never typed again. A draft is typed only once in this browser, even after a reload.
 - **fetching older photos · N left** — the hub has photo messages from the last 14 days without
   their files (for example from before 0.2.0). The extension scrolls the chat up to read them
   again and scrolls back down when done (**older photos fetched**). Leave the tab alone meanwhile.
