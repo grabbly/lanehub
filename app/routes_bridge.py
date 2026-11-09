@@ -898,6 +898,8 @@ def _messenger_info(lane: dict) -> dict:
                  "cursor": int(cursor_raw) if cursor_raw is not None else None,
                  "claudeSessionId": db.get_lane_state(lane["slug"], "claude_session_id")},
         "sttEnabled": settings.stt_enabled,
+        # photo messages stored without their files; the extension scrolls back for them
+        "photosMissing": messenger.photos_missing(lane),
     }
 
 

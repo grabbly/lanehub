@@ -32,6 +32,8 @@ FILE_PREFIX = "mx_"
 VOICE_MAX = 25 * 1024 * 1024
 PHOTO_MAX = 25 * 1024 * 1024
 PHOTOS_PER_MESSAGE = 30
+# How far back the extension goes looking for photos stored without a file.
+PHOTO_BACKFILL_DAYS = 14
 
 # Image types the hub keeps, told apart by their first bytes (the
 # extension's own content type is not trusted).
@@ -158,7 +160,33 @@ def ingest(lane: dict, chat_title: str, messages: list[dict], backfill: bool = F
         if photos:
             first = 1 if (media or {}).get("kind") == "photo" else 0
             out.extend(_photo_rows(lane, m, photos[first:], first, len(photos), chat_title, backfill))
+            if first == 0:
+                db.set_lane_state(lane["slug"], f"{_LATE_KEY}{message_id}", str(now))
     return out
+
+
+_LATE_KEY = "mx_photo_late:"
+
+
+def photos_missing(lane: dict, days: int = PHOTO_BACKFILL_DAYS) -> dict:
+    """Photo messages of the last `days` stored without their files (read by
+    the 0.1 extension, or before page.js found the pictures) and not yet
+    given rows of their own. The extension scrolls the group's history up
+    until this is 0: {"count", "since"} (the oldest one's date)."""
+    chat = (lane.get("default_chat_id") or "").strip()
+    if not chat.isdigit():
+        return {"count": 0, "since": None}
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT message_id, date FROM messages WHERE lane_slug = ? AND chat_id = ? AND media IS NULL "
+            "AND text LIKE '[photo%' AND date >= ?",
+            (lane["slug"], int(chat), int(time.time()) - days * 86400),
+        ).fetchall()
+        done = {r["key"][len(_LATE_KEY):] for r in conn.execute(
+            "SELECT key FROM lane_state WHERE lane_slug = ? AND key LIKE ?", (lane["slug"], _LATE_KEY + "%"),
+        )}
+    left = [r for r in rows if str(r["message_id"]) not in done]
+    return {"count": len(left), "since": min((r["date"] for r in left), default=None)}
 
 
 # --- photos ------------------------------------------------------------------

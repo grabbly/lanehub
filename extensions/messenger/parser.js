@@ -159,5 +159,24 @@ globalThis.LaneHubParser = (() => {
     return { url, duration: message.duration };
   }
 
-  return { threadId, threadTitle, readMessages, composer, typeInto, voiceClip };
+  // The element that scrolls the message list (scrolling it to the top makes
+  // Messenger load older messages).
+  function scroller() {
+    const list = messageList();
+    if (!list) return null;
+    const scrolls = (el) => {
+      const oy = getComputedStyle(el).overflowY;
+      return (oy === "auto" || oy === "scroll") && el.scrollHeight > el.clientHeight + 10;
+    };
+    for (let el = list; el && el !== document.body; el = el.parentElement) {
+      if (scrolls(el)) return el;
+    }
+    return [...list.querySelectorAll("div")].find(scrolls) || null;
+  }
+
+  function messageCount() {
+    return messageList()?.querySelectorAll("[data-message-id]").length ?? 0;
+  }
+
+  return { threadId, threadTitle, readMessages, composer, typeInto, voiceClip, scroller, messageCount };
 })();

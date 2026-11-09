@@ -79,7 +79,7 @@ itself and silently takes every update away from the new hub. So:
 ### 0.17.0 — photos from Messenger groups
 
 - **Nothing to do on the hub:** no schema change. Photos are stored in `messenger-files/` next to the database (where voice clips already are); include it in backups.
-- **Update the Messenger extension to 0.2.0** to get photos ([how](../extensions/messenger/README.md#updating)). Until then the hub works as before and photos stay `[photo]` without a file.
+- **Update the Messenger extension to 0.2.0** to get photos ([how](../extensions/messenger/README.md#updating)). Until then the hub works as before and photos stay `[photo]` without a file. After the update, open the group once and leave the tab alone for a minute: the extension scrolls back through the last 14 days for photos stored without files, then returns to the bottom.
 
 ### 0.16.0 — Messenger group lanes
 

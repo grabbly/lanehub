@@ -303,3 +303,24 @@ def test_photo_mention_in_caption_wakes(client):
                             "photos": [{"fileId": fid}]}])
     w = client.get("/fbgroup/wake", headers=_h(lane)).json()
     assert w["wake"] is True and w["text"] == "[photo] @Lane Bot this one"
+
+
+def test_status_counts_old_photos_without_files_until_fetched(client):
+    lane = make_messenger_lane(client)
+    _ingest(client, lane, [
+        {"id": "o1", "from": "Justyna", "text": "[photo]"},  # read by the 0.1 extension
+        {"id": "o2", "from": "Justyna", "text": "[photo]"},
+        {"id": "t1", "from": "Anna", "text": "just text"},
+    ])
+    with db.connect() as conn:  # one of them from a month ago: too old to look for
+        conn.execute("UPDATE messages SET date = date - 40 * 86400 WHERE text = '[photo]' AND rowid = "
+                     "(SELECT MIN(rowid) FROM messages WHERE text = '[photo]')")
+    status = client.get("/fbgroup/messenger/status", headers=_h(lane)).json()
+    assert status["photosMissing"]["count"] == 1
+    fid = _photo(client, lane, JPEG).json()["fileId"]
+    _ingest(client, lane, [{"id": "o2", "from": "Justyna", "kind": "photo", "photos": [{"fileId": fid}]}],
+            backfill=True)
+    status = client.get("/fbgroup/messenger/status", headers=_h(lane)).json()
+    assert status["photosMissing"] == {"count": 0, "since": None}
+    rows = _feed(client, lane)
+    assert [r["media"]["fileId"] for r in rows if r["media"]] == [fid]

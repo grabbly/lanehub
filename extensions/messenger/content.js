@@ -200,9 +200,79 @@
     }
   }
 
+  // One scan at a time: the timer and the history walk below both start them.
+  let scanning = Promise.resolve();
+  function runScan() {
+    scanning = scanning.then(scan).catch((e) => status(String(e), "err"));
+    return scanning;
+  }
+
   function scheduleScan() {
     clearTimeout(scanTimer);
-    scanTimer = setTimeout(() => scan().catch((e) => status(String(e), "err")), SCAN_DEBOUNCE_MS);
+    scanTimer = setTimeout(runScan, SCAN_DEBOUNCE_MS);
+  }
+
+  // --- photos stored without their files -----------------------------------
+  //
+  // The hub counts photo messages of the last two weeks that it has no file
+  // for (read before 0.2, or when a picture could not be taken). On opening
+  // the group the extension scrolls its history up, a screen at a time, so
+  // those messages are read again with their photos, until the hub's count
+  // is 0, the top of the chat is reached, or OLD_PHOTO_STEPS. Then it
+  // scrolls back down. Not repeated within a day while the count is the same
+  // (a message the hub took for a photo may have been something else).
+
+  const OLD_PHOTO_STEPS = 60;
+  const OLD_PHOTO_PAUSE_MS = 2500;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let walking = false;
+
+  async function fetchOldPhotos(force = false) {
+    const missing = lane?.photosMissing?.count ?? 0;
+    if (walking || !missing || !onLaneThread()) return;
+    const key = `oldPhotos:${lane.lane}`;
+    const last = (await api.storage.local.get(key))[key];
+    if (!force && last && last.count === missing && Date.now() - last.at < 24 * 3600 * 1000) return;
+    walking = true;
+    let left = missing;
+    try {
+      let unchanged = 0;
+      let count = P.messageCount();
+      for (let step = 0; step < OLD_PHOTO_STEPS && left > 0 && onLaneThread(); step++) {
+        status(`fetching older photos · ${left} left`, "warn");
+        const box = P.scroller();
+        if (!box) break;
+        // already at the top sets off no scroll event: step down a little first
+        if (box.scrollTop < 5) {
+          box.scrollTop = 40;
+          await sleep(100);
+        }
+        box.scrollTop = 0;
+        box.dispatchEvent(new Event("scroll"));
+        await sleep(OLD_PHOTO_PAUSE_MS);
+        await runScan();
+        const now = P.messageCount();
+        unchanged = now === count ? unchanged + 1 : 0;
+        count = now;
+        if (unchanged >= 3) {
+          // the top of the chat: let the photos still waiting go up
+          await sleep(PHOTO_WAIT_MS);
+          await runScan();
+        }
+        const res = await call("status");
+        if (res.ok) {
+          lane = res.data;
+          left = lane.photosMissing?.count ?? 0;
+        }
+        if (unchanged >= 3) break;
+      }
+      const box = P.scroller();
+      if (box) box.scrollTop = box.scrollHeight;
+      status(left ? `older photos: ${left} not found` : "older photos fetched", left ? "warn" : "ok");
+    } finally {
+      walking = false;
+      api.storage.local.set({ [key]: { count: left, at: Date.now() } });
+    }
   }
 
   // --- drafts --------------------------------------------------------------
@@ -261,6 +331,7 @@
     });
     draftTimer = setInterval(() => pollDrafts().catch(() => {}), DRAFT_POLL_MS);
     scheduleScan();
+    setTimeout(() => fetchOldPhotos().catch((e) => status(String(e), "err")), 4000);
   }
 
   // Messenger is a single-page app: follow thread switches.

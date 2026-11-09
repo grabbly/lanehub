@@ -397,7 +397,7 @@ For an agent, a Messenger lane looks like any other lane:
 The extension's side (lane key in `X-Bridge-Token`, as everywhere):
 
 ```
-GET  /{lane}/messenger/status            lane, botUsername, defaultChatId, threadUrl
+GET  /{lane}/messenger/status            lane, botUsername, defaultChatId, threadUrl, photosMissing
 POST /{lane}/messenger/ingest            {"chatId": "<thread>", "chatTitle": "...", "backfill": false,
                                           "messages": [{"id": "<stable id>", "from": "Anna", "text": "...",
                                                         "outgoing": false, "kind": "text|voice|photo", "replyTo": null,
@@ -420,6 +420,10 @@ POST /{lane}/messenger/drafts/{id}       {"status": "filled|sent|dismissed"}
   becomes downloadable once a stored message points at it. Photos sent for a message that is
   already stored never change its row (a reader may have fetched it); they get rows of their own,
   `<id>#photo<n>`, with fresh `seq`s.
+- `photosMissing` in `/messenger/status`: `{"count", "since"}` — photo messages of the last 14 days
+  stored without their files (read by the 0.1 extension, or before the picture was found) that have
+  no such rows yet. While it is above 0 the extension scrolls the group's history up on opening and
+  reads those messages again.
 - The extension may only write to the thread the lane is bound to (403 otherwise).
 
 Create a Messenger lane in the admin panel, or with

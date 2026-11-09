@@ -81,6 +81,10 @@ see it):
   it, edit it if needed, and send it, or clear the box to drop it.
 - **draft waiting — clear the message box** — you are typing yourself. The extension never types
   over that.
+- **fetching older photos · N left** — the hub has photo messages from the last 14 days without
+  their files (for example from before 0.2.0). The extension scrolls the chat up to read them
+  again and scrolls back down when done (**older photos fetched**). Leave the tab alone meanwhile.
+  It tries this at most once a day while the number stays the same.
 - **photo: …** — a photo could not be taken (the reason follows). The message still reaches the
   hub, as `[photo]` without a file. **photo: only a preview was found on the page** — the
   full-size link was not found, so the smaller picture shown in the chat went up instead.
@@ -101,5 +105,6 @@ Only the tab with the lane's group is read. Other chats in the same browser are 
   `[photo]` without a file), and the hub cannot send files to a Messenger lane.
 - A photo message waits up to 8 seconds for its full-size link before it goes to the hub; the
   messages below it wait with it, so the order stays right.
-- Photos already in the hub before 0.2.0 (rows that say `[photo]` with no file) get rows of their
-  own with the file when those messages are on screen again — scroll up to them once.
+- Photos already in the hub before 0.2.0 (rows that say `[photo]` with no file) are fetched by
+  scrolling back (see **fetching older photos** above), up to 14 days. Each gets a new `[photo]`
+  row with the file; the old row stays as it was. Older ones: scroll up to them by hand.
