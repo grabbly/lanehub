@@ -176,6 +176,18 @@ globalThis.LaneHubParser = (() => {
     return Math.min(d.length, s.length) >= 20 && (s.includes(d) || d.startsWith(s));
   }
 
+  // Same rule as the hub's draft_similar: the message reworded.
+  function draftSimilar(draft, said) {
+    if (draftMatches(draft, said)) return true;
+    const words = (t) => new Set(((t || "").toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter((w) => w.length >= 3));
+    const d = words(draft);
+    const s = words(said);
+    if (Math.min(d.size, s.size) < 3) return false;
+    let both = 0;
+    for (const w of d) if (s.has(w)) both++;
+    return both / Math.min(d.size, s.size) >= 0.6;
+  }
+
   // {url, duration} of a voice message once page.js has found its clip.
   async function voiceClip(message) {
     const url = message.el?.getAttribute("data-lanehub-audio");
@@ -203,6 +215,6 @@ globalThis.LaneHubParser = (() => {
   }
 
   return {
-    threadId, threadTitle, readMessages, composer, typeInto, voiceClip, scroller, messageCount, draftMatches,
+    threadId, threadTitle, readMessages, composer, typeInto, voiceClip, scroller, messageCount, draftMatches, draftSimilar,
   };
 })();

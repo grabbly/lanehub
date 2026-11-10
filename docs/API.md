@@ -414,7 +414,11 @@ POST /{lane}/messenger/drafts/{id}       {"status": "filled|sent|dismissed"}  (4
   open draft marks that draft `sent`, whoever posted it. Emoji, punctuation and case are ignored;
   a draft of 20+ letters also matches a message that contains it (a reply quoting another
   message) or that it starts with (a long message cut at "See more").
-- The extension types each draft once. When a person clears the box, the draft is closed:
+- A new live message from the bot account (not history) closes a draft even when reworded:
+  the most similar open draft (60% of the shorter one's words of 3+ letters in the other), or
+  else the oldest open one — someone on our side has answered.
+- The extension types each draft once, and only after pushing the page's latest messages and
+  checking the draft is still `pending`. When a person clears the box, the draft is closed:
   `sent` if its text is in the chat, `dismissed` if not. A sent or dismissed draft can't be
   reopened (409).
 - Voice clips are kept on the hub's disk next to the database (`messenger-files/`) and

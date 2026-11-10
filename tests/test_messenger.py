@@ -379,3 +379,40 @@ def test_draft_text_matching_rules():
     assert draft_matches(long, "Bartek\nCo z tekstami?\n" + long)
     assert not draft_matches(long, "zupełnie inna wiadomość o zdjęciach na stronie")
     assert not draft_matches("", "")
+
+
+def test_draft_sent_with_edited_text_is_closed_and_not_typed_again(client):
+    lane = make_messenger_lane(client)
+    did = client.post("/fbgroup/send", headers=_h(lane), json={
+        "text": "Justyna, porady pielęgnacyjne dodałem do jodły ciętej i świerka ciętego — są teraz w zakładce Opis."
+    }).json()["draftId"]
+    _set_draft(client, lane, did, "filled")
+    # Alex rewords it in the box and sends it from the bot account
+    _ingest(client, lane, [{"id": "e1", "from": "Lane Bot", "outgoing": True,
+                            "text": "Justyna, dodałem porady pielęgnacyjne do jodły i świerka ciętego, zakładka Opis 🙂"}])
+    assert _drafts(client, lane) == []  # nothing left for the extension to type
+    assert _set_draft(client, lane, did, "filled").status_code == 409
+
+
+def test_any_new_message_from_our_side_closes_the_oldest_draft(client):
+    lane = make_messenger_lane(client)
+    first = client.post("/fbgroup/send", headers=_h(lane), json={"text": "Zdjęcia jodły premium dodam jutro"}).json()
+    second = client.post("/fbgroup/send", headers=_h(lane), json={"text": "Cena 550 zł jest już na stronie"}).json()
+    # someone else's similar message closes nothing, nor does our history read on opening the page
+    _ingest(client, lane, [{"id": "j1", "from": "Justyna", "text": "Czy zdjęcia jodły premium będą jutro?"}])
+    _ingest(client, lane, [{"id": "h1", "from": "Lane Bot", "outgoing": True, "text": "stara wiadomość"}],
+            backfill=True)
+    assert [d["id"] for d in _drafts(client, lane)] == [first["draftId"], second["draftId"]]
+    # Alex answers in his own words: the similar draft goes, the other stays
+    _ingest(client, lane, [{"id": "o1", "from": "Lane Bot", "outgoing": True, "text": "Cena 550 zł już jest na stronie"}])
+    assert [d["id"] for d in _drafts(client, lane)] == [first["draftId"]]
+    # anything else from our side: the remaining (oldest) draft is answered
+    _ingest(client, lane, [{"id": "o2", "from": "Lane Bot", "outgoing": True, "text": "Dobranoc!"}])
+    assert _drafts(client, lane) == []
+
+
+def test_draft_similarity_rules():
+    from app.messenger import draft_similar
+    assert draft_similar("Dostawa od 3 grudnia jest już na stronie", "Na stronie jest już dostawa od 3 grudnia!")
+    assert not draft_similar("Dostawa od 3 grudnia jest już na stronie", "Justyna wysłała nowe zdjęcia jodły")
+    assert not draft_similar("ok", "ok, sprawdzę")  # too short to call reworded

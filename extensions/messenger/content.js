@@ -317,7 +317,7 @@
         continue;
       }
       const recent = P.readMessages(lane.botUsername).slice(-15);
-      const sentNow = recent.some((m) => P.draftMatches(d.text, m.text));
+      const sentNow = recent.some((m) => P.draftMatches(d.text, m.text) || (m.outgoing && P.draftSimilar(d.text, m.text)));
       await call("draft", { id: d.id, status: sentNow ? "sent" : "dismissed" });
       emptySeen.delete(d.id);
       status(sentNow ? "draft sent" : "draft dropped (the box was cleared)");
@@ -339,11 +339,20 @@
       status("draft waiting — clear the message box", "warn");
       return; // never type over what a person is writing
     }
-    // already in the chat (a person sent the same text before it was typed)
-    if (P.readMessages(lane.botUsername).slice(-15).some((m) => P.draftMatches(next.text, m.text))) {
+    // Check again right before typing: push what is on the page now, so the
+    // hub closes the draft if our side has written since it was made (the
+    // same text, reworded, or anything else), then ask for it again.
+    await runScan();
+    const fresh = await call("drafts");
+    if (!fresh.ok || !fresh.data.drafts.some((d) => d.id === next.id && d.status === "pending")) return;
+    if (!onLaneThread() || (box.innerText || "").trim()) return;
+    // and on the page itself: this text, or a reworded one from our side
+    const recent = P.readMessages(lane.botUsername).slice(-15);
+    if (recent.some((m) => P.draftMatches(next.text, m.text) || (m.outgoing && P.draftSimilar(next.text, m.text)))) {
       typed.add(next.id);
       saveTyped();
       await call("draft", { id: next.id, status: "sent" });
+      status("draft already in the chat — not typed");
       return;
     }
     const ok = await P.typeInto(box, next.text);

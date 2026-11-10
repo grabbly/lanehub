@@ -81,6 +81,8 @@ see it):
   it, edit it if needed, and send it, or clear the box to drop it.
 - **draft waiting — clear the message box** — you are typing yourself. The extension never types
   over that.
+- Sending something of your own in the group closes the oldest open draft (or the one your
+  message resembles), so a draft you answered in your own words is not typed afterwards.
 - To drop a draft, clear the message box: after a few seconds it is closed as **dismissed** and
   is never typed again. A draft is typed only once in this browser, even after a reload.
 - **fetching older photos · N left** — the hub has photo messages from the last 14 days without

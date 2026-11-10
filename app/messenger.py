@@ -112,12 +112,35 @@ def draft_matches(draft_text: str, said: str) -> bool:
     return min(len(d), len(s)) >= _DRAFT_LOOSE_MIN and (d in s or d.startswith(s))
 
 
-def _match_draft(lane_slug: str, text: str) -> None:
-    """Mark the oldest open draft with this text as sent."""
-    for draft in db.list_drafts(lane_slug):
-        if draft_matches(draft["text"], text):
-            db.set_draft_status(lane_slug, draft["id"], "sent")
-            return
+def _words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[^\W_]+", (text or "").casefold()) if len(w) >= 3}
+
+
+def draft_similar(draft_text: str, said: str) -> bool:
+    """The same message reworded: most of the shorter one's words (3+
+    letters) are in the other. A person often edits a draft before sending."""
+    if draft_matches(draft_text, said):
+        return True
+    d, s = _words(draft_text), _words(said)
+    if min(len(d), len(s)) < 3:
+        return False
+    return len(d & s) / min(len(d), len(s)) >= 0.6
+
+
+def _match_draft(lane_slug: str, text: str, own_live: bool = False) -> None:
+    """Close the open draft a new message delivers, as sent.
+
+    Any message with the draft's text closes it, whoever posted it. A live
+    message from our side (the bot account, just sent) closes a draft even
+    reworded, and when none is similar it closes the oldest open one: the
+    draft was written before it, and a person who sends something of their
+    own has answered — the draft must not be typed into the box again."""
+    drafts = db.list_drafts(lane_slug)
+    pick = next((d for d in drafts if draft_matches(d["text"], text)), None)
+    if pick is None and own_live and drafts:
+        pick = next((d for d in drafts if draft_similar(d["text"], text)), drafts[0])
+    if pick:
+        db.set_draft_status(lane_slug, pick["id"], "sent")
 
 
 def ingest(lane: dict, chat_title: str, messages: list[dict], backfill: bool = False) -> list[dict]:
@@ -173,7 +196,7 @@ def ingest(lane: dict, chat_title: str, messages: list[dict], backfill: bool = F
             # Whoever sent it: the bot account's message may not be told
             # apart as its own (a quoted reply shifts the bubble), and a
             # person may post the text from their own account instead.
-            _match_draft(lane["slug"], text)
+            _match_draft(lane["slug"], text, own_live=outgoing and not backfill)
         out.append({"id": m["id"], "new": old is None, **row})
         if photos:
             first = 1 if (media or {}).get("kind") == "photo" else 0
