@@ -46,7 +46,7 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
-## 0.17.0 — 2026-11-09
+## 0.17.0 — 2026-11-11
 
 - **Photos from Messenger groups.** The Messenger extension (0.2.0) now takes every photo in a message at full size, uploads it to the hub and links it to the message. In `/feed` the row has `media: {kind: "photo", fileId, mime, size, name}`, so `./tg-file.sh <fileId>` downloads it like a Telegram photo. A message with several photos becomes one row per photo (`[photo 1/3] caption`, `[photo 2/3]`, …), each with its own `media`, so `tg-fetch.sh` and `tg-file.sh` work unchanged.
 - New endpoint for the extension: `POST /{lane}/messenger/photo`; `/messenger/ingest` takes `kind: "photo"` and `photos: [{fileId, width?, height?}]`. Photos are kept next to the database in `messenger-files/`, like voice clips. See [API.md](docs/API.md#messenger-lanes--a-facebook-messenger-group-through-a-browser-extension).
