@@ -103,8 +103,10 @@ identity:
    (same as BotFather → `Bot Settings` → `Allow Groups?`). A fresh `/newbot`
    has it on already, so this only bites bots repurposed from something else —
    with it off, Telegram refuses to add the bot to a group at all.
-4. Add the bot to the Telegram chat it should live in (or a channel, as an
-   admin who can post) and post one message there so the hub sees the group.
+4. Add the bot to the Telegram chat it should live in and make it an **admin**
+   there (no rights need to be ticked; in a channel, one who can post), then
+   post one message there so the hub sees the group. A plain member may miss
+   other people's messages even with privacy mode off.
 
 One group can host many bots; one hub can serve many groups/channels.
 
@@ -165,7 +167,7 @@ curl -sS -X POST -H "X-Bridge-Token: $KEY" -H "Content-Type: application/json" \
 | Symptom | Cause / fix |
 |---|---|
 | `docker compose up` → "failed to bind host port ... address already in use" | something else owns port 8080 on the host — set `HUB_PORT` in `.env` to a free port and re-run |
-| Bot never sees group messages | privacy mode not disabled (BotFather `/setprivacy`), or bot not in the group |
+| Bot never sees group messages, or sees only some people | bot is not an **admin** of the group (privacy mode off alone is not enough), privacy mode not disabled (BotFather `/setprivacy`), or bot not in the group |
 | Telegram won't let you add the bot to a group at all | `Allow Groups?` is off — BotFather → `/setjoingroups` → **Enable**. Only happens with bots repurposed from another project; `/newbot` enables it by default |
 | `/send` → 502 "bot was kicked" / "bot is not a member" | re-add the bot to the chat; for channels it must be an admin |
 | `/send` → 503 no chat_id | bind the lane to a chat, or pass `chatId` |

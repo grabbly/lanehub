@@ -2120,7 +2120,7 @@ async function addKnownBotToChat(chatId, fromSlug) {
     alertDlg({ title: 'Error adding bot', message: err.message });
     return;
   }
-  if (!check.inChat || !(check.isAdmin || check.bot.readsAllMessages)) {
+  if (!check.inChat || !abHears(check)) {
     openAddBotDialog(chatId, { fromLane: fromSlug, check });
     return;
   }
@@ -2175,10 +2175,17 @@ function startAbPolling() {
   }, AB_POLL_MS);
 }
 
-// Nothing left to wait for: in the group as admin (or privacy mode off).
+// Will the bot receive people's messages? Only admin status says so for a group:
+// privacy mode off is a bot-wide setting, and a plain member may still get nothing
+// from other people (a bot added before the switch; basic groups).
+function abHears(c) {
+  return c.isAdmin || !!(c.chat && c.chat.type === 'private');
+}
+
+// Nothing left to wait for: in the chat and able to hear everyone.
 function abDone() {
   const c = ab && ab.check;
-  return !!c && c.inChat && (c.isAdmin || c.bot.readsAllMessages);
+  return !!c && c.inChat && abHears(c);
 }
 
 async function runAbCheck(quiet) {
@@ -2232,10 +2239,12 @@ function renderAddBot() {
       pill = 'danger'; text = 'The bot was removed from the group and is banned there. Unban it in the group settings, then add it again.';
     } else if (!c.inChat) {
       pill = 'danger'; text = `${user} is not in «${chatTitle}» yet. Do step 1 above.`;
-    } else if (!c.isAdmin && !c.bot.readsAllMessages) {
+    } else if (!abHears(c) && !c.bot.readsAllMessages) {
       pill = 'warn'; text = `${user} is in the group but not an admin. Do step 2, or it will only see commands and replies to it.`;
+    } else if (!abHears(c)) {
+      pill = 'warn'; text = `${user} is in the group but not an admin. Do step 2: its privacy mode is off, but as a plain member it may still miss other people's messages.`;
     } else if (!c.isAdmin) {
-      pill = 'ok'; text = `${user} is in the group. It is not an admin, but its privacy mode is off, so it sees every message.`;
+      pill = 'ok'; text = `${user} can see this private chat. Ready to add.`;
     } else {
       pill = 'ok'; text = `${user} is in the group and is an admin. Ready to add.`;
     }

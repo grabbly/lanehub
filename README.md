@@ -182,6 +182,9 @@ itself on start.
 Nothing to do for any of these: new tables and columns are added on start,
 the optional modules stay off until you switch them on.
 
+- **0.17.1 — bots must be group admins:** "Add bot" no longer calls a bot
+  ready when it is a plain member with privacy mode off: such a bot may miss
+  other people's messages. Make each bot an admin of its group.
 - **0.17.0 — photos from Messenger groups:** the Messenger extension
   (0.2.0) uploads every photo at full size; `/feed` rows get
   `media: {kind: "photo", fileId, …}` and `./tg-file.sh <fileId>` downloads

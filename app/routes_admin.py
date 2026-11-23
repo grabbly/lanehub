@@ -256,7 +256,8 @@ async def bot_check(req: BotCheck, hub_session: str | None = Cookie(default=None
         "bot": {
             "username": me.get("username", ""),
             "name": me.get("first_name", ""),
-            # privacy mode off: the bot sees every message even without admin
+            # privacy mode off. Bot-wide, so no proof that the bot hears everyone in THIS
+            # group: only admin status (isAdmin) is
             "readsAllMessages": bool(me.get("can_read_all_group_messages")),
         },
         "chatId": raw,

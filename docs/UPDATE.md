@@ -76,6 +76,14 @@ itself and silently takes every update away from the new hub. So:
 
 ## Version-specific notes
 
+### 0.17.1 — bots must be group admins
+
+Panel fix only, no database changes. After updating, check every Telegram group:
+each bot should be an **admin** there (no rights need to be ticked). A bot that is
+a plain member may miss other people's messages even with privacy mode off, and
+earlier versions called such a bot ready. The first promotion turns a basic group
+into a supergroup with a new id; the hub follows it by itself.
+
 ### 0.17.0 — photos from Messenger groups
 
 - **Nothing to do on the hub:** no schema change. Photos are stored in `messenger-files/` next to the database (where voice clips already are); include it in backups.

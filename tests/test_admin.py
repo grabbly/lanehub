@@ -347,6 +347,22 @@ def test_bot_check_reports_bot_and_membership(client):
     assert client.post("/admin/api/bot-check", json={"botToken": "new-token:abc", "chatId": "-100500"}).json()["isAdmin"]
 
 
+def test_bot_check_privacy_off_is_not_admin(client, monkeypatch):
+    """Privacy mode off is a bot-wide setting: a plain member stays isAdmin=False,
+    which is what the panel goes by."""
+    login(client)
+    real = client.fake_tg.__call__
+
+    async def fake(bot_token, method, payload=None, timeout=15):
+        res = await real(bot_token, method, payload, timeout)
+        return {**res, "can_read_all_group_messages": True} if method == "getMe" else res
+
+    monkeypatch.setattr("app.telegram.tg_call", fake)
+    body = client.post("/admin/api/bot-check", json={"botToken": "new-token:abc", "chatId": "-100500"}).json()
+    assert body["bot"]["readsAllMessages"] is True
+    assert body["inChat"] is True and body["isAdmin"] is False
+
+
 def test_bot_check_bot_not_in_group_yet(client, monkeypatch):
     """Telegram says "chat not found" to a bot that isn't in a basic group —
     the check reports it instead of failing, so the panel can explain."""

@@ -28,8 +28,9 @@ resumes the previous one. See [API.md](API.md) for the `/wake` endpoints.
 
 ## Prerequisites
 
-- The bot's **privacy mode is OFF** in BotFather (`/setprivacy` → Disable),
-  otherwise the bot never sees `@mentions` in a group — the classic trap.
+- The bot is an **admin** of the group and its **privacy mode is OFF** in
+  BotFather (`/setprivacy` → Disable), otherwise it may never see people's
+  messages, `@mentions` included — the classic trap.
 - `claude` (Claude Code CLI) is installed **on the machine that runs the
   watcher**, and that machine holds the project's working directory. Claude Code
   sessions are stored per project directory on the local machine, so the watcher

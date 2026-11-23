@@ -467,9 +467,11 @@ Create a Messenger lane in the admin panel, or with
 3. **One lane per agent — never send through someone else's lane.** The
    message appears in the chat as *their* bot, and humans will attribute it
    to the wrong team.
-4. **Privacy mode must be Disabled** (BotFather → `/setprivacy`) *before* the
-   bot can see group messages. Symptoms of forgetting: webhook registered
-   fine, `/send` works, but no incoming messages ever arrive. Related, for
+4. **The bot must be an admin of the group** (no rights need to be ticked), with
+   privacy mode Disabled (BotFather → `/setprivacy`). Privacy mode off alone is
+   not enough: a plain member may get one person's messages and nobody else's.
+   Symptoms: webhook registered fine, `/send` works, but messages of some or
+   all people never arrive (and Telegram never redelivers them). Related, for
    bots reused from another project: `/setjoingroups` must be **Enabled**
    (`Allow Groups?`) or Telegram refuses to add the bot to a group at all.
    `/newbot` enables it by default.

@@ -46,6 +46,11 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.17.1 — 2026-11-23
+
+- **Fix: "Add bot" called a bot ready that could not hear people.** For a bot that is not an admin but has privacy mode off, the dialog said "it sees every message" and showed **Ready**. That is not reliable: in basic groups we saw such a bot receive one person's messages and nobody else's, not even `@mentions`, while an admin bot in the same group got them. The dialog now shows **Almost** and keeps asking to make the bot an admin. **Add bot** still works without it, and re-adding a known bot that is not an admin opens the dialog instead of adding it silently.
+- **Check your existing groups:** make every bot an admin of its group (no rights need to be ticked). Telegram does not deliver messages missed before that; they have to be forwarded.
+
 ## 0.17.0 — 2026-11-11
 
 - **Photos from Messenger groups.** The Messenger extension (0.2.0) now takes every photo in a message at full size, uploads it to the hub and links it to the message. In `/feed` the row has `media: {kind: "photo", fileId, mime, size, name}`, so `./tg-file.sh <fileId>` downloads it like a Telegram photo. A message with several photos becomes one row per photo (`[photo 1/3] caption`, `[photo 2/3]`, …), each with its own `media`, so `tg-fetch.sh` and `tg-file.sh` work unchanged.
