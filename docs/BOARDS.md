@@ -143,12 +143,26 @@ The client view at `/{slug}/b/{token}/data.json` returns:
 
 Strict privacy rules apply: internal notes, hours, groups, sources, and task IDs on non-waiting tasks are never exposed in `data.json`.
 
+### Client header tiles
+
+The client page shows three tiles in the client's terms, computed in the page
+from the same `ledger` numbers (data.json is unchanged):
+
+| Tile (uk) | Value |
+|---|---|
+| «Сплачено» | `paid + deposit` — all money received, net of refunds |
+| «Робіт на» | `paid + allocated` — all priced work |
+| «До оплати» | `−remaining` when the deposit is overspent (highlighted); `0` when even. When money is left it reads «Залишок авансу» with `remaining` |
+
+Under them a muted line says the amounts are approximate and settled together
+(`ledger_hint`). The operator panel keeps the raw ledger numbers.
+
 ### «Куди пішов депозит» (deposit history)
 
-On the client page the «Розподілено» and «Залишок» tiles are buttons (dotted
+On the client page the «Робіт на» and «До оплати» tiles are buttons (dotted
 underline; hover shows a hint). A click or tap opens a small dialog listing
 where the deposit went, and its footer reads «Депозит X − Розподілено Y =
-Залишок Z» — the same numbers as the tiles. It closes with ✕, Esc or a click
+Залишок Z». It closes with ✕, Esc or a click
 outside, keeps keyboard focus inside while open and returns it to the tile.
 The tiles stay plain when a board has no deposit activity.
 

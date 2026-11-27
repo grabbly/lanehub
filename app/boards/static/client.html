@@ -43,6 +43,10 @@ h1 { font-size: 24px; font-weight: 600; margin: 0; letter-spacing: -0.01em; text
 .ledger .k { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .ledger .v { font-family: var(--font-mono); font-size: 16px; font-weight: 500; }
 .ledger .cell.rest .v { color: var(--ok); }
+.ledger .cell.rest.due { border-color: var(--warn); background: var(--warn-soft); }
+.ledger .cell.rest.due .v { color: var(--fg); font-weight: 600; }
+.ledger-hint { margin: 4px 0 0; font-size: 11.5px; color: var(--muted); }
+.ledger-hint:empty { display: none; }
 /* «Розподілено» / «Залишок» open the «Куди пішов депозит» dialog once there is a history to show. */
 button.cell { font: inherit; color: inherit; text-align: left; margin: 0; -webkit-tap-highlight-color: transparent; }
 .ledger .cell.dep-open { cursor: pointer; transition: border-color .1s ease; }
@@ -165,10 +169,10 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
       <nav class="lang-switch" aria-label="Language" id="lang-switch"></nav>
       <div class="ledger" id="ledger-box" aria-label="Ledger">
         <div class="cell"><span class="k" id="lbl-paid">Paid</span><span class="v" id="lg-paid">—</span></div>
-        <div class="cell"><span class="k" id="lbl-dep">Deposit</span><span class="v" id="lg-dep">—</span></div>
-        <button type="button" class="cell" id="cell-used" aria-haspopup="dialog" aria-controls="dep-dialog" disabled><span class="k" id="lbl-used">Allocated</span><span class="v" id="lg-used">—</span></button>
-        <button type="button" class="cell rest" id="cell-rest" aria-haspopup="dialog" aria-controls="dep-dialog" disabled><span class="k" id="lbl-rest">Remaining</span><span class="v" id="lg-rest">—</span></button>
+        <button type="button" class="cell" id="cell-used" aria-haspopup="dialog" aria-controls="dep-dialog" disabled><span class="k" id="lbl-used">Work</span><span class="v" id="lg-used">—</span></button>
+        <button type="button" class="cell rest" id="cell-rest" aria-haspopup="dialog" aria-controls="dep-dialog" disabled><span class="k" id="lbl-rest">To pay</span><span class="v" id="lg-rest">—</span></button>
       </div>
+      <p class="ledger-hint" id="ledger-hint"></p>
     </div>
   </header>
 
@@ -642,15 +646,20 @@ footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
     $("brand").textContent = data.title || "";
     $("board-title").textContent = ui.page_title || "";
 
-    $("lbl-paid").textContent = ui.ledger_paid;
-    $("lbl-dep").textContent = ui.ledger_deposit;
-    $("lbl-used").textContent = ui.ledger_allocated;
-    $("lbl-rest").textContent = ui.ledger_remaining;
-
-    $("lg-paid").textContent = fmtMoney(data.ledger.paid, lang, currency);
-    $("lg-dep").textContent = fmtMoney(data.ledger.deposit, lang, currency);
-    $("lg-used").textContent = fmtMoney(data.ledger.allocated, lang, currency);
-    $("lg-rest").textContent = fmtMoney(data.ledger.remaining, lang, currency);
+    // Header in client terms: everything paid, everything the work came to, and
+    // one answer — how much is due now (or how much advance is left).
+    // paid + deposit = all money in; paid + allocated = all priced work.
+    const lg = data.ledger || {};
+    const num = (v) => Number(v) || 0;
+    const rest = num(lg.remaining);
+    $("lbl-paid").textContent = ui.ledger_total_paid || ui.ledger_paid;
+    $("lbl-used").textContent = ui.ledger_work_total || ui.ledger_allocated;
+    $("lbl-rest").textContent = rest > 0 ? (ui.ledger_advance_left || ui.ledger_remaining) : (ui.ledger_to_pay || ui.ledger_remaining);
+    $("lg-paid").textContent = fmtMoney(num(lg.paid) + num(lg.deposit), lang, currency);
+    $("lg-used").textContent = fmtMoney(num(lg.paid) + num(lg.allocated), lang, currency);
+    $("lg-rest").textContent = fmtMoney(Math.abs(rest), lang, currency);
+    $("cell-rest").classList.toggle("due", rest < 0);
+    $("ledger-hint").textContent = ui.ledger_hint || "";
     renderDepositDialog(data, lang);
 
     if (data.updatedAt) {

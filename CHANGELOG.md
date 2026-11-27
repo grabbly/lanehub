@@ -49,6 +49,7 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 ## 0.17.3 — 2026-11-27
 
 - **Client page: the «Потрібно від вас» block folds.** It now starts folded, showing only its title and the number of cards, so the columns below stay in view. A click opens it; the page remembers the choice in that browser (with the columns' open/closed state). Nothing changes on the server or in `data.json`.
+- **Client page: clearer money tiles.** Four tiles (Paid / Deposit / Allocated / Remaining) become three: **Сплачено** (all money received), **Робіт на** (all priced work) and **До оплати** — what is due now, highlighted when above zero; when the client paid ahead it reads **Залишок авансу**. A muted line under them says the amounts are approximate and settled together. Computed in the page from the same ledger numbers; `data.json` and the operator panel are unchanged. New i18n keys `ledger_total_paid`, `ledger_work_total`, `ledger_to_pay`, `ledger_advance_left`, `ledger_hint`.
 
 ## 0.17.2 — 2026-11-27
 
