@@ -184,6 +184,9 @@ itself on start.
 Nothing to do for any of these: new tables and columns are added on start,
 the optional modules stay off until you switch them on.
 
+- **0.17.4 — captions that start with @:** `tg-send-file.sh` sent nothing
+  when the caption began with a mention (`@name …`). Re-download it from the
+  hub.
 - **0.17.2 — basic groups are flagged:** in basic groups a bot may get only
   the owner's messages, even as an admin. Chat cards of basic groups now warn
   about it and say how to convert them to supergroups; **Add bot** shows

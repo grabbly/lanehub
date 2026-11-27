@@ -76,6 +76,13 @@ itself and silently takes every update away from the new hub. So:
 
 ## Version-specific notes
 
+### 0.17.4 — tg-send-file.sh captions starting with @
+
+Helper script fix only, no database changes. `tg-send-file.sh` sent nothing when
+the caption started with `@` (a mention) or `<`: curl took it for a file name and
+exited with code 26. After updating the hub, re-download `tg-send-file.sh` into
+every project that sends files (the same `curl` line as in the onboarding recipe).
+
 ### 0.17.2 — basic groups are flagged
 
 Panel and `/info` wording only, no database changes. After updating, open the
