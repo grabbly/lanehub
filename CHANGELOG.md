@@ -46,6 +46,11 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.17.4 — 2026-11-27
+
+- **Fix: `tg-send-file.sh` sent nothing when the caption started with `@`.** curl read a caption like `@name …` (a mention) as a file to attach, or `<…` as a file to read, and exited with code 26 before any request was made. Captions now go as plain text (`--form-string`) and arrive exactly as typed.
+- **Re-download `tg-send-file.sh`** from the hub in every project that sends files.
+
 ## 0.17.3 — 2026-11-27
 
 - **Client page: the «Потрібно від вас» block folds.** It now starts folded, showing only its title and the number of cards, so the columns below stay in view. A click opens it; the page remembers the choice in that browser (with the columns' open/closed state). Nothing changes on the server or in `data.json`.

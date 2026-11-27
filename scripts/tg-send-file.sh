@@ -30,9 +30,12 @@ FILE="${1:?usage: ./tg-send-file.sh [--doc] <file> [caption]}"
 CAPTION="${2:-}"
 [ -f "$FILE" ] || { echo "no such file: $FILE" >&2; exit 1; }
 
-args=(-F "file=@${FILE}" -F "asDocument=${AS_DOC}")
-[ -n "$CAPTION" ] && args+=(-F "caption=${CAPTION}")
-[ -n "${LANEHUB_CHAT_ID:-}" ] && args+=(-F "chatId=${LANEHUB_CHAT_ID}")
+# Only the file part uses -F's "@path" upload syntax. Text fields go through
+# --form-string: with -F a caption starting with "@" (a mention) or "<" makes
+# curl read it as a file name and exit 26 before anything is sent.
+args=(-F "file=@${FILE}" --form-string "asDocument=${AS_DOC}")
+[ -n "$CAPTION" ] && args+=(--form-string "caption=${CAPTION}")
+[ -n "${LANEHUB_CHAT_ID:-}" ] && args+=(--form-string "chatId=${LANEHUB_CHAT_ID}")
 
 resp="$(curl -s -X POST "${LANEHUB_BASE}/${LANEHUB_LANE}/sendFile" \
   -H "X-Bridge-Token: ${LANEHUB_API_KEY}" "${args[@]}")"
