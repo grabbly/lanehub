@@ -46,6 +46,10 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.17.3 — 2026-11-27
+
+- **Client page: the «Потрібно від вас» block folds.** It now starts folded, showing only its title and the number of cards, so the columns below stay in view. A click opens it; the page remembers the choice in that browser (with the columns' open/closed state). Nothing changes on the server or in `data.json`.
+
 ## 0.17.2 — 2026-11-27
 
 - **The panel warns that bots in a basic group may not hear people.** In every basic group we checked, a bot got only the owner's messages and nobody else's, even as an admin with privacy mode off. Telegram never redelivers those messages. Chat cards of basic groups now show ⚠️ **Basic group** with how to convert them. In **Add bot**, an admin bot in a basic group shows **Almost** instead of **Ready**. The `/info` warning says the same thing.
