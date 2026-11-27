@@ -698,8 +698,10 @@ async def _webhook_status(lane: dict) -> dict:
 
 
 BASIC_GROUP_WARNING = (
-    "the bound chat is a basic group, not a supergroup: there every bot numbers messages its own way, so the "
-    "merged feed shows a message once per bot, and replies and files can't be matched across bots. Convert "
+    "the bound chat is a basic group, not a supergroup: there a bot may receive only the owner's messages and "
+    "nobody else's, even as an admin (Telegram never redelivers the missed ones), and every bot numbers "
+    "messages its own way, so the merged feed shows a message once per bot and replies and files can't be "
+    "matched across bots. Convert "
     "the chat to a supergroup (Telegram does it when you make it public for a moment, or turn on chat "
     "history for new members) — the hub follows the chat to its new id by itself."
 )

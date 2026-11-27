@@ -49,7 +49,11 @@ Inside each chat block:
        admin) or **Ready**. **Check now** checks at once.
     3. **Add bot** unlocks as soon as the bot is in the group.
     If the first admin promotion turns the group into a supergroup, the dialog
-    picks up the new chat id by itself.
+    picks up the new chat id by itself. If the group stays a **basic group**,
+    the dialog shows **Almost** even for an admin bot: in basic groups bots may
+    get only the owner's messages. Convert it (group → ✎ → Chat history for new
+    members → Visible) and the dialog turns **Ready**. Chats tab cards of basic
+    groups carry the same ⚠️ warning.
 
 Special boxes on the Chats tab:
 - **Groups your bots have seen**: shows groups where your bots were added but no

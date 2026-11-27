@@ -159,7 +159,9 @@ each agent:
 4. Add the bot to your Telegram group or channel, make it an **admin** there
    (no rights need to be ticked), and post a message there so the hub sees the
    group. Make it an admin *before* you add the group to the hub: the first
-   promotion turns a basic group into a supergroup with a new chat id.
+   promotion often turns a basic group into a supergroup with a new chat id.
+   If the group stays basic, convert it yourself (chat history for new members
+   → Visible): in a basic group a bot may get only the owner's messages.
 5. In the LaneHub panel (**Chats** tab): click **＋ New chat**, pick the group
    under Step 1, then under Step 2 select any known bot from **Your bots**
    and/or paste the bot token under **Plus someone else's bot** → **Create chat**.
@@ -182,6 +184,10 @@ itself on start.
 Nothing to do for any of these: new tables and columns are added on start,
 the optional modules stay off until you switch them on.
 
+- **0.17.2 — basic groups are flagged:** in basic groups a bot may get only
+  the owner's messages, even as an admin. Chat cards of basic groups now warn
+  about it and say how to convert them to supergroups; **Add bot** shows
+  **Almost** for such a group. Convert your basic groups.
 - **0.17.1 — bots must be group admins:** "Add bot" no longer calls a bot
   ready when it is a plain member with privacy mode off: such a bot may miss
   other people's messages. Make each bot an admin of its group.

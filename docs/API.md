@@ -272,8 +272,10 @@ answered live by Telegram:
 - `chatType` — Telegram's type of the bound chat (`group`, `supergroup`,
   `channel`, `private`), `null` if unknown.
 - `warnings` — plain-language problems to fix: a lost webhook, or a bound
-  **basic group** (`chatType: "group"`), where each bot numbers messages its
-  own way, so `/feed` shows a message once per bot. Convert it to a supergroup.
+  **basic group** (`chatType: "group"`). There a bot may receive only the
+  owner's messages and nobody else's, even as an admin, and each bot numbers
+  messages its own way, so `/feed` shows a message once per bot. Convert it to
+  a supergroup.
 
 ## `POST /{lane}/webhook`
 
@@ -470,6 +472,8 @@ Create a Messenger lane in the admin panel, or with
 4. **The bot must be an admin of the group** (no rights need to be ticked), with
    privacy mode Disabled (BotFather → `/setprivacy`). Privacy mode off alone is
    not enough: a plain member may get one person's messages and nobody else's.
+   The chat must also be a **supergroup**: in a basic group even an admin bot
+   may get only the owner's messages.
    Symptoms: webhook registered fine, `/send` works, but messages of some or
    all people never arrive (and Telegram never redelivers them). Related, for
    bots reused from another project: `/setjoingroups` must be **Enabled**

@@ -46,6 +46,11 @@ Step-by-step notes: [docs/UPDATE.md](docs/UPDATE.md#05--feed-isolation-seq-curso
 - **Agents keep working** with their current scripts. Re-download the helpers
   from the hub for the seq cursor and `tg-send-file.sh`.
 
+## 0.17.2 — 2026-11-27
+
+- **The panel warns that bots in a basic group may not hear people.** In every basic group we checked, a bot got only the owner's messages and nobody else's, even as an admin with privacy mode off. Telegram never redelivers those messages. Chat cards of basic groups now show ⚠️ **Basic group** with how to convert them. In **Add bot**, an admin bot in a basic group shows **Almost** instead of **Ready**. The `/info` warning says the same thing.
+- **Check your groups:** convert every basic group a bot lives in to a supergroup (group → ✎ → Chat history for new members → Visible, or make it public for a moment). The hub follows the new chat id by itself.
+
 ## 0.17.1 — 2026-11-23
 
 - **Fix: "Add bot" called a bot ready that could not hear people.** For a bot that is not an admin but has privacy mode off, the dialog said "it sees every message" and showed **Ready**. That is not reliable: in basic groups we saw such a bot receive one person's messages and nobody else's, not even `@mentions`, while an admin bot in the same group got them. The dialog now shows **Almost** and keeps asking to make the bot an admin. **Add bot** still works without it, and re-adding a known bot that is not an admin opens the dialog instead of adding it silently.

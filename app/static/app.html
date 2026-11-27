@@ -615,7 +615,7 @@
       <label class="lbl">Step 2 · Put the bot into the group in Telegram</label>
       <ol class="ab-howto" id="ab-howto"></ol>
       <div class="ab-status" id="ab-status" aria-live="polite"></div>
-      <div class="help">The first time a bot becomes an admin, Telegram turns the group into a supergroup and gives it a new id. The hub follows the new id by itself.</div>
+      <div class="help">Often the first admin promotion turns the group into a supergroup with a new id, but not always. If the group stays basic, the status above says how to convert it. The hub follows the new id by itself.</div>
     </div>
     <div id="ab-s3" hidden>
       <label class="lbl" for="ab-title">Step 3 · Title (optional)</label>
@@ -1440,6 +1440,7 @@ function createChatSection(chatId, chatTitle, groupLanes, titleOf) {
           <button class="btn sm" data-rename-reset="${esc(chatId)}" title="Use original name">${isMessenger ? 'Original name' : 'Telegram name'}</button>
         </div>
         <div class="chat-sub">${groupLanes.length} bot${groupLanes.length > 1 ? 's' : ''} · <span class="mono">${esc(chatId)}</span></div>
+        ${!isMessenger && isBasicGroupId(chatId) ? basicGroupWarning() : ''}
       </div>
       <button class="btn sm" data-open-feed="${esc(chatId)}">Open feed</button>
       ${boardBtnHtml}
@@ -2179,7 +2180,21 @@ function startAbPolling() {
 // privacy mode off is a bot-wide setting, and a plain member may still get nothing
 // from other people (a bot added before the switch; basic groups).
 function abHears(c) {
+  if (c.chat && c.chat.type === 'group') return false; // basic group: see basicGroupWarning
   return c.isAdmin || !!(c.chat && c.chat.type === 'private');
+}
+
+// Basic group ids are -N below 10^12; supergroups and channels are -100… (13+ digits).
+function isBasicGroupId(cid) {
+  const n = Number(String(cid || '').trim());
+  return Number.isInteger(n) && n < 0 && n > -1e12;
+}
+
+const BASIC_GROUP_HOWTO = 'Telegram → group name → Edit (✎) → Chat history for new members → Visible, or make the group public for a moment. The hub follows the new chat id by itself.';
+
+// In basic groups bots got only the owner's messages, never other people's, even as admins.
+function basicGroupWarning() {
+  return `<div class="error" style="margin-top:4px; font-size:13px; white-space:normal;">⚠️ Basic group: bots here may get only your own messages, not other people's, even as admins. Convert it to a supergroup: ${esc(BASIC_GROUP_HOWTO)}</div>`;
 }
 
 // Nothing left to wait for: in the chat and able to hear everyone.
@@ -2239,6 +2254,8 @@ function renderAddBot() {
       pill = 'danger'; text = 'The bot was removed from the group and is banned there. Unban it in the group settings, then add it again.';
     } else if (!c.inChat) {
       pill = 'danger'; text = `${user} is not in «${chatTitle}» yet. Do step 1 above.`;
+    } else if (c.isAdmin && c.chat && c.chat.type === 'group') {
+      pill = 'warn'; text = `${user} is an admin, but «${chatTitle}» is still a basic group: there it may get only your messages, not other people's. Convert it to a supergroup: ${BASIC_GROUP_HOWTO}`;
     } else if (!abHears(c) && !c.bot.readsAllMessages) {
       pill = 'warn'; text = `${user} is in the group but not an admin. Do step 2, or it will only see commands and replies to it.`;
     } else if (!abHears(c)) {
@@ -2387,8 +2404,8 @@ $('nc-close').onclick = () => $('new-chat-dlg').close();
 // so ask for it before the group is picked.
 function botAdminWarning(lang) {
   const text = lang === 'ru'
-    ? '⚠️ Бот должен быть администратором группы, иначе он не видит обычные сообщения людей. Назначьте его админом в Telegram до того, как добавлять группу в хаб: при первом назначении Telegram превращает группу в супергруппу и меняет её номер. Никаких прав, кроме самого статуса админа, не нужно.'
-    : '⚠️ The bot must be a group admin, or it will not see people\'s ordinary messages. Make it an admin in Telegram before you add the group to the hub: the first promotion turns the group into a supergroup with a new chat id. It needs no admin rights beyond the admin status itself.';
+    ? '⚠️ Бот должен быть администратором группы, иначе он не видит обычные сообщения людей. Назначьте его админом в Telegram до того, как добавлять группу в хаб: часто при первом назначении Telegram превращает группу в супергруппу и меняет её номер. Если группа осталась обычной, переведите её в супергруппу сами (группа → ✎ → «История чата для новых участников» → «Видна»): в обычной группе бот может получать только ваши сообщения. Никаких прав, кроме самого статуса админа, не нужно.'
+    : '⚠️ The bot must be a group admin, or it will not see people\'s ordinary messages. Make it an admin in Telegram before you add the group to the hub: the first promotion often turns the group into a supergroup with a new chat id. If it stays a basic group, convert it yourself (group → ✎ → Chat history for new members → Visible): in a basic group the bot may get only your messages. It needs no admin rights beyond the admin status itself.';
   return `<p class="error" style="margin:10px 0 0; font-weight:600;">${text}</p>`;
 }
 

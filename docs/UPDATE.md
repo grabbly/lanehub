@@ -76,6 +76,15 @@ itself and silently takes every update away from the new hub. So:
 
 ## Version-specific notes
 
+### 0.17.2 — basic groups are flagged
+
+Panel and `/info` wording only, no database changes. After updating, open the
+**Chats** tab: every chat card marked ⚠️ **Basic group** should be converted to a
+supergroup (group → ✎ → Chat history for new members → Visible, or make it
+public for a moment). In basic groups bots received only the owner's messages,
+even as admins; messages missed so far are not redelivered and have to be sent
+again or forwarded. The hub follows the new chat id by itself.
+
 ### 0.17.1 — bots must be group admins
 
 Panel fix only, no database changes. After updating, check every Telegram group:

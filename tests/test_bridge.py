@@ -450,7 +450,7 @@ def test_info_warns_about_a_basic_group(client):
     lane = make_lane(client, chat_id="-5297")
     info = client.get("/backend/info", headers={"X-Bridge-Token": lane["apiKey"]}).json()
     assert info["chatType"] == "group"
-    assert any("basic group" in w for w in info["warnings"])
+    assert any("basic group" in w and "nobody else" in w for w in info["warnings"])
     other = make_lane(client, slug="front")
     info = client.get("/front/info", headers={"X-Bridge-Token": other["apiKey"]}).json()
     assert info["chatType"] == "supergroup" and info["warnings"] == []
